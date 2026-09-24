@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geektls"
+version = "0.1.0"
+description = "Multi-language TLS/HTTP fingerprint impersonation library (Python binding)"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+include = ["geektls*"]
+
+# 动态库随 wheel 分发（_ffi.py 的加载顺序已含包内查找）。
+# 构建 wheel 前需把对应平台的 geektls.dll/libgeektls.so/libgeektls.dylib
+# 复制到 geektls/ 包目录内（CI 发布流水线负责；见 docs/06-task-list.md P7-T5）。
+[tool.setuptools.package-data]
+geektls = ["*.dll", "*.so", "*.dylib"]

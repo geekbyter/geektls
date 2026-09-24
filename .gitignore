@@ -1,0 +1,17 @@
+# 构建产物
+/build/
+*.dll
+*.dll.a
+*.so
+*.dylib
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Node
+node_modules/
+
+# 工作区杂项
+.work/
+*.tgz

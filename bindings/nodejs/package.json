@@ -1,0 +1,24 @@
+{
+  "name": "geektls",
+  "version": "0.1.0",
+  "description": "Multi-language TLS/HTTP fingerprint impersonation library (Node.js binding)",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.dll",
+    "*.so",
+    "*.dylib"
+  ],
+  "scripts": {
+    "test": "node --test ../../tests/e2e/node/"
+  },
+  "dependencies": {
+    "koffi": "^2.5.0"
+  },
+  "comment": "动态库随包分发：发布流水线把 geektls.dll/libgeektls.so/libgeektls.dylib 放入包根（index.js 的包内查找已支持）；index.d.ts 类型定义随 P7 发布打磨补齐"
+}
