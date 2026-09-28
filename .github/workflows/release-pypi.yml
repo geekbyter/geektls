@@ -1,0 +1,153 @@
+# PyPI 发布流水线（方案见 docs/plans/2026-09-28-pypi-release-plan.md）
+#
+# ⚠️ 本文件名必须与 PyPI「可信发布商」里填的**工作流名称**逐字符一致：
+#    .github/workflows/release-pypi.yml  ⇒  PyPI 表单填 `release-pypi.yml`
+#
+# 触发：
+#   - push tag v*          → 构建 5 个平台 wheel
+#   - workflow_dispatch     → 先发 TestPyPI（正式发布把 publish 步骤的 repository-url 删掉）
+#
+# 关键点：
+#   - Linux 的**动态库**在 manylinux_2_28 容器里构建（决定 wheel 能否标 manylinux_2_28），
+#     wheel 本身在 runner 上用现代 Python 组装（manylinux 镜像里的 python 太旧）。
+#   - ctypes 绑定不依赖 CPython ABI ⇒ 每平台一个 wheel，不需要多解释器矩阵。
+#   - 不发布 sdist（从源码构建需要 Go + C 工具链）。
+name: release-pypi
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: wheel-${{ matrix.tag }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: manylinux_2_28_x86_64
+            runner: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            goarch: amd64
+          - tag: manylinux_2_28_aarch64
+            runner: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            goarch: arm64
+          - tag: macosx_11_0_arm64
+            runner: macos-14
+            goarch: arm64
+          - tag: macosx_10_15_x86_64
+            runner: macos-13
+            goarch: amd64
+          - tag: win_amd64
+            runner: windows-2022
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ---------- 1) 构建动态库 ----------
+      - name: 构建动态库（Linux：容器内满足 manylinux_2_28 基线）
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w "${{ matrix.container }}" bash -c '
+            set -euo pipefail
+            curl -sSL "https://go.dev/dl/$(curl -sS https://go.dev/VERSION?m=text | head -1).linux-${GOARCH}.tar.gz" -o /tmp/go.tgz
+            tar -C /usr/local -xzf /tmp/go.tgz
+            mkdir -p build
+            cd core && /usr/local/go/bin/go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o ../build/libgeektls.so ./ffi
+          '
+        env:
+          GOARCH: ${{ matrix.goarch }}
+
+      - name: 构建动态库（macOS）
+        if: runner.os == 'macOS'
+        run: |
+          make build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.tag == 'macosx_11_0_arm64' && '11.0' || '10.15' }}
+
+      - name: 安装 mingw 并构建动态库（Windows）
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          choco install mingw -y --no-progress
+          echo "C:/ProgramData/mingw64/mingw64/bin" >> "$GITHUB_PATH"
+          echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
+          mkdir -p build
+          cd core && go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o ../build/geektls.dll ./ffi
+
+      # ---------- 2) 组装 wheel ----------
+      - name: 组装 wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 关键清理（0.1.0 踩过两次坑）：
+          # 1) setuptools 的暂存目录 bindings/python/build/lib/ 会残留旧平台动态库，
+          #    只清包目录不够——它会把 .dll/.so 一起打进 wheel；
+          # 2) dist 里的旧文件会让后续步骤/上传拿到错的包。
+          rm -rf bindings/python/build bindings/python/dist
+          rm -f bindings/python/geektls/*.dll bindings/python/geektls/*.so bindings/python/geektls/*.dylib
+          cp build/*geektls.* bindings/python/geektls/
+          cp README.md bindings/python/README.md
+          python -m pip install --upgrade build wheel
+          cd bindings/python
+          python -m build --wheel
+          # --remove：删掉用不得的 py3-none-any 版本，避免它被一起传上 PyPI
+          python -m wheel tags --remove --platform-tag "${{ matrix.tag }}" dist/*.whl
+          ls -l dist/
+
+      - name: 校验（安装到干净 venv 并跑 version + 预设枚举）
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/v
+          if [ -x /tmp/v/bin/python ]; then PY=/tmp/v/bin/python; else PY=/tmp/v/Scripts/python; fi
+          $PY -m pip install --quiet bindings/python/dist/*.whl
+          $PY -c "import geektls,json;print(json.dumps(geektls.version()));print(len(geektls.list_presets()))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.tag }}
+          path: bindings/python/dist/*.whl
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    # 部分平台构建失败时也要把成功的那些发出去（配合 skip-existing，重跑即可补齐）
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    # 用 token 发布：不需要 PyPI 可信发布商、不需要 environment
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - name: 发布到 PyPI
+        # 认证：仓库 Secret `PYPI_API_TOKEN`（PyPI 项目级 token）
+        # 想改成 OIDC 免 token：删掉 user/password 两行，换回
+        #   permissions: { id-token: write }  +  environment: pypi  + PyPI 可信发布商
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
+          # 已发布的文件（如 0.1.0 的 Windows wheel）跳过而不是报错，
+          # 这样补发其他平台时可以把它们加到**同一个版本**上。
+          skip-existing: true
+          # 想先试跑 TestPyPI 就加上这一行：
+          # repository-url: https://test.pypi.org/legacy/
