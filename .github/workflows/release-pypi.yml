@@ -122,12 +122,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          MAX=$(objdump -T build/libgeektls.so | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1)
-          echo "libgeektls.so 引用的最高 GLIBC 版本：$MAX"
-          if [ "$MAX" \> "GLIBC_2.28" ]; then
-            echo "::error::动态库要求的 GLIBC（$MAX）高于 manylinux_2_28 基线，不能标该标签"
+          VERS=$(objdump -T build/libgeektls.so | grep -oE 'GLIBC_[0-9.]+' | sed 's/^GLIBC_//' | sort -uV)
+          echo "libgeektls.so 引用的 GLIBC 符号版本：$(echo "$VERS" | tr '\n' ' ')"
+          # ⚠️ 只能按版本号逐段数值比较。字典序会误判：'GLIBC_2.3.2' > 'GLIBC_2.28'
+          #（第 8 位 3 > 2），而 2.3.2 其实是 glibc 最老的符号版本之一。
+          TOO_NEW=$(echo "$VERS" | awk -F. '($1 > 2) || ($1 == 2 && $2 > 28) {print; exit}')
+          if [ -n "$TOO_NEW" ]; then
+            echo "::error::出现高于 2.28 的 GLIBC 符号（$TOO_NEW），不能标 manylinux_2_28"
             exit 1
           fi
+          echo "基线 OK：全部符号 ≤ GLIBC_2.28"
 
       - name: 构建动态库（macOS；x86_64 走交叉编译）
         if: runner.os == 'macOS'
