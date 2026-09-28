@@ -10,6 +10,10 @@
 # 关键点：
 #   - Linux 的**动态库**在 manylinux_2_28 容器里构建（决定 wheel 能否标 manylinux_2_28），
 #     wheel 本身在 runner 上用现代 Python 组装（manylinux 镜像里的 python 太旧）。
+#     ⚠️ step 的 env **不会**进容器：要传的参数必须用 `docker run -e` 显式传（0.1.4 踩过
+#     `bash: GOARCH: unbound variable`，容器里 `set -u` 直接失败）。
+#   - macOS x86_64 轮子在 **Apple Silicon runner** 上交叉编译（`clang -arch x86_64`）：
+#     唯一的 Intel runner `macos-13` 已从 GitHub 托管池下架，用它会永远排队。
 #   - ctypes 绑定不依赖 CPython ABI ⇒ 每平台一个 wheel，不需要多解释器矩阵。
 #   - 不发布 sdist（从源码构建需要 Go + C 工具链）。
 name: release-pypi
@@ -41,9 +45,14 @@ jobs:
           - tag: macosx_11_0_arm64
             runner: macos-14
             goarch: arm64
-          - tag: macosx_10_15_x86_64
-            runner: macos-13
+            ccarch: ""            # 原生构建，不需要 -arch
+          # ⚠️ macos-13（最后的 Intel runner）已下架 ⇒ 用它只会一直 "Waiting for a runner"。
+          # 改为在 arm64 runner 上用 `clang -arch x86_64` 交叉编译；SDK 是 universal 的，支持。
+          # 部署目标 11.0 与 arm64 轮子对齐（Go 1.26 的 darwin 底线也是 11.0，压不到 10.15）。
+          - tag: macosx_11_0_x86_64
+            runner: macos-14
             goarch: amd64
+            ccarch: "-arch x86_64"
           - tag: win_amd64
             runner: windows-2022
             goarch: amd64
@@ -59,25 +68,88 @@ jobs:
           python-version: "3.12"
 
       # ---------- 1) 构建动态库 ----------
+      # 容器里不联网下 Go：直接把 runner 上 setup-go 装好的**同一套工具链**挂进去。
+      # 好处：版本跟着 core/go.mod（不漂移）、省一次 ~90MB 下载、避开容器出网的不确定性。
+      # 注意 glibc 底线由容器决定（cgo 用容器里的 gcc 链接），宿主只提供编译器本体。
+      - name: 预热 Go 模块缓存（容器内复用同一份）
+        if: runner.os == 'Linux'
+        shell: bash
+        run: cd core && go mod download
+
       - name: 构建动态库（Linux：容器内满足 manylinux_2_28 基线）
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          docker run --rm -v "$PWD:/w" -w /w "${{ matrix.container }}" bash -c '
-            set -euo pipefail
-            curl -sSL "https://go.dev/dl/$(curl -sS https://go.dev/VERSION?m=text | head -1).linux-${GOARCH}.tar.gz" -o /tmp/go.tgz
-            tar -C /usr/local -xzf /tmp/go.tgz
-            mkdir -p build
-            cd core && /usr/local/go/bin/go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o ../build/libgeektls.so ./ffi
-          '
-        env:
-          GOARCH: ${{ matrix.goarch }}
+          set -euo pipefail
+          GOROOT_HOST="$(go env GOROOT)"
+          GOMODCACHE_HOST="$(go env GOMODCACHE)"
+          GOVER="$(go env GOVERSION)"; GOVER="${GOVER#go}"
+          # --user 用当前 uid：否则容器里以 root 产出 build/libgeektls.so，
+          # 后续宿主步骤虽然能读，但清理/覆盖时会踩权限。
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/w" -w /w \
+            -v "$GOROOT_HOST:$GOROOT_HOST:ro" \
+            -v "$GOMODCACHE_HOST:$GOMODCACHE_HOST" \
+            -e GOROOT="$GOROOT_HOST" \
+            -e GOMODCACHE="$GOMODCACHE_HOST" \
+            -e GOCACHE=/tmp/gocache \
+            -e HOME=/tmp \
+            -e GOOS=linux \
+            -e GOARCH="${{ matrix.goarch }}" \
+            -e GOVER="$GOVER" \
+            -e CGO_ENABLED=1 \
+            "${{ matrix.container }}" \
+            bash -c '
+              set -euo pipefail
+              export PATH="$GOROOT/bin:$PATH"
+              # 挂载的工具链若是因 glibc 太旧跑不起来，退回容器内下载同版本（不再靠 go.dev/VERSION
+              # 取 latest，避免和 core/go.mod 漂移）。
+              if ! go version; then
+                echo "挂载的 Go 不可用，改为容器内下载 go${GOVER}"
+                curl -sSL "https://go.dev/dl/go${GOVER}.linux-${GOARCH}.tar.gz" -o /tmp/go.tgz
+                tar -C /usr/local -xzf /tmp/go.tgz
+                export GOROOT=/usr/local/go
+                export PATH="$GOROOT/bin:$PATH"
+                go version
+              fi
+              mkdir -p build
+              cd core && go build -buildmode=c-shared -trimpath -ldflags "-s -w" -o ../build/libgeektls.so ./ffi
+            '
 
-      - name: 构建动态库（macOS）
-        if: runner.os == 'macOS'
+      - name: 校验 glibc 基线（决定 manylinux_2_28 这个标签能不能用）
+        if: runner.os == 'Linux'
+        shell: bash
         run: |
+          set -euo pipefail
+          MAX=$(objdump -T build/libgeektls.so | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1)
+          echo "libgeektls.so 引用的最高 GLIBC 版本：$MAX"
+          if [ "$MAX" \> "GLIBC_2.28" ]; then
+            echo "::error::动态库要求的 GLIBC（$MAX）高于 manylinux_2_28 基线，不能标该标签"
+            exit 1
+          fi
+
+      - name: 构建动态库（macOS；x86_64 走交叉编译）
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
           make build
+          # 架构断言：交叉编译最怕"编译成功但产出宿主架构"，那会让 wheel 标签说谎。
+          lipo -info build/libgeektls.dylib
+          case "${{ matrix.goarch }}" in
+            amd64) lipo -info build/libgeektls.dylib | grep -q x86_64 ;;
+            arm64) lipo -info build/libgeektls.dylib | grep -q arm64 ;;
+          esac
         env:
-          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.tag == 'macosx_11_0_arm64' && '11.0' || '10.15' }}
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          CC: clang
+          # clang 默认按宿主架构出目标文件；交叉目标是 x86_64 时必须显式指定编译+链接两侧。
+          CGO_CFLAGS: ${{ matrix.ccarch }}
+          CGO_LDFLAGS: ${{ matrix.ccarch }}
+          CGO_ENABLED: "1"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
 
       - name: 安装 mingw 并构建动态库（Windows）
         if: runner.os == 'Windows'
@@ -113,9 +185,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m venv /tmp/v
-          if [ -x /tmp/v/bin/python ]; then PY=/tmp/v/bin/python; else PY=/tmp/v/Scripts/python; fi
-          $PY -m pip install --quiet bindings/python/dist/*.whl
+          WHEEL=$(ls bindings/python/dist/*.whl)
+          # 文件名里的平台标签必须与预期一致（历史上出过 py3-none-any 混进来的事）
+          case "$WHEEL" in
+            *"${{ matrix.tag }}.whl") ;;
+            *) echo "::error::wheel 标签不符：$WHEEL（期望 ${{ matrix.tag }}）"; exit 1 ;;
+          esac
+          if [ "$RUNNER_OS" = "macOS" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
+            # 交叉构建出来的 x86_64 轮子：宿主 runner 是 arm64，用 arm64 解释器 import
+            # 必然报 "incompatible architecture"。所以先拆包静态断言架构，再尽量借
+            # Rosetta 起一个 x86_64 解释器做真加载；没 Rosetta 就只做静态断言。
+            unzip -o -q "$WHEEL" -d /tmp/wheel-x64
+            DY=$(find /tmp/wheel-x64 -name '*.dylib')
+            lipo -info "$DY"
+            lipo -info "$DY" | grep -q x86_64
+            if arch -x86_64 true 2>/dev/null && [ -x /usr/bin/python3 ]; then
+              arch -x86_64 /usr/bin/python3 -m venv /tmp/v
+              PY="arch -x86_64 /tmp/v/bin/python"
+            else
+              echo "::warning::runner 无 Rosetta/system python3，跳过 x86_64 运行期校验（架构已由 lipo 断言）"
+              exit 0
+            fi
+          else
+            python -m venv /tmp/v
+            if [ -x /tmp/v/bin/python ]; then PY=/tmp/v/bin/python; else PY=/tmp/v/Scripts/python; fi
+          fi
+          $PY -m pip install --quiet "$WHEEL"
           $PY -c "import geektls,json;print(json.dumps(geektls.version()));print(len(geektls.list_presets()))"
 
       - uses: actions/upload-artifact@v4
