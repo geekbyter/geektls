@@ -2,7 +2,7 @@
 
 多语言 TLS/HTTP 全栈指纹伪造库：对 **ClientHello 逐字节可控**，覆盖 TLS（JA3/JA4）、HTTP/2（Akamai 指纹）、HTTP/3 + QUIC、TCP 四层指纹，提供 **Python / Node.js / Go** 三种语言的一等 API。
 
-> 当前状态：**P0–P7 完成（一期收工）**。P1-T8（nginx 采集端 L2 终审）与 P6-T3（JA4TCP 验收）待 Linux 环境，见文末遗留表。
+> 当前状态：**P0–P7 完成（一期收工）**。其中 **TLS/H2 已交付并经 E2 外部 oracle 验证**；**H3/QUIC 机制已建，但预设证据仍为 E4/TODO（H3 尚未做外部验证）**；**TCP 仅 TTL/MSS 可承诺**（window/window_scale/options 仅 Linux 探测模式，不影响真实连接）。P1-T8（nginx 采集端 L2 终审）与 P6-T3（JA4TCP 验收）待 Linux 环境，见文末遗留表。精确现状见 [docs/01-fingerprint-dimensions.md](docs/01-fingerprint-dimensions.md) 与 [docs/capability-matrix.yml](docs/capability-matrix.yml)。
 
 ## 功能矩阵
 
@@ -12,7 +12,7 @@
 | 真 ECH（config_list 注入） | ✅ | cloudflare-ech.com 实测 `ECHAccepted=true` |
 | JA3/JA4R/ClientHello-hex 三入口 + 自算 JA3/JA4 回读 | ✅ | FoxIO 官方向量 + 线上 round-trip |
 | HTTP/2 帧层（SETTINGS 序/WINDOW_UPDATE/priority/伪头序） | ✅ | tls.peet.ws Akamai 四段全 MATCH |
-| HTTP/3 + QUIC（SETTINGS/伪头序/GREASE 帧/内层 ClientHello 同 profile） | ✅ | 本地 RFC 9001 嗅探；QUIC 内层 JA4 与 TCP 仅差 q/t |
+| HTTP/3 + QUIC（SETTINGS/伪头序/GREASE 帧/内层 ClientHello 同 profile） | ✅（机制） | 本地 RFC 9001 嗅探；QUIC 内层 JA4 与 TCP 仅差 q/t；**transport params 顺序/非标参数与 Initial 布局不可控**（行业共性，见能力矩阵），预设证据待 E2 |
 | H2/H3 racing + Alt-Svc | ✅ | 本地实测（含负缓存） |
 | TCP（TTL/MSS setsockopt 档） | ✅（Windows 无 MSS） | getsockopt 读回 |
 | Python / Node / Go 绑定 | ✅ | pytest 8 / node:test 7 / go test 全绿；跨语言 JA4 三方全等 |
@@ -81,6 +81,9 @@ resp, _ := client.Get("https://example.com")
 | [docs/02-ffi-abi.md](docs/02-ffi-abi.md) | C ABI 契约 |
 | [docs/03-profile-format.md](docs/03-profile-format.md) | profile JSON schema + 预设体系 |
 | [docs/06-task-list.md](docs/06-task-list.md) | 任务计划与完成状态 |
+| [docs/capability-matrix.yml](docs/capability-matrix.yml) | 机器可读能力矩阵（CI 断言/变量映射共用） |
+| [docs/CONTRACT-FREEZE.md](docs/CONTRACT-FREEZE.md) | 已验证面冻结契约（防"改而改弱"） |
+| [docs/plans/2026-09-24-geektls-hardening-and-h3-plan.md](docs/plans/2026-09-24-geektls-hardening-and-h3-plan.md) | 硬化与 H3 补齐方案（2026-09-24） |
 | [docs/p1-utls-capability.md](docs/p1-utls-capability.md) / [p2-h2](docs/p2-h2-capability.md) / [p4-h3](docs/p4-h3-capability.md) | 各层能力摸底矩阵 |
 | [docs/tcp-platform-matrix.md](docs/tcp-platform-matrix.md) | TCP 指纹平台边界 |
 | [docs/benchmarks.md](docs/benchmarks.md) | 性能基准 |

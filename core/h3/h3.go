@@ -80,7 +80,7 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("h3: spec convert: %w", err)
 		}
-		clampSpecForQUIC(bspec)
+		clampSpecForQUIC(bspec, p.HTTP3)
 		qcfg.ClientHelloSpec = bspec
 	}
 
@@ -95,7 +95,16 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 		}
 		qcfg.Versions = []quic.Version{quic.Version(v)}
 	}
-	if len(h3p.TransportParams) > 0 {
+	if len(h3p.TransportParamsRaw) > 0 {
+		// T4-1 blob 直通：有序/非标/GREASE 全控（vendor patch #7），
+		// 同时把已知流控键值映射回 quic.Config 保证行为一致。
+		tps, err := buildTransportParamsRaw(h3p.TransportParamsRaw)
+		if err != nil {
+			return nil, err
+		}
+		qcfg.TransportParamsOverride = tps
+		applyKnownRawTP(tps, qcfg)
+	} else if len(h3p.TransportParams) > 0 {
 		transportParamsToQUICConfig(h3p.TransportParams, qcfg)
 	}
 	return qcfg, nil
@@ -152,21 +161,83 @@ func NewTransport(p *profiles.Profile, insecureSkipVerify bool) (*http3.Transpor
 	return tr, nil
 }
 
-// clampSpecForQUIC QUIC 只允许 TLS 1.3：supported_versions 过滤为
-// GREASE+0x0304（真实 Chrome QUIC hello 形态），版本上下限收紧；ALPN/ALPS
-// 重写为 h3；ECH GREASE 换合成 payload（bogdanfinn/utls 原生生成在 QUIC
-// 下静默失败，bisect 实测）。
-func clampSpecForQUIC(spec *utlsb.ClientHelloSpec) {
+// clampSpecForQUIC 把 TCP 侧编译产物裁剪为 **QUIC 内层 ClientHello** 形态。
+//
+// 实测依据（2026-09-24 E1：真 Chrome 149 / Windows，采集见 tests/e2e/e1_h3_test.go，
+// 记录 profiles/evidence/browsers/chrome_windows_h3.json）：
+//   - ciphers 恰为 3 个 TLS1.3 套件（无 TLS1.2 套件、无 GREASE cipher）
+//   - 扩展 11 项 = TCP 的 16 项剔 6 个 TLS1.2 语义扩展（5/11/18/23/35/65281）+ 增 57
+//   - supported_groups / key_shares / supported_versions **均无 GREASE**
+//   - signature_algorithms = TCP 的 8 项 + 末尾追加 0x0201（rsa_pkcs1_sha1）
+//   - **扩展顺序逐连接随机**（两次抓包顺序完全不同）⇒ 无需另设顺序，
+//     沿用已有的 extension_permutation 洗牌即可
+//
+// 分工：11/23/35/65281 属 TLS1.2 语义，对所有浏览器都该剔（硬编码）；
+// 5(status_request) 与 18(SCT) 在 TLS1.3 里仍有意义，Chrome 在 QUIC 上不发属
+// **实现选择**，由 profile 的 http3.inner_hello_drop_extensions 提供。
+//
+// 其余原有行为保留：ALPN/ALPS 重写为 h3；ECH GREASE 换合成 payload
+// （bogdanfinn/utls 原生生成在 QUIC 下静默失败，bisect 实测）；扩展 57 换成
+// QUICTransportParametersExtension 并保证插在 PSK 之前。
+func clampSpecForQUIC(spec *utlsb.ClientHelloSpec, h3p *profiles.HTTP3Profile) {
 	spec.TLSVersMin = utlsb.VersionTLS13
 	spec.TLSVersMax = utlsb.VersionTLS13
+
+	dropGrease := h3p != nil && h3p.InnerHelloDropGrease
+	extraDrop := map[uint16]bool{}
+	var extraSigAlgs []string
+	if h3p != nil {
+		for _, id := range h3p.InnerHelloDropExtensions {
+			extraDrop[id] = true
+		}
+		extraSigAlgs = h3p.InnerHelloExtraSigAlgs
+	}
+
+	// ciphers：QUIC 强制 TLS1.3 ⇒ 只保留 1.3 套件（GREASE 占位按 profile 决定）。
+	var ciphers []uint16
+	for _, c := range spec.CipherSuites {
+		if isGreaseUint16H3(c) {
+			if !dropGrease {
+				ciphers = append(ciphers, c)
+			}
+			continue
+		}
+		switch c {
+		case utlsb.TLS_AES_128_GCM_SHA256, utlsb.TLS_AES_256_GCM_SHA384, utlsb.TLS_CHACHA20_POLY1305_SHA256:
+			ciphers = append(ciphers, c)
+		}
+	}
+	spec.CipherSuites = ciphers
+
 	hasQTP := false
 	out := spec.Extensions[:0]
 	for _, e := range spec.Extensions {
 		switch ext := e.(type) {
+		case *utlsb.SupportedPointsExtension:
+			continue // 11：TLS1.3 无 ec_point_formats 语义
+		case *utlsb.ExtendedMasterSecretExtension:
+			continue // 23：TLS1.2 专属
+		case *utlsb.SessionTicketExtension:
+			continue // 35：TLS1.3 用 PSK 恢复，实测 QUIC 不发
+		case *utlsb.StatusRequestExtension:
+			if extraDrop[5] {
+				continue // 实测 Chrome QUIC 不发（TLS1.3 本可发，属实现选择）
+			}
+			out = append(out, e)
+		case *utlsb.SCTExtension:
+			if extraDrop[18] {
+				continue // 同上
+			}
+			out = append(out, e)
+		case *utlsb.UtlsGREASEExtension:
+			if dropGrease {
+				continue
+			}
+			out = append(out, e)
 		case *utlsb.SupportedVersionsExtension:
 			var v []uint16
 			for _, ver := range ext.Versions {
-				if ver == utlsb.VersionTLS13 || isGreaseUint16H3(ver) {
+				if ver == utlsb.VersionTLS13 || (!dropGrease && isGreaseUint16H3(ver)) {
 					v = append(v, ver)
 				}
 			}
@@ -178,12 +249,17 @@ func clampSpecForQUIC(spec *utlsb.ClientHelloSpec) {
 			// 直接按线上格式合成等效 payload（见 echGreasePayload）。
 			out = append(out, &utlsb.GenericExtension{Id: 65037, Data: echGreasePayload()})
 		case *utlsb.GenericExtension:
-			if ext.Id == 57 {
+			switch {
+			case ext.Id == 57:
 				// transport params 必须走 QUICTransportParametersExtension
 				// 类型（裸字节由 vendor patch 在握手时填充）
 				out = append(out, &utlsb.QUICTransportParametersExtension{})
 				hasQTP = true
-			} else {
+			case ext.Id == 65281:
+				// renegotiation_info：TLS1.2 专属（编译期以 GenericExtension 透传）
+			case extraDrop[ext.Id]:
+			case dropGrease && isGreaseUint16H3(ext.Id):
+			default:
 				out = append(out, e)
 			}
 		case *utlsb.ALPNExtension:
@@ -195,6 +271,48 @@ func clampSpecForQUIC(spec *utlsb.ClientHelloSpec) {
 			out = append(out, e)
 		case *utlsb.ApplicationSettingsExtensionNew:
 			ext.SupportedProtocols = []string{"h3"}
+			out = append(out, e)
+		case *utlsb.SupportedCurvesExtension:
+			if dropGrease {
+				kept := ext.Curves[:0]
+				for _, c := range ext.Curves {
+					if !isGreaseUint16H3(uint16(c)) {
+						kept = append(kept, c)
+					}
+				}
+				ext.Curves = kept
+			}
+			out = append(out, e)
+		case *utlsb.KeyShareExtension:
+			if dropGrease {
+				kept := ext.KeyShares[:0]
+				for _, ks := range ext.KeyShares {
+					if !isGreaseUint16H3(uint16(ks.Group)) {
+						kept = append(kept, ks)
+					}
+				}
+				ext.KeyShares = kept
+			}
+			out = append(out, e)
+		case *utlsb.SignatureAlgorithmsExtension:
+			// 实测 Chrome 把 QUIC 特有算法追加在**末尾**（0x0201 在最后一项）。
+			for _, h := range extraSigAlgs {
+				v, err := profiles.ParseHex16(h)
+				if err != nil {
+					continue
+				}
+				scheme := utlsb.SignatureScheme(v)
+				dup := false
+				for _, s := range ext.SupportedSignatureAlgorithms {
+					if s == scheme {
+						dup = true
+						break
+					}
+				}
+				if !dup {
+					ext.SupportedSignatureAlgorithms = append(ext.SupportedSignatureAlgorithms, scheme)
+				}
+			}
 			out = append(out, e)
 		default:
 			out = append(out, e)
@@ -217,25 +335,36 @@ func clampSpecForQUIC(spec *utlsb.ClientHelloSpec) {
 
 func isGreaseUint16H3(v uint16) bool { return v>>8 == v&0xff && v&0xf == 0xa }
 
-// echGreasePayload 合成 ECH GREASE 负载（与 BoringSSL/Chrome 线上格式一致）：
-// outer(0) | KDF HKDF-SHA256(0x0001) | AEAD AES-128-GCM(0x0001) | config_id |
-// enc_len(0) | payload_len | 随机 payload。
-// 长度从 BoringSSL 的候选集 {144,176,208,240} 随机挑一个。
+// echGreasePayload 合成 ECH GREASE 负载，结构对齐真实浏览器（Chrome/Edge 抓包实证）：
+//
+//	outer(0x00) | kdf HKDF-SHA256(0x0001) | aead AES-128-GCM(0x0001) |
+//	config_id(1B 随机) | enc_len(0x0020) | enc(32B 随机) | payload_len | payload(随机)
+//
+// 总长 = 42 + payloadLen；payloadLen 从 Chrome 的候选集 {144,176,208,240} 随机取
+// （抓包实测 176，总长 218）。
 func echGreasePayload() []byte {
-	lens := []int{144, 176, 208, 240}
-	choice := make([]byte, 2)
-	if _, err := rand.Read(choice); err != nil {
-		choice = []byte{0, 0}
+	payloadLens := []int{144, 176, 208, 240}
+	seed := make([]byte, 1)
+	if _, err := rand.Read(seed); err != nil {
+		seed[0] = 0
 	}
-	payloadLen := lens[int(choice[0])%len(lens)] - 16 // 减 16 字节 AEAD 标签（对齐 BoringSSL 注释 "+16"）
-	if payloadLen < 0 {
-		payloadLen = 128
-	}
+	payloadLen := payloadLens[int(seed[0])%len(payloadLens)]
 
+	configID := make([]byte, 1)
+	enc := make([]byte, 32)
 	payload := make([]byte, payloadLen)
+	rand.Read(configID)
+	rand.Read(enc)
 	rand.Read(payload)
 
-	out := []byte{0x00, 0x00, 0x01, 0x00, 0x01, choice[1], 0x00, 0x00,
-		byte(payloadLen >> 8), byte(payloadLen)}
+	out := []byte{
+		0x00,        // outer: client hello
+		0x00, 0x01,  // kdf_id: HKDF-SHA256
+		0x00, 0x01,  // aead_id: AES-128-GCM
+		configID[0], // config_id（GREASE 随机）
+		0x00, 0x20,  // enc_len = 32
+	}
+	out = append(out, enc...)
+	out = append(out, byte(payloadLen>>8), byte(payloadLen))
 	return append(out, payload...)
 }

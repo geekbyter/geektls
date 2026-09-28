@@ -1,0 +1,139 @@
+{
+  "name": "powershell_7_5_3",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "0x1302",
+        "0x1301",
+        "0xc02c",
+        "0xc02b",
+        "0xc030",
+        "0xc02f",
+        "0xc024",
+        "0xc023",
+        "0xc028",
+        "0xc027",
+        "0xc00a",
+        "0xc009",
+        "0xc014",
+        "0xc013",
+        "0x009d",
+        "0x009c",
+        "0x003d",
+        "0x003c",
+        "0x0035",
+        "0x002f"
+      ],
+      "extensions": [
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 43,
+          "versions": [
+            "grease",
+            "0x0304",
+            "0x0303",
+            "0x0302",
+            "0x0301"
+          ]
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0804",
+            "0x0805",
+            "0x0806",
+            "0x0401",
+            "0x0501",
+            "0x0201",
+            "0x0403",
+            "0x0503",
+            "0x0203",
+            "0x0202",
+            "0x0601",
+            "0x0603"
+          ]
+        },
+        {
+          "type": 35
+        },
+        {
+          "type": 10,
+          "groups": [
+            "0x001d",
+            "0x0017",
+            "0x0018"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": "AA=="
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 51,
+          "key_shares": [
+            "0x001d",
+            "0x0017",
+            "0x0018"
+          ]
+        },
+        {
+          "type": 49
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 45,
+          "psk_modes": "AQ=="
+        },
+        {
+          "type": 41
+        }
+      ]
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        2,
+        0
+      ],
+      [
+        4,
+        65535
+      ]
+    ],
+    "window_update": 67043329,
+    "pseudo_header_order": [
+      "m",
+      "s",
+      "a",
+      "p"
+    ]
+  },
+  "identity": {
+    "headers": [
+      [
+        "user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Microsoft Windows 10.0.26100; zh-CN) PowerShell/7.5.3"
+      ]
+    ]
+  },
+  "grade": "E3",
+  "source": "tls_config-0.0.2/TLS_POWERSHELL_7_5_3"
+}

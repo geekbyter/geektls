@@ -87,6 +87,7 @@ var _ CryptoSetup = &cryptoSetup{}
 
 // NewCryptoSetupClient creates a new crypto setup for the client
 // clientHelloSpec 参数为 geektls patch（nil = 原行为）。
+// transportParamsOverride 参数为 geektls patch #7（空 = 原行为）。
 func NewCryptoSetupClient(
 	connID protocol.ConnectionID,
 	tp *wire.TransportParameters,
@@ -97,6 +98,7 @@ func NewCryptoSetupClient(
 	logger utils.Logger,
 	version protocol.Version,
 	clientHelloSpec *tls.ClientHelloSpec,
+	transportParamsOverride tls.TransportParameters,
 ) CryptoSetup {
 	cs := newCryptoSetup(
 		connID,
@@ -123,7 +125,7 @@ func NewCryptoSetupClient(
 		if err := uconn.ApplyPreset(clientHelloSpec); err != nil {
 			cs.presetErr = err
 		} else {
-			cs.conn = &uquicSpecConn{UQUICConn: uconn, spec: clientHelloSpec}
+			cs.conn = &uquicSpecConn{UQUICConn: uconn, spec: clientHelloSpec, tpOverride: transportParamsOverride}
 		}
 	} else {
 		cs.conn = tls.QUICClient(&tls.QUICConfig{

@@ -38,11 +38,18 @@
 `SpecToBogdan` 类型转换后注入——**tls.detail 现在对 TCP-TLS 与 QUIC-TLS 同时生效**。
 
 嗅探实证（tests/e2e/quic_sniff_test.go，RFC 9001 Initial 解密）：
-chrome_133 预设 QUIC 内层 hello JA4 = `q13d1516h3_8daaf6152771_a45c8c51e9ac`，
-与 TCP 侧仅差 q/t 协议标志；扩展线上顺序逐位一致；GREASE 存在。
+**2026-09-24 起，QUIC 内层 hello 不再是"TCP 形态换个标志"**——按真机实测裁剪为
+TLS1.3 形态（见下文「QUIC 内层 ClientHello 形态」）。当前 JA4(QUIC) =
+`q13d0311h3_55b375c5d22e_653d80c3fe9d`，与真 Chrome 149 (Windows) 的 **E1 实测值逐字符相同**。
 
-QUIC 化钳制规则（`clampSpecForQUIC`）：
-- supported_versions 过滤为 GREASE+0x0304，版本上下限收紧 1.3（QUIC 强制）
+QUIC 化钳制规则（`clampSpecForQUIC`，2026-09-24 起含 TLS1.3 专属裁剪）：
+- ciphers 只保留 TLS1.3 套件（`0x1301/0x1302/0x1303`）；QUIC 强制 1.3，TLS1.2 套件不得出现
+- 扩展剔 `11/23/35/65281`（TLS1.2 语义，对所有浏览器成立）+ profile 指定的额外项
+  （`http3.inner_hello_drop_extensions`，Chrome 实测 `[5,18]`）
+- GREASE 处理：`http3.inner_hello_drop_grease` 为真时，cipher / 扩展 / group / key_share /
+  version 五处**全不发** GREASE（Chrome 实测如此）；否则保留占位（其它浏览器族）
+- sig_algs 追加 `http3.inner_hello_extra_sig_algs`（Chrome 实测 `0x0201`，追加在末尾）
+- supported_versions 收紧为 0x0304（+ GREASE，视上一项而定）
 - ALPN / ALPS 重写为 h3（真实 Chrome QUIC hello 形态）
 - **ECH GREASE（65037）已补齐（P7-T1）**——注意一个互操作边界：bogdanfinn 的
   QUIC 服务端不处理 ECH 扩展会静默失败（其 server 端从没被 ECH-in-QUIC
@@ -79,9 +86,48 @@ QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT/复用
 | Alt-Svc 升级缓存 | ✅ 会话级 map（学习 `h3=` 广告；pytest 实测首访 h2 → 次访 h3） |
 | 0-RTT | ⚠️ 未接线：quic-go 客户端 0-RTT 依赖 DialEarly+会话票据缓存，engine 尚无连接/票据复用（P3 每请求一连接）；随 P7-T2 会话复用一起做 |
 
+## QUIC 内层 ClientHello 形态（E1 实测，2026-09-24）
+
+采集：`tests/e2e/e1_h3_test.go`（真实浏览器 `--origin-to-force-quic-on` 强制走 QUIC →
+本地 UDP 嗅探 RFC 9001 Initial），记录 `profiles/evidence/browsers/chrome_windows_h3.json`
+（Chrome 149.0.7827.54 / Windows）。
+
+| 项 | 真机实测 | 说明 |
+|---|---|---|
+| ciphers | `0x1301 / 0x1302 / 0x1303` | 纯 TLS1.3，**无 GREASE cipher** |
+| 扩展 | 11 项 `{0,10,13,16,27,43,45,51,57,65037,17613}` | = TCP 的 16 项剔 `5/11/18/23/35/65281` + 增 `57` |
+| supported_groups / key_shares | `{4588,29,23,24}` / `{4588,29}` | 均**无 GREASE** |
+| supported_versions | `{772}` | 无 GREASE |
+| signature_algorithms | TCP 的 8 项 + `0x0201` | QUIC 特有（rsa_pkcs1_sha1），追加在末尾 |
+| 扩展顺序 | **逐连接随机** | 沿用既有洗牌，无需另设顺序 |
+| JA4(QUIC) | `q13d0311h3_55b375c5d22e_653d80c3fe9d` | 我方现已**逐字符一致** |
+
+裁剪分工：`11/23/35/65281`（TLS1.2 语义）由 `clampSpecForQUIC` 硬编码，对所有浏览器成立；
+`5(status_request)` 与 `18(SCT)` 在 TLS1.3 里仍有意义，Chrome 在 QUIC 上不发属**实现选择**，
+因此由 profile 的 `http3.inner_hello_drop_extensions` 提供（不为 Firefox/Safari 臆造）。
+
+## transport params 可控边界（实测对照）
+
+| 参数 | 真机 (Chrome 149) | 我方 wire | 可控性 |
+|---|---|---|---|
+| max_idle_timeout | 30000 | 30000 | ✅ `transport_params` |
+| initial_max_data | **15728640** | 15728640 | ✅ `transport_params`（2026-09-24 按实测修正） |
+| initial_max_stream_data_* ×3 | 6291456 | 6291456 | ✅ 但三者共用 quic-go 的**一个**窗口值（粒度损失） |
+| initial_max_streams_bidi / uni | 100 / 103 | 100 / 103 | ✅ `transport_params` |
+| max_datagram_frame_size | 65536 | 16383 | ❌ quic-go 硬编码（仅 `EnableDatagrams` 决定存在与否） |
+| max_udp_payload_size | 1472 | 1452 | ❌ quic-go 硬编码 |
+| max_ack_delay | 不发 | 26 | ❌ quic-go 硬编码 |
+| 私有参数 `0x11` / `0x3128` | 有 | 无 | ❌ 需 `transport_params_raw` blob；blob 为整块替换、连接级参数不可钉死 ⇒ 待 fork 决策 |
+
+> `transport_params` 里只有 6 个键会被 `transportParamsToQUICConfig` 采纳
+> （max_idle_timeout / initial_max_data / initial_max_streams_* / initial_max_stream_data_*）；
+> 其余键**静默忽略**——预设已不再列这些无效键，避免"看似可控"的假象。
+
 ## 验收证据
 
-- `tests/e2e/quic_sniff_test.go`：Initial 解密嗅探，13 个 transport params
-  全部与 profile 一致；GREASE 参数存在；datagram ≥1200；内层 hello ALPN=h3。
+- `tests/e2e/quic_sniff_test.go`：Initial 解密嗅探；transport params 与 profile 一致；
+  GREASE 参数存在；datagram ≥1200；内层 hello ALPN=h3；**内层 JA4(QUIC) 与真机 E1 值
+  逐字符相同**（期望值取真机值，不再自算自比）。
+- `tests/e2e/e1_h3_test.go`：真实浏览器 H3 采集（需 `GEEKTLS_E1_H3_BROWSER`，默认跳过）。
 - `core/h3` / `core/engine` H3 用例（强制/竞速/回落）全绿；pytest 新增
   `test_h3_forced` / `test_h3_alt_svc_upgrade` 全绿。

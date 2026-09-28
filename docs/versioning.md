@@ -31,7 +31,22 @@
 
 | 渠道 | 形态 | 状态 |
 |---|---|---|
-| PyPI | wheel（geektls-0.1.0-py3-none-any.whl，含平台动态库） | 本地构建+安装验证通过；上传待账号与多平台矩阵（auditwheel/delocate，P8） |
+| PyPI | **平台标签 wheel**（`py3-none-<plat>`，含该平台的动态库） | 本地构建+安装验证通过；上传方案与 CI 见 `docs/plans/2026-09-28-pypi-release-plan.md` |
+
+**wheel 标签必须按平台区分（`py3-none-any` 是错误的）**：包内带原生动态库，
+标成 `any` 会让其他平台装完在加载库时失败。因为绑定是 ctypes（不依赖 CPython ABI），
+每个平台只需**一个**轮子，而不是每个 Python 版本一个：
+
+| 平台 | 标签 |
+|---|---|
+| Linux x86_64 | `manylinux_2_28_x86_64` |
+| Linux aarch64 | `manylinux_2_28_aarch64` |
+| macOS arm64 | `macosx_11_0_arm64` |
+| macOS x86_64 | `macosx_10_15_x86_64` |
+| Windows x64 | `win_amd64` |
+
+**不发 sdist**：从源码构建需要 Go 工具链 + C 编译器（失败率高），因此只发布 wheel；
+不支持的平台由绑定在加载库时给出明确报错。
 | npm | tgz（geektls-0.1.0.tgz，含动态库） | 本地构建+安装验证通过；上传待账号 |
 | Go module | `github.com/geektls/golang` | 发布前需移除 go.mod 里的本地 replace（见下） |
 

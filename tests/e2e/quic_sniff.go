@@ -281,6 +281,34 @@ func parseQUICTransportParams(data []byte) (map[uint64][]byte, error) {
 	return out, nil
 }
 
+// tpEntry 是一个保序的 transport parameter（T4-1 顺序断言用）。
+type tpEntry struct {
+	ID  uint64
+	Val []byte
+}
+
+// parseQUICTransportParamsOrdered 保序解析 QUIC transport parameters 扩展负载。
+func parseQUICTransportParamsOrdered(data []byte) ([]tpEntry, error) {
+	var out []tpEntry
+	r := &varintReader{b: data}
+	for r.pos < len(data) {
+		id, err := r.read()
+		if err != nil {
+			return nil, err
+		}
+		n, err := r.read()
+		if err != nil {
+			return nil, err
+		}
+		v, err := r.take(int(n))
+		if err != nil {
+			return nil, fmt.Errorf("tp %#x truncated", id)
+		}
+		out = append(out, tpEntry{ID: id, Val: v})
+	}
+	return out, nil
+}
+
 // clientHelloFromCrypto 把重组后的 TLS ClientHello 包上假 record 头，
 // 复用 profiles.FromClientHelloHex 解析。
 func clientHelloFromCrypto(crypto []byte) (*profiles.Profile, error) {

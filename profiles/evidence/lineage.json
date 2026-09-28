@@ -1,0 +1,2105 @@
+{
+  "reports": [
+    {
+      "family": "chrome",
+      "platform": "macOS",
+      "anchors": [
+        "137",
+        "141",
+        "142",
+        "143",
+        "152"
+      ],
+      "stability": {
+        "ciphers": [
+          "stable"
+        ],
+        "ext_10_groups": [
+          "stable"
+        ],
+        "ext_13_sig_algs": [
+          "@143→152: 0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601 → 0xeaea,0x0904,0x0905,0x0906,0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601"
+        ],
+        "ext_17513_alps": [
+          "stable"
+        ],
+        "ext_17613_alps": [
+          "stable"
+        ],
+        "ext_21_padding": [
+          "stable"
+        ],
+        "ext_27_cert_compression": [
+          "stable"
+        ],
+        "ext_28_record_size_limit": [
+          "stable"
+        ],
+        "ext_34_delegated": [
+          "stable"
+        ],
+        "ext_43_versions": [
+          "stable"
+        ],
+        "ext_45_psk_modes": [
+          "stable"
+        ],
+        "ext_51764_unknown_grease": [
+          "@143→152: (absent) → 00b804d679090a04d679090804d679090108839a648c9b2d010d04d67909050582df1302010582df13020e04d679090b08839a648c9b2d010b0582df13021404d679090c08839a648c9b2d010708839a648c9b2d010a0582df1302120582df13020d04d679090608839a648c9b2d010c0582df13020f08839a648c9b2d010904d679090f04d679090408839a648c9b2d01130582df1302130582df13020608839a648c9b2d010804d679090d04d679090708839a648c9b2d0112"
+        ],
+        "ext_51_key_shares": [
+          "stable"
+        ],
+        "ext_65037_ech": [
+          "stable"
+        ],
+        "ext_65281_renegotiation": [
+          "stable"
+        ],
+        "ext_order": [
+          "shuffled（该族逐连接洗牌，顺序不构成指纹）"
+        ],
+        "ext_set": [
+          "@143→152: 5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281 → 5,10,11,13,16,18,23,27,35,43,45,51,17613,51764,65037,65281"
+        ],
+        "h2_headers_priority": [
+          "stable"
+        ],
+        "h2_settings": [
+          "stable"
+        ],
+        "h2_window_update": [
+          "stable"
+        ],
+        "identity_header_order": [
+          "stable"
+        ]
+      },
+      "generated": {
+        "138": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "5-35-23-65281-18-51-27-10-45-11-17613-65037-16-43-13",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "139": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "5-35-23-65281-18-51-27-10-45-11-17613-65037-16-43-13",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "140": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "5-35-23-65281-18-51-27-10-45-11-17613-65037-16-43-13",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "144": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "145": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "146": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "147": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "148": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "149": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "150": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "151": [
+          {
+            "field": "ciphers",
+            "value": "grease-0x1301-0x1302-0x1303-0xc02b-0xc02f-0xc02c-0xc030-0xcca9-0xcca8-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "43-65037-27-11-65281-5-35-18-45-51-23-16-13-17613-10",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,35,43,45,51,17613,65037,65281",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "grease,0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "grease,0x11ec,0x001d,0x0017,0x0018",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "grease,0x11ec,0x001d",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "brotli",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "h2",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "unbounded@143-152",
+            "trusted": false
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:6291456,6:262144",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "15663105",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "(nil=Chrome 默认 excl:true,w:255)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,upgrade-insecure-requests,user-agent,accept,sec-fetch-site,sec-fetch-mode,sec-fetch-user,sec-fetch-dest,accept-encoding,accept-language,priority",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ]
+      }
+    },
+    {
+      "family": "edge",
+      "platform": "macOS",
+      "anchors": [
+        "141"
+      ],
+      "stability": {
+        "ciphers": [
+          "stable"
+        ],
+        "ext_10_groups": [
+          "stable"
+        ],
+        "ext_13_sig_algs": [
+          "stable"
+        ],
+        "ext_17513_alps": [
+          "stable"
+        ],
+        "ext_17613_alps": [
+          "stable"
+        ],
+        "ext_21_padding": [
+          "stable"
+        ],
+        "ext_27_cert_compression": [
+          "stable"
+        ],
+        "ext_28_record_size_limit": [
+          "stable"
+        ],
+        "ext_34_delegated": [
+          "stable"
+        ],
+        "ext_43_versions": [
+          "stable"
+        ],
+        "ext_45_psk_modes": [
+          "stable"
+        ],
+        "ext_51764_unknown_grease": [
+          "stable"
+        ],
+        "ext_51_key_shares": [
+          "stable"
+        ],
+        "ext_65037_ech": [
+          "stable"
+        ],
+        "ext_65281_renegotiation": [
+          "stable"
+        ],
+        "ext_order": [
+          "shuffled（该族逐连接洗牌，顺序不构成指纹）"
+        ],
+        "ext_set": [
+          "stable"
+        ],
+        "h2_headers_priority": [
+          "stable"
+        ],
+        "h2_settings": [
+          "stable"
+        ],
+        "h2_window_update": [
+          "stable"
+        ],
+        "identity_header_order": [
+          "stable"
+        ]
+      },
+      "generated": {}
+    },
+    {
+      "family": "firefox",
+      "platform": "macOS",
+      "anchors": [
+        "140",
+        "144"
+      ],
+      "stability": {
+        "ciphers": [
+          "stable"
+        ],
+        "ext_10_groups": [
+          "stable"
+        ],
+        "ext_13_sig_algs": [
+          "stable"
+        ],
+        "ext_17513_alps": [
+          "stable"
+        ],
+        "ext_17613_alps": [
+          "stable"
+        ],
+        "ext_21_padding": [
+          "stable"
+        ],
+        "ext_27_cert_compression": [
+          "stable"
+        ],
+        "ext_28_record_size_limit": [
+          "stable"
+        ],
+        "ext_34_delegated": [
+          "stable"
+        ],
+        "ext_43_versions": [
+          "stable"
+        ],
+        "ext_45_psk_modes": [
+          "stable"
+        ],
+        "ext_51764_unknown_grease": [
+          "stable"
+        ],
+        "ext_51_key_shares": [
+          "stable"
+        ],
+        "ext_65037_ech": [
+          "stable"
+        ],
+        "ext_65281_renegotiation": [
+          "stable"
+        ],
+        "ext_order": [
+          "stable"
+        ],
+        "ext_set": [
+          "stable"
+        ],
+        "h2_headers_priority": [
+          "stable"
+        ],
+        "h2_settings": [
+          "stable"
+        ],
+        "h2_window_update": [
+          "stable"
+        ],
+        "identity_header_order": [
+          "stable"
+        ]
+      },
+      "generated": {
+        "141": [
+          {
+            "field": "ciphers",
+            "value": "0x1301-0x1303-0x1302-0xc02b-0xc02f-0xcca9-0xcca8-0xc02c-0xc030-0xc00a-0xc009-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "23-65281-10-11-35-16-5-34-18-51-43-13-45-28-27-65037",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,28,34,35,43,45,51,65037,65281",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0503,0x0603,0x0804,0x0805,0x0806,0x0401,0x0501,0x0601,0x0203,0x0201",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "0x0403,0x0503,0x0603,0x0203",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "0x11ec,0x001d,0x0017,0x0018,0x0019,0x0100,0x0101",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "0x11ec,0x001d,0x0017",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "zlib,brotli,zstd",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "4001",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:131072,5:16384",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "12517377",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "excl:false,dep:0,w:41",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "user-agent,accept,accept-language,accept-encoding,upgrade-insecure-requests,sec-fetch-dest,sec-fetch-mode,sec-fetch-site,sec-fetch-user,priority,te",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "142": [
+          {
+            "field": "ciphers",
+            "value": "0x1301-0x1303-0x1302-0xc02b-0xc02f-0xcca9-0xcca8-0xc02c-0xc030-0xc00a-0xc009-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "23-65281-10-11-35-16-5-34-18-51-43-13-45-28-27-65037",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,28,34,35,43,45,51,65037,65281",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0503,0x0603,0x0804,0x0805,0x0806,0x0401,0x0501,0x0601,0x0203,0x0201",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "0x0403,0x0503,0x0603,0x0203",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "0x11ec,0x001d,0x0017,0x0018,0x0019,0x0100,0x0101",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "0x11ec,0x001d,0x0017",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "zlib,brotli,zstd",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "4001",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:131072,5:16384",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "12517377",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "excl:false,dep:0,w:41",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "user-agent,accept,accept-language,accept-encoding,upgrade-insecure-requests,sec-fetch-dest,sec-fetch-mode,sec-fetch-site,sec-fetch-user,priority,te",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ],
+        "143": [
+          {
+            "field": "ciphers",
+            "value": "0x1301-0x1303-0x1302-0xc02b-0xc02f-0xcca9-0xcca8-0xc02c-0xc030-0xc00a-0xc009-0xc013-0xc014-0x009c-0x009d-0x002f-0x0035",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_order",
+            "value": "23-65281-10-11-35-16-5-34-18-51-43-13-45-28-27-65037",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_set",
+            "value": "5,10,11,13,16,18,23,27,28,34,35,43,45,51,65037,65281",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_13_sig_algs",
+            "value": "0x0403,0x0503,0x0603,0x0804,0x0805,0x0806,0x0401,0x0501,0x0601,0x0203,0x0201",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_34_delegated",
+            "value": "0x0403,0x0503,0x0603,0x0203",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_43_versions",
+            "value": "0x0304,0x0303",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_45_psk_modes",
+            "value": "[1]",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_10_groups",
+            "value": "0x11ec,0x001d,0x0017,0x0018,0x0019,0x0100,0x0101",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51_key_shares",
+            "value": "0x11ec,0x001d,0x0017",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_27_cert_compression",
+            "value": "zlib,brotli,zstd",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_28_record_size_limit",
+            "value": "4001",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_21_padding",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65281_renegotiation",
+            "value": "00",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17513_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_17613_alps",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_65037_ech",
+            "value": "mode=grease",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "ext_51764_unknown_grease",
+            "value": "(absent)",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_settings",
+            "value": "1:65536,2:0,4:131072,5:16384",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_window_update",
+            "value": "12517377",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "h2_headers_priority",
+            "value": "excl:false,dep:0,w:41",
+            "source": "stable-in-window",
+            "trusted": true
+          },
+          {
+            "field": "identity_header_order",
+            "value": "user-agent,accept,accept-language,accept-encoding,upgrade-insecure-requests,sec-fetch-dest,sec-fetch-mode,sec-fetch-site,sec-fetch-user,priority,te",
+            "source": "stable-in-window",
+            "trusted": true
+          }
+        ]
+      }
+    },
+    {
+      "family": "safari",
+      "platform": "macOS",
+      "anchors": [
+        "18",
+        "26"
+      ],
+      "stability": {
+        "ciphers": [
+          "@18→26: grease-0x1301-0x1302-0x1303-0xc02c-0xc02b-0xcca9-0xc030-0xc02f-0xcca8-0xc00a-0xc009-0xc014-0xc013-0x009d-0x009c-0x0035-0x002f-0xc008-0xc012-0x000a → grease-0x1302-0x1303-0x1301-0xc02c-0xc02b-0xcca9-0xc030-0xc02f-0xcca8-0xc00a-0xc009-0xc014-0xc013-0x009d-0x009c-0x0035-0x002f-0xc008-0xc012-0x000a"
+        ],
+        "ext_10_groups": [
+          "@18→26: grease,0x001d,0x0017,0x0018,0x0019 → grease,0x11ec,0x001d,0x0017,0x0018,0x0019"
+        ],
+        "ext_13_sig_algs": [
+          "stable"
+        ],
+        "ext_17513_alps": [
+          "stable"
+        ],
+        "ext_17613_alps": [
+          "stable"
+        ],
+        "ext_21_padding": [
+          "@18→26: len=0,to=0 → (absent)"
+        ],
+        "ext_27_cert_compression": [
+          "stable"
+        ],
+        "ext_28_record_size_limit": [
+          "stable"
+        ],
+        "ext_34_delegated": [
+          "stable"
+        ],
+        "ext_43_versions": [
+          "@18→26: grease,0x0304,0x0303,0x0302,0x0301 → grease,0x0304,0x0303"
+        ],
+        "ext_45_psk_modes": [
+          "stable"
+        ],
+        "ext_51764_unknown_grease": [
+          "stable"
+        ],
+        "ext_51_key_shares": [
+          "@18→26: grease,0x001d → grease,0x11ec,0x001d"
+        ],
+        "ext_65037_ech": [
+          "stable"
+        ],
+        "ext_65281_renegotiation": [
+          "stable"
+        ],
+        "ext_order": [
+          "@18→26: 23-65281-10-11-16-5-13-18-51-45-43-27-21 → 23-65281-10-11-16-5-13-18-51-45-43-27"
+        ],
+        "ext_set": [
+          "@18→26: 5,10,11,13,16,18,21,23,27,43,45,51,65281 → 5,10,11,13,16,18,23,27,43,45,51,65281"
+        ],
+        "h2_headers_priority": [
+          "stable"
+        ],
+        "h2_settings": [
+          "stable"
+        ],
+        "h2_window_update": [
+          "stable"
+        ],
+        "identity_header_order": [
+          "stable"
+        ]
+      },
+      "generated": {},
+      "refused": {
+        "19": "refused：密码套件在 18→26 之间变过（边界未知）⇒ 拒绝内插，需要区间内锚点",
+        "20": "refused：密码套件在 18→26 之间变过（边界未知）⇒ 拒绝内插，需要区间内锚点",
+        "21": "refused：密码套件在 18→26 之间变过（边界未知）⇒ 拒绝内插，需要区间内锚点",
+        "22": "refused：密码套件在 18→26 之间变过（边界未知）⇒ 拒绝内插，需要区间内锚点",
+        "23": "refused：密码套件在 18→26 之间变过（边界未知）⇒ 拒绝内插，需要区间内锚点",
+        "24": "refused：密码套件在 18→26 之间变过（边界未知）⇒ 拒绝内插，需要区间内锚点",
+        "25": "refused：密码套件在 18→26 之间变过（边界未知）⇒ 拒绝内插，需要区间内锚点"
+      }
+    }
+  ]
+}

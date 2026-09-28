@@ -197,6 +197,14 @@ type Config struct {
 	// The spec's transport parameters extension is managed by quic-go as usual.
 	ClientHelloSpec *tls.ClientHelloSpec
 
+	// TransportParamsOverride, when non-empty, is written verbatim into the
+	// ClientHello's quic_transport_parameters extension in this exact order,
+	// replacing quic-go's own marshaled transport parameters (covers ordered
+	// / non-standard / GREASE transport params). Flow-control related values
+	// must still be consistent with the other Config fields.
+	// Added by geektls (see GEEKTLS_PATCHES.md).
+	TransportParamsOverride tls.TransportParameters
+
 	Tracer func(ctx context.Context, isClient bool, connID ConnectionID) qlogwriter.Trace
 }
 

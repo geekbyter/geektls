@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	utls "github.com/refraction-networking/utls"
 
@@ -26,8 +27,9 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 		return nil, fmt.Errorf("engine: only https is supported in P3 (got %q)", u.Scheme)
 	}
 
-	// cookie 注入（请求头里显式给的 Cookie 优先）
-	headers := s.appendCookieHeader(u, req.Headers)
+	// 身份注入（T2-1）：profile.identity 的缺省头补齐用户未提供的头部，
+	// 再注入 Cookie（请求头里显式给的 Cookie 优先）
+	headers := s.appendCookieHeader(u, s.applyIdentity(req.Headers))
 
 	var resp *Response
 	switch {
@@ -90,6 +92,27 @@ func (s *Session) doTCPLegacy(req *Request, u *url.URL, headers [][2]string) (*R
 	}
 	resp.SelfCheck = selfCheck(s.profile, tc.spec)
 	return resp, nil
+}
+
+// applyIdentity 把 profile.identity 的缺省请求头补齐到用户头部之前：
+// 用户请求里同名头（大小写不敏感）优先，不覆盖；identity 表内顺序即线上顺序。
+// 无 identity 节时原样返回，行为与注入前完全一致（冻结面安全）。
+func (s *Session) applyIdentity(headers [][2]string) [][2]string {
+	id := s.profile.Identity
+	if id == nil || len(id.Headers) == 0 {
+		return headers
+	}
+	present := make(map[string]bool, len(headers))
+	for _, kv := range headers {
+		present[strings.ToLower(kv[0])] = true
+	}
+	out := make([][2]string, 0, len(id.Headers)+len(headers))
+	for _, kv := range id.Headers {
+		if !present[strings.ToLower(kv[0])] {
+			out = append(out, kv)
+		}
+	}
+	return append(out, headers...)
 }
 
 // appendCookieHeader 注入 Cookie 头；显式 Cookie 头优先（不覆盖）。

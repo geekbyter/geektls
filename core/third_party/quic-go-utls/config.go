@@ -126,5 +126,6 @@ func populateConfig(config *Config) *Config {
 		Allow0RTT:                        config.Allow0RTT,
 		Tracer:                           config.Tracer,
 		ClientHelloSpec:                  config.ClientHelloSpec, // geektls patch
+		TransportParamsOverride:          config.TransportParamsOverride, // geektls patch
 	}
 }

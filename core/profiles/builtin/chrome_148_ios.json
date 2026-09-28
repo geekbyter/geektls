@@ -1,0 +1,229 @@
+{
+  "name": "chrome_148_ios",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "grease",
+        "0x1301",
+        "0x1302",
+        "0x1303",
+        "0xc02c",
+        "0xc02b",
+        "0xcca9",
+        "0xc030",
+        "0xc02f",
+        "0xcca8",
+        "0xc00a",
+        "0xc009",
+        "0xc014",
+        "0xc013",
+        "0x009d",
+        "0x009c",
+        "0x0035",
+        "0x002f",
+        "0xc008",
+        "0xc012",
+        "0x000a"
+      ],
+      "extensions": [
+        {
+          "type": 27242,
+          "grease_random": true
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 10,
+          "groups": [
+            "grease",
+            "0x001d",
+            "0x0017",
+            "0x0018",
+            "0x0019"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": [0]
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0403",
+            "0x0804",
+            "0x0401",
+            "0x0503",
+            "0x0203",
+            "0x0805",
+            "0x0805",
+            "0x0501",
+            "0x0806",
+            "0x0601",
+            "0x0201"
+          ]
+        },
+        {
+          "type": 18
+        },
+        {
+          "type": 51,
+          "key_shares": [
+            "grease",
+            "0x001d"
+          ]
+        },
+        {
+          "type": 45,
+          "psk_modes": [1]
+        },
+        {
+          "type": 43,
+          "versions": [
+            "grease",
+            "0x0304",
+            "0x0303",
+            "0x0302",
+            "0x0301"
+          ]
+        },
+        {
+          "type": 27,
+          "cert_compression": [
+            "zlib"
+          ]
+        },
+        {
+          "type": 2570,
+          "grease_random": true,
+          "data": "00"
+        },
+        {
+          "type": 21,
+          "padding_len": 390
+        },
+        {
+          "type": 41
+        }
+      ]
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        2,
+        0
+      ],
+      [
+        4,
+        2097152
+      ],
+      [
+        3,
+        100
+      ]
+    ],
+    "window_update": 10485760,
+    "pseudo_header_order": [
+      "m",
+      "s",
+      "p",
+      "a"
+    ],
+    "headers_priority": {
+      "exclusive": false,
+      "weight": 254
+    }
+  },
+  "http3": {
+    "enabled": true,
+    "quic_version": "0x00000001",
+    "transport_params": {
+      "initial_max_data": 15728640,
+      "initial_max_stream_data_bidi_local": 6291456,
+      "initial_max_stream_data_bidi_remote": 6291456,
+      "initial_max_stream_data_uni": 6291456,
+      "initial_max_streams_bidi": 100,
+      "initial_max_streams_uni": 103,
+      "max_idle_timeout": 30000
+    },
+    "inner_hello_drop_extensions": [
+      5,
+      18
+    ],
+    "inner_hello_extra_sig_algs": [
+      "0x0201"
+    ],
+    "inner_hello_drop_grease": true,
+    "grease_frames": true,
+    "settings": [
+      [
+        7,
+        268435456
+      ]
+    ],
+    "pseudo_header_order": [
+      "m",
+      "a",
+      "s",
+      "p"
+    ],
+    "priority_param": 984832
+  },
+  "tcp": {
+    "ttl": 64,
+    "mss": 1380
+  },
+  "identity": {
+    "headers": [
+      [
+        "accept",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      ],
+      [
+        "sec-fetch-site",
+        "none"
+      ],
+      [
+        "accept-encoding",
+        "gzip, deflate, br"
+      ],
+      [
+        "sec-fetch-mode",
+        "navigate"
+      ],
+      [
+        "user-agent",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/148.0.7778.166 Mobile/15E148 Safari/604.1"
+      ],
+      [
+        "accept-language",
+        "en-US,en;q=0.9"
+      ],
+      [
+        "sec-fetch-dest",
+        "document"
+      ]
+    ]
+  }
+}

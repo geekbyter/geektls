@@ -1,0 +1,97 @@
+{
+  "name": "okhttp_3_11_0",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "0xc02b",
+        "0xc02c",
+        "0xcca9",
+        "0xc02f",
+        "0xc030",
+        "0xcca8",
+        "0xc013",
+        "0xc014",
+        "0x009c",
+        "0x009d",
+        "0x002f",
+        "0x0035"
+      ],
+      "extensions": [
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 35
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0601",
+            "0x0603",
+            "0x0501",
+            "0x0503",
+            "0x0401",
+            "0x0403",
+            "0x0301",
+            "0x0303",
+            "0x0201",
+            "0x0203"
+          ]
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": "AA=="
+        },
+        {
+          "type": 10,
+          "groups": [
+            "0x0017",
+            "0x0018",
+            "0x0019"
+          ]
+        }
+      ]
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        4,
+        16777216
+      ]
+    ],
+    "window_update": 16711681,
+    "pseudo_header_order": [
+      "m",
+      "p",
+      "a",
+      "s"
+    ]
+  },
+  "identity": {
+    "headers": [
+      [
+        "user-agent",
+        "okhttp/3.11.0"
+      ]
+    ]
+  },
+  "grade": "E3",
+  "source": "tls_config-0.0.2/TLS_OKHTTP_3_11_0"
+}

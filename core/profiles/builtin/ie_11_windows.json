@@ -1,0 +1,114 @@
+{
+  "name": "ie_11_windows",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "0xc02c",
+        "0xc02b",
+        "0xc030",
+        "0xc02f",
+        "0xc024",
+        "0xc023",
+        "0xc028",
+        "0xc027",
+        "0xc00a",
+        "0xc009",
+        "0xc014",
+        "0xc013",
+        "0x009d",
+        "0x009c",
+        "0x003d",
+        "0x003c",
+        "0x0035",
+        "0x002f",
+        "0x000a"
+      ],
+      "extensions": [
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 10,
+          "groups": [
+            "0x001d",
+            "0x0017",
+            "0x0018"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": "AA=="
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0401",
+            "0x0501",
+            "0x0201",
+            "0x0403",
+            "0x0503",
+            "0x0203",
+            "0x0202",
+            "0x0601",
+            "0x0603"
+          ]
+        },
+        {
+          "type": 35
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 24
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        }
+      ]
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        3,
+        1024
+      ],
+      [
+        4,
+        10485760
+      ]
+    ],
+    "window_update": 10420225,
+    "pseudo_header_order": [
+      "m",
+      "p",
+      "a",
+      "s"
+    ]
+  },
+  "identity": {
+    "headers": [
+      [
+        "user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0) like Gecko"
+      ]
+    ]
+  },
+  "grade": "E3",
+  "source": "tls_config-0.0.2/TLS_IE_11"
+}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -26,13 +27,57 @@ type langResult struct {
 	Proto   string `json:"proto"`
 }
 
+// buildArtifact 返回当前平台构建产物的路径（不存在返回空串）。
+func buildArtifact(name string) string {
+	root, _ := filepath.Abs("../..")
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	p := filepath.Join(root, "build", name)
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+// sharedLibName 返回当前平台的动态库文件名。
+func sharedLibName() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "geektls.dll"
+	case "darwin":
+		return "libgeektls.dylib"
+	default:
+		return "libgeektls.so"
+	}
+}
+
+// pythonBin 返回**实际可执行**的 python 解释器。
+// 注意：Windows 上 `python3` 常是应用商店的占位入口（LookPath 能命中但执行返回 9009），
+// 因此必须试跑一次 --version 才算可用。
+func pythonBin() string {
+	candidates := []string{"python3", "python"}
+	if runtime.GOOS == "windows" {
+		candidates = []string{"python", "python3"}
+	}
+	for _, name := range candidates {
+		p, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		if err := exec.Command(p, "--version").Run(); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 // startEchoBinary 起 Go echo server 子进程，读 READY 行拿地址。
 func startEchoBinary(t *testing.T) string {
 	t.Helper()
-	root, _ := filepath.Abs("../..")
-	exe := filepath.Join(root, "build", "echo-server.exe")
-	if _, err := os.Stat(exe); err != nil {
-		t.Skip("echo-server.exe not built")
+	exe := buildArtifact("echo-server")
+	if exe == "" {
+		t.Skip("echo-server 未构建（先跑 make build）")
 	}
 	cmd := exec.Command(exe)
 	stdout, err := cmd.StdoutPipe()
@@ -67,12 +112,19 @@ func runBinding(t *testing.T, lang, base, preset string) langResult {
 	var cmd *exec.Cmd
 	switch lang {
 	case "python":
-		cmd = exec.Command("python", filepath.Join(root, "tests", "e2e", "crosslang", "selfcheck.py"), preset, base)
+		py := pythonBin()
+		if py == "" {
+			t.Skip("python 解释器不可用")
+		}
+		cmd = exec.Command(py, filepath.Join(root, "tests", "e2e", "crosslang", "selfcheck.py"), preset, base)
 	case "node":
+		if _, err := exec.LookPath("node"); err != nil {
+			t.Skip("node 不可用")
+		}
 		cmd = exec.Command("node", filepath.Join(root, "tests", "e2e", "crosslang", "selfcheck.js"), preset, base)
 	}
 	cmd.Env = append(os.Environ(),
-		"GEEDTLS_LIB="+filepath.Join(root, "build", "geektls.dll"),
+		"GEEDTLS_LIB="+filepath.Join(root, "build", sharedLibName()),
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

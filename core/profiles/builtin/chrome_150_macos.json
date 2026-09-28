@@ -1,0 +1,254 @@
+{
+  "name": "chrome_150_macos",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "grease",
+        "0x1301",
+        "0x1302",
+        "0x1303",
+        "0xc02b",
+        "0xc02f",
+        "0xc02c",
+        "0xc030",
+        "0xcca9",
+        "0xcca8",
+        "0xc013",
+        "0xc014",
+        "0x009c",
+        "0x009d",
+        "0x002f",
+        "0x0035"
+      ],
+      "extensions": [
+        {
+          "type": 19018,
+          "grease_random": true
+        },
+        {
+          "type": 43,
+          "versions": [
+            "grease",
+            "0x0304",
+            "0x0303"
+          ]
+        },
+        {
+          "type": 65037,
+          "ech": {
+            "mode": "grease"
+          }
+        },
+        {
+          "type": 27,
+          "cert_compression": [
+            "brotli"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": [0]
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 35
+        },
+        {
+          "type": 18
+        },
+        {
+          "type": 45,
+          "psk_modes": [1]
+        },
+        {
+          "type": 51,
+          "key_shares": [
+            "grease",
+            "0x11ec",
+            "0x001d"
+          ]
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0403",
+            "0x0804",
+            "0x0401",
+            "0x0503",
+            "0x0805",
+            "0x0501",
+            "0x0806",
+            "0x0601"
+          ]
+        },
+        {
+          "type": 17613,
+          "alpn": [
+            "h2"
+          ]
+        },
+        {
+          "type": 10,
+          "groups": [
+            "grease",
+            "0x11ec",
+            "0x001d",
+            "0x0017",
+            "0x0018"
+          ]
+        },
+        {
+          "type": 64250,
+          "grease_random": true,
+          "data": "00"
+        },
+        {
+          "type": 41
+        }
+      ],
+      "extension_permutation": true
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        1,
+        65536
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        4,
+        6291456
+      ],
+      [
+        6,
+        262144
+      ]
+    ],
+    "window_update": 15663105,
+    "pseudo_header_order": [
+      "m",
+      "a",
+      "s",
+      "p"
+    ]
+  },
+  "http3": {
+    "enabled": true,
+    "quic_version": "0x00000001",
+    "transport_params": {
+      "initial_max_data": 15728640,
+      "initial_max_stream_data_bidi_local": 6291456,
+      "initial_max_stream_data_bidi_remote": 6291456,
+      "initial_max_stream_data_uni": 6291456,
+      "initial_max_streams_bidi": 100,
+      "initial_max_streams_uni": 103,
+      "max_idle_timeout": 30000
+    },
+    "inner_hello_drop_extensions": [
+      5,
+      18
+    ],
+    "inner_hello_extra_sig_algs": [
+      "0x0201"
+    ],
+    "inner_hello_drop_grease": true,
+    "grease_frames": true,
+    "settings": [
+      [
+        7,
+        268435456
+      ]
+    ],
+    "pseudo_header_order": [
+      "m",
+      "a",
+      "s",
+      "p"
+    ],
+    "priority_param": 984832
+  },
+  "identity": {
+    "headers": [
+      [
+        "sec-ch-ua",
+        "\"Google Chrome\";v=\"150\", \"Chromium\";v=\"150\", \"Not)A;Brand\";v=\"24\""
+      ],
+      [
+        "sec-ch-ua-mobile",
+        "?0"
+      ],
+      [
+        "sec-ch-ua-platform",
+        "\"macOS\""
+      ],
+      [
+        "upgrade-insecure-requests",
+        "1"
+      ],
+      [
+        "user-agent",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+      ],
+      [
+        "accept",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+      ],
+      [
+        "sec-fetch-site",
+        "none"
+      ],
+      [
+        "sec-fetch-mode",
+        "navigate"
+      ],
+      [
+        "sec-fetch-user",
+        "?1"
+      ],
+      [
+        "sec-fetch-dest",
+        "document"
+      ],
+      [
+        "accept-encoding",
+        "gzip, deflate, br, zstd"
+      ],
+      [
+        "accept-language",
+        "en-US,en;q=0.9"
+      ],
+      [
+        "priority",
+        "u=0, i"
+      ]
+    ]
+  },
+  "grade": "E2i-u",
+  "source": "lineage:chrome@137,141,142,143,152"
+}

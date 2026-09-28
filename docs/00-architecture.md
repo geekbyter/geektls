@@ -11,16 +11,18 @@ geektls 需要一个能**逐字节控制 ClientHello** 的 TLS 栈、能控制�
 | 路线 | 代表项目 | 优势 | 劣势 | 结论 |
 |---|---|---|---|---|
 | **Go: uTLS + fhttp + quic-go fork** | bogdanfinn/tls-client、CycleTLS、noble-tls、fp | uTLS 是 ClientHello 伪造事实标准；fhttp fork 已解决 H2 SETTINGS 序/伪头序；bogdanfinn 的 quic-go fork 已解决 H3 指纹；preset 生态现成；c-shared 交付模式被 noble-tls 验证；逐字段 API 与 hex 回放天然可行 | 一致性靠"演"，需测试闭环兜底；c-shared 带 Go runtime（体积、GC 驻留）；跨 FFI 不能回调，需 poll/read 模型 | **采用** |
-| **curl-impersonate: curl + BoringSSL/NSS** | lwthiker/curl-impersonate、curl_cffi、primp | **直接编译浏览器自己的 TLS 栈**（Chrome→BoringSSL、Firefox→NSS），一致性是"构造性为真"；libcurl 纯 C API 绑定体验好，无 GC 驻留 | ① **H3/QUIC 不可控**：curl H3 走 ngtcp2/quiche，transport params/Initial 布局/H3 SETTINGS 在 libcurl 层拿不到，curl-impersonate 至今未交付 H3——而 H3 是我们的核心需求；② 逐字段控制与 hex 回放要打进 BoringSSL 补丁，libcurl 抽象是"选项"不是"字节"；③ **维护模式已被证伪**：主仓 2024-07 停更，每个新浏览器版本都要重打 curl+BoringSSL 补丁并跨平台重编 | 否决（不进产品；**进测试环**：其 Docker 镜像与 `tests/signatures` YAML 作为真浏览器栈 ground truth 裁决我们的输出，见 05 文档 L3） |
+| **curl-impersonate: curl + BoringSSL/NSS** | lwthiker/curl-impersonate、curl_cffi、primp | **直接编译浏览器自己的 TLS 栈**（Chrome→BoringSSL、Firefox→NSS），一致性是"构造性为真"；libcurl 纯 C API 绑定体验好，无 GC 驻留 | ① **H3/QUIC 可控度有限**（2026-09 修订）：原仓 `lwthiker/curl-impersonate` 停在 Chrome 116 时代且无 H3；活跃分支 `lexiforest/curl-impersonate` 2.0.0 已启用 H3/QUIC 指纹，但粒度是**预设级/有序条目级**——`ngtcp2_conn_set_local_transport_params_raw` 只接受整块序列化 blob，`nghttp3_conn_submit_settings` 只给 SETTINGS 条目序；GREASE 帧、伪头序、Initial 布局**仍不可控**；② 逐字段控制与 hex 回放要打进 BoringSSL 补丁，libcurl 抽象是"选项"不是"字节"；③ **维护成本高**（修订：不再是"已被证伪"，活跃分支正常跟进，维护成本仍是真问题）：每个新浏览器版本要重打 curl+BoringSSL+ngtcp2+nghttp3 四层补丁链（约 540KB 补丁）并跨平台重编 | 否决（不进产品；**进测试环**：其 Docker 镜像与 `tests/signatures` YAML 作为真浏览器栈 ground truth 裁决我们的输出，见 05 文档 L3；**ground truth 源统一改用活跃分支 `lexiforest/curl-impersonate`**） |
 | Rust: BoringSSL + 自研 H2/H3 | specter(warpsock)、wreq | BoringSSL 是 Chrome 亲妈栈，Chrome 字节级一致性好；无 GC；PyO3/napi-rs 绑定干净 | h2 crate 不暴露 SETTINGS 顺序/GREASE/preface 时序（specter 因此自写整个 H2 栈）；H3 需 quiche 定制；自研量巨大，工期不可控 | 否决（作为远期备选记录） |
 | Rust: rustls fork | XOR-op/ja-tools | rustls 纯净 | rustls 抽象层隐藏太多握手细节，ja-tools 需要 deep fork 且已落后上游 | 否决 |
-| **真栈转发 / Cronet 嵌入** | cyTlsXhr（真 Chrome 转发）、cycronet（Chromium Cronet 编进 Python） | 真实性完美（就是真 Chrome 在握手）；Cronet 自带真实 Chrome QUIC/H3 行为 | 可控性极低（cyTlsXhr 几乎为零，cycronet 仅能换 cipher 列表）；重资产（装浏览器/Cronet 构建链）；只能演 Chrome；cyTlsXhr 作者已弃坑转向 cycronet | 否决（不进产品；**cycronet 进测试环 L3**：作为"真 Chrome 栈"裁判补 curl-impersonate 无 H3 的缺口） |
+| **真栈转发 / Cronet 嵌入** | cyTlsXhr（真 Chrome 转发）、cycronet（Chromium Cronet 编进 Python） | 真实性完美（就是真 Chrome 在握手）；Cronet 自带真实 Chrome QUIC/H3 行为 | 可控性极低（cyTlsXhr 几乎为零，cycronet 仅能换 cipher 列表）；重资产（装浏览器/Cronet 构建链）；只能演 Chrome；cyTlsXhr 作者已弃坑转向 cycronet | 否决（不进产品；**进测试环 L3**：作为"真 Chrome 栈"裁判。2026-09 复核注：`cyTlsXhr` 本体为来源不明的 Windows 预编译产物，**不集成、不运行**，仅取"真浏览器转发作基准"的思路并以 Playwright/CDP 自建替代） |
 | Java: bctls fork | zhkl0228/impersonator | QUIC 指纹维度拆解最细 | JVM 分发重，三语言绑定体验差 | 否决（但其 QUIC 维度清单被吸收进 01 文档） |
 | 纯 Python socket 手搓 | pyhttpx | 灵活 | 只能 TLS1.2/H1，非生产级 | 否决（吸收为 fuzz 发生器思路） |
 
 **决策：Go 核心（uTLS 二开）+ C ABI + 三语言绑定。** 这是"指纹维度覆盖 × 交付速度 × 维护成本"的最优解；bogdanfinn/tls-client 已跟进到 Chrome 150 且月更，我们 fork 其依赖而非从零造。
 
 **curl-impersonate 路线赢在哪、我们如何补偿**：它唯一的结构性优势是"用真浏览器的栈，一致性构造性为真"。我们的补偿方式是把这个优势搬进验证侧——curl-impersonate Docker 镜像 + 其 signatures 库 + 真实浏览器 pcap 作为裁决 oracle（05 文档 L3），配合自家 nginx 采集套件（L2）做主裁判：uTLS 构造的字节与真浏览器有任何 diff，测试环会抓到并驱动修复。即"用 uTLS 的可控性交付，用 BoringSSL 的真实性验收"。
+
+2026-09-24 复核补充：`lexiforest/curl-impersonate` 的 `ngtcp2.patch` 用"调用方给整块序列化 transport params blob、库原样发出"实现参数顺序/非标参数可控——该**设计**已确认可移植到我们的 `quic-go-utls` fork（见方案 `docs/plans/2026-09-24-geektls-hardening-and-h3-plan.md` T4-1）；其 Initial 布局无钩子，印证该项为行业共性难点。
 
 ## 3. 仓库布局
 

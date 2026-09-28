@@ -35,6 +35,7 @@ func main() {
 		utils.DefaultLogger.WithPrefix("client"),
 		protocol.Version1,
 		nil, // geektls patch
+		nil, // geektls patch
 	)
 
 	config := testdata.GetTLSConfig()

@@ -53,18 +53,20 @@ func CompileDetailSeeded(d *profiles.Detail, rng *mrand.Rand) (*utls.ClientHello
 	// --- extensions（严格保序） ---
 	seen := map[uint16]bool{}
 	for i := range d.Extensions {
-		ext, err := compileExtension(&d.Extensions[i])
+		ext, err := compileExtension(&d.Extensions[i], rng)
 		if err != nil {
 			return nil, fmt.Errorf("compile: extensions[%d] (type=%d): %w", i, d.Extensions[i].Type, err)
 		}
 		spec.Extensions = append(spec.Extensions, ext)
 		seen[d.Extensions[i].Type] = true
 	}
-	if err := appendConvenienceExtensions(d, spec, seen); err != nil {
+	if err := appendConvenienceExtensions(d, spec, seen, rng); err != nil {
 		return nil, err
 	}
 	if d.Grease != nil && d.Grease.Extensions && !hasGreaseExtension(spec.Extensions) {
-		spec.Extensions = append([]utls.TLSExtension{&utls.UtlsGREASEExtension{}}, spec.Extensions...)
+		// Value 必须给随机 GREASE 值：uTLS 的 UtlsGREASEExtension.Read 把 Value
+		// 原样写出，零值会被写成扩展 type 0（= SNI），必须避免。
+		spec.Extensions = append([]utls.TLSExtension{&utls.UtlsGREASEExtension{Value: randomGrease(rng)}}, spec.Extensions...)
 	}
 
 	if d.ExtensionPermutation {
@@ -74,11 +76,26 @@ func CompileDetailSeeded(d *profiles.Detail, rng *mrand.Rand) (*utls.ClientHello
 }
 
 // compileUint16Token 解析 "0x1301" 或 "grease" 占位。
+// 字面 GREASE 值（0x?a?a）在 ciphers/groups/versions/key_share 上按 P1-T3 语义
+// 原样透传（用户可指定确切 GREASE 值）——这些字段由 uTLS 在握手期把
+// GREASE_PLACEHOLDER 换成随机值。
+// **例外**：sig_algs 与扩展 type 的 GREASE 值一律在编译期重取（见 randomGrease），
+// 因为 uTLS 对这两处不做握手期替换，钉死值会退化成常量特征。
 func compileUint16Token(s string) (uint16, error) {
 	if s == profiles.GreaseToken {
 		return utls.GREASE_PLACEHOLDER, nil
 	}
 	return profiles.ParseHex16(s)
+}
+
+// randomGrease 取一个随机 GREASE 值（RFC 8701：0x?a?a，共 16 个候选）。
+//
+// 为什么要在编译期自己取值：实测（grease_rerandomize_test.go）uTLS 只在
+// ciphers / curves / supported_versions / key_share 四处于握手期替换
+// GREASE_PLACEHOLDER，signature_algorithms 与扩展 type 是**原样写出**的。
+// CompileDetail 每次拨号调用一次，因此这里取值即等价于"逐连接重随机化"。
+func randomGrease(rng *mrand.Rand) uint16 {
+	return uint16(0x0a0a + 0x1010*rng.Intn(16))
 }
 
 func hasGreaseCipher(ciphers []uint16) bool {
@@ -127,7 +144,7 @@ func cryptoSeededRand() (*mrand.Rand, error) {
 
 // appendConvenienceExtensions 把 detail 级便捷字段编译为扩展并追加，
 // 跳过数组里已出现的类型。
-func appendConvenienceExtensions(d *profiles.Detail, spec *utls.ClientHelloSpec, seen map[uint16]bool) error {
+func appendConvenienceExtensions(d *profiles.Detail, spec *utls.ClientHelloSpec, seen map[uint16]bool, rng *mrand.Rand) error {
 	if len(d.CertCompression) > 0 && !seen[27] {
 		algos, err := certCompressionAlgos(d.CertCompression)
 		if err != nil {
@@ -144,7 +161,7 @@ func appendConvenienceExtensions(d *profiles.Detail, spec *utls.ClientHelloSpec,
 		spec.Extensions = append(spec.Extensions, &utls.FakeRecordSizeLimitExtension{Limit: *d.RecordSizeLimit})
 	}
 	if len(d.DelegatedCreds) > 0 && !seen[34] {
-		schemes, err := sigSchemes(d.DelegatedCreds)
+		schemes, err := sigSchemes(d.DelegatedCreds, rng)
 		if err != nil {
 			return fmt.Errorf("compile: delegated_credentials: %w", err)
 		}
@@ -155,7 +172,7 @@ func appendConvenienceExtensions(d *profiles.Detail, spec *utls.ClientHelloSpec,
 
 // compileExtension 按扩展号映射到 uTLS 的 TLSExtension 实现；
 // 未识别类型用 GenericExtension 透传 data（hex）。
-func compileExtension(e *profiles.Extension) (utls.TLSExtension, error) {
+func compileExtension(e *profiles.Extension, rng *mrand.Rand) (utls.TLSExtension, error) {
 	switch e.Type {
 	case 0: // server_name
 		// "auto" 是运行时占位：engine 层握手前必须填入实际 host
@@ -180,7 +197,7 @@ func compileExtension(e *profiles.Extension) (utls.TLSExtension, error) {
 	case 11: // ec_point_formats
 		return &utls.SupportedPointsExtension{SupportedPoints: e.PointFormats}, nil
 	case 13: // signature_algorithms
-		schemes, err := sigSchemes(e.SigAlgs)
+		schemes, err := sigSchemes(e.SigAlgs, rng)
 		if err != nil {
 			return nil, err
 		}
@@ -197,6 +214,10 @@ func compileExtension(e *profiles.Extension) (utls.TLSExtension, error) {
 				return nil, err
 			}
 			return &utls.GenericExtension{Id: 21, Data: data}, nil
+		}
+		// 实测填充长度（Safari 抓包给的字节数）：按该长度写全零负载。
+		if e.PaddingLen > 0 {
+			return &utls.GenericExtension{Id: 21, Data: make([]byte, e.PaddingLen)}, nil
 		}
 		// JA3/JA4R 有损入口的裸 21（无 padding_to）：策略不可知，
 		// 以"存在但零负载"形式保留（GenericExtension），保住 JA3/JA4 往返一致。
@@ -222,7 +243,7 @@ func compileExtension(e *profiles.Extension) (utls.TLSExtension, error) {
 		}
 		return nil, fmt.Errorf("record_size_limit wants 2-byte hex data, got %d bytes", len(data))
 	case 34: // delegated_credentials
-		schemes, err := sigSchemes(e.SigAlgs)
+		schemes, err := sigSchemes(e.SigAlgs, rng)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +267,7 @@ func compileExtension(e *profiles.Extension) (utls.TLSExtension, error) {
 		// 会话复用要求 spec 里显式带它（否则 uTLS initPskExt 会 panic）。
 		return &utls.UtlsPreSharedKeyExtension{}, nil
 	case 50: // signature_algorithms_cert
-		schemes, err := sigSchemes(e.SigAlgs)
+		schemes, err := sigSchemes(e.SigAlgs, rng)
 		if err != nil {
 			return nil, err
 		}
@@ -259,8 +280,11 @@ func compileExtension(e *profiles.Extension) (utls.TLSExtension, error) {
 				return nil, fmt.Errorf("key_shares[%d]: %w", i, err)
 			}
 			// Data 留空：uTLS 握手时生成；GREASE 位按 uTLS 约定给单字节 0。
+			// 注意：除了占位符本身，hex 回放带入的**字面 GREASE 组**（如 0x6a6a）
+			// 也必须给哑数据——否则 uTLS 会按真实曲线生成密钥失败，key_share 列表
+			// 残缺，服务端 HRR/decode 失败（corpus 对拍 chrome_137-143/safari 实证）。
 			share := utls.KeyShare{Group: g}
-			if g == utls.GREASE_PLACEHOLDER {
+			if g == utls.GREASE_PLACEHOLDER || isGreaseUint16(uint16(g)) {
 				share.Data = []byte{0}
 			}
 			shares = append(shares, share)
@@ -308,7 +332,15 @@ func compileExtension(e *profiles.Extension) (utls.TLSExtension, error) {
 			if err != nil {
 				return nil, err
 			}
-			return &utls.UtlsGREASEExtension{Value: e.Type, Body: body}, nil
+			// GreaseRandom=true：线上 type 每连接重取随机 GREASE 值（真浏览器行为，G12）。
+			// 默认 false：字面 GREASE 值按 P1-T3 原样透传（用户可钉死确切值），
+			// 该语义由 TestGreaseAllRFC8701Values 钉住。
+			// body 语义不变：Chrome 首个 GREASE 扩展空 body，第二个带 1 字节 0x00。
+			id := e.Type
+			if e.GreaseRandom {
+				id = randomGrease(rng)
+			}
+			return &utls.UtlsGREASEExtension{Value: id, Body: body}, nil
 		}
 		// 未识别类型：GenericExtension 透传 data。
 		data, err := hexBytes(e.Data)
@@ -325,6 +357,8 @@ func isGreaseUint16(v uint16) bool {
 }
 
 // groupToken 解析组名（"X25519"）/"grease"/"0x" hex 为 CurveID。
+// 字面 GREASE 值（如 hex 回放带入的 "0x6a6a"）按 P1-T3 语义原样返回；
+// key_share 的哑数据补齐在编译 KeyShareExtension 时按组值处理（见 case 51）。
 func groupToken(s string) (utls.CurveID, error) {
 	if s == profiles.GreaseToken {
 		return utls.CurveID(utls.GREASE_PLACEHOLDER), nil
@@ -338,12 +372,19 @@ func groupToken(s string) (utls.CurveID, error) {
 	return 0, fmt.Errorf("unknown group %q", s)
 }
 
-func sigSchemes(hexes []string) ([]utls.SignatureScheme, error) {
+func sigSchemes(hexes []string, rng *mrand.Rand) ([]utls.SignatureScheme, error) {
 	schemes := make([]utls.SignatureScheme, 0, len(hexes))
 	for i, h := range hexes {
 		v, err := compileUint16Token(h)
 		if err != nil {
 			return nil, fmt.Errorf("sig_algs[%d]: %w", i, err)
+		}
+		// GREASE 位（"grease" 或字面 0x?a?a）在编译期取随机值：uTLS 不对
+		// signature_algorithms 做握手期占位符替换（实测恒为 0x0a0a），
+		// 照搬占位符会退化成常量特征。
+		if isGreaseUint16(v) {
+			schemes = append(schemes, utls.SignatureScheme(randomGrease(rng)))
+			continue
 		}
 		schemes = append(schemes, utls.SignatureScheme(v))
 	}

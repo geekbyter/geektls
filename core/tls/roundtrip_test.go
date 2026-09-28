@@ -110,9 +110,10 @@ func TestClientHelloHexRoundTrip(t *testing.T) {
 		}
 	}
 
-	// 扩展线上顺序：逐一相等（GREASE 扩展归一化 type 即可，type 本身就是 GREASE 值）
-	ids1 := specExtIDs(t, spec1)
-	ids2 := specExtIDs(t, spec2)
+	// 扩展线上顺序：GREASE 归一化后逐一相等（GREASE 扩展 type 每次编译重取随机值，
+	// 见 grease_rerandomize_test.go；归一化后位置与数量必须逐项保真）。
+	ids1 := normalizeGreaseIDs(specExtIDs(t, spec1))
+	ids2 := normalizeGreaseIDs(specExtIDs(t, spec2))
 	if len(ids1) != len(ids2) {
 		t.Fatalf("extension count %d vs %d: %v vs %v", len(ids1), len(ids2), ids1, ids2)
 	}
@@ -142,6 +143,15 @@ func specExtIDs(t *testing.T, spec *utls.ClientHelloSpec) []uint16 {
 			t.Fatalf("unknown extension type %T", e)
 		}
 		out = append(out, id)
+	}
+	return out
+}
+
+// normalizeGreaseIDs 把扩展 id 列表里的 GREASE 值统一为占位常量。
+func normalizeGreaseIDs(ids []uint16) []uint16 {
+	out := make([]uint16, len(ids))
+	for i, v := range ids {
+		out[i] = normalizeGrease(v)
 	}
 	return out
 }

@@ -54,12 +54,44 @@ func (s *Session) connect(req *Request, u *url.URL) (*transportConn, error) {
 		tcp.Configure(&d, s.profile.TCP)
 	}
 
+	// 本次握手是否会带票据（缓存里有该 SNI 的票据即会）：仅用于决定失败后是否
+	// 值得丢票重试（见下）。缓存键就是 SNI（实测）。
+	hadTicket := false
+	if s.sessionCache != nil {
+		if _, ok := s.sessionCache.Get(host); ok {
+			hadTicket = true
+		}
+	}
+
+	tc, err := s.dialAndHandshake(&d, proxyURL, addr, host)
+	if err == nil {
+		return tc, nil
+	}
+	// 会话复用手握失败（对端不接受我们的 PSK binder，如 Go std 服务端——实测）。
+	// 浏览器同款行为：丢掉这张票据、改用全新握手重试一次。丢掉后 Get 必然 miss，
+	// 因此重试不会再带 PSK。
+	if !hadTicket {
+		return nil, err
+	}
+	if s.sessionCache != nil {
+		s.sessionCache.Put(host, nil) // uTLS 语义：Put(nil) = 删除该键
+	}
+	if tc, retryErr := s.dialAndHandshake(&d, proxyURL, addr, host); retryErr == nil {
+		return tc, nil
+	} else {
+		return nil, fmt.Errorf("%w（丢票回退后仍失败: %v）", err, retryErr)
+	}
+}
+
+// dialAndHandshake 完成一次"TCP（可经代理）+ 编译 spec + TLS 握手"。
+// spec 每次重新编译——它不可跨连接复用（见 tlscore.Handshake 文档）。
+func (s *Session) dialAndHandshake(d *net.Dialer, proxyURL, addr, host string) (*transportConn, error) {
 	var raw net.Conn
 	var err error
 	if proxyURL == "" {
 		raw, err = d.Dial("tcp", addr)
 	} else {
-		raw, err = dialViaProxy(&d, proxyURL, addr)
+		raw, err = dialViaProxy(d, proxyURL, addr)
 	}
 	if err != nil {
 		return nil, err

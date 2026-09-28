@@ -495,6 +495,7 @@ var newClientConnection = func(
 		logger,
 		s.version,
 		conf.ClientHelloSpec, // geektls patch
+		conf.TransportParamsOverride, // geektls patch
 	)
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(s.initialStream, s.handshakeStream, oneRTTStream)

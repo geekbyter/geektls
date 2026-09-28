@@ -1,0 +1,387 @@
+# capability-matrix.yml — 机器可读的能力矩阵
+# 源：docs/01-fingerprint-dimensions.md（人工维护的契约）；本文件为状态快照
+# 用途：CI 断言 / nginx 采集端变量映射 / 对外表述共用
+# status: implemented | partial | missing | not_controlled
+# evidence: E1 | E2 | E3 | E4 | local | unverified
+version: 1
+as_of: "2026-09-24"
+generated_from: docs/01-fingerprint-dimensions.md
+plan: docs/plans/2026-09-24-geektls-hardening-and-h3-plan.md
+
+layers:
+  tls:
+    - id: tls.legacy_version
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.cipher_suites
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.extension_order
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.grease_values_positions
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.supported_versions
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.signature_algorithms
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.supported_groups_point_formats
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.alpn
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.sni
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.key_share_mlkem
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.psk_key_exchange_modes
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.cert_compression
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.alps
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.record_size_limit_delegated_credentials
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.padding
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.ech
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.session_resumption_psk
+      target: A
+      status: implemented
+      evidence: E2
+      blocking: null
+      note: "G2a 结案（2026-09-24）：引擎默认开启、每次拨号重新编译 spec、复用失败丢票回退；真机 tls.peet.ws 与本地 std 服务端实测 resumed=true（DidResume 硬断言）；core/tls/resumption_test.go + core/engine/resumption_test.go"
+    - id: tls.session_resumption_0rtt
+      target: C
+      status: not_controlled
+      evidence: local
+      blocking: "G2b：TCP 侧**不可做**（uTLS/Go 客户端无 early_data 支持，上游注释 '0-RTT is not supported'，早数据代码仅在 c.quic!=nil 分支）；H3/QUIC 侧可做（quic-go allow0RTT/DialEarly + 会话缓存），按需开"
+    - id: tls.third_party_cross_check
+      target: A
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "第三方互证（2026-09-28）：curl_cffi 的“号称 Safari”profile 实测为 Edge/Chrome 形状，其 JA4 与我们 chrome_149_windows/edge_141_macos 逐字符相同（t13d1516h2_8daaf6152771_d8a2da3f94cd）；TestPresetJA4Pinned 钉住"
+    - id: tls.spec_single_use_contract
+      target: A
+      status: implemented
+      evidence: local
+      blocking: "uTLS ApplyPreset 会回写 spec（SNI/key_share/GREASE）⇒ spec 不可跨连接复用；engine 每拨号重编译 + Handshake 文档与提示 + core/tls/spec_reuse_test.go 回归"
+    - id: tls.preset_psk_placeholder
+      target: A
+      status: implemented
+      evidence: local
+      blocking: "预设缺 pre_shared_key(41) 占位 + 复用缓存命中 ⇒ uTLS panic 崩进程；生成器 normalizePskPlaceholder + TestPresetCarriesPskPlaceholder（双向：声明 1.3 者必须有且位于末尾；不声明 1.3 者必须没有）"
+    - id: tls.clienthello_hex_replay
+      target: A
+      status: implemented
+      evidence: E2
+    - id: tls.tls12_fallback_server_downgrade
+      target: A
+      status: implemented
+      evidence: E2
+      blocking: null
+      note: "G1 结案（2026-09-24）：服务端只提供 TLS1.2 时握手成功且 ClientHello 逐字段不变；tests/e2e/tls12_fallback_test.go，17 预设全绿"
+    - id: tls.tls12_only_client_shape
+      target: C
+      status: missing
+      evidence: null
+      blocking: "客户端自身上限=1.2 的被裁剪 CH 形态（无 supported_versions/key_share/psk_modes/compress_certificate/post_handshake_auth）未覆盖；属老浏览器版本覆盖，按需"
+    - id: tls.grease_rerandomization
+      target: A
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "G12 结案（2026-09-24）：sig_algs 编译期取值 + 扩展 type 的 grease_random 开关；13 预设 26 处已迁移；TestGreaseRerandomization 钉住 6 个采样位"
+    - id: tls.profile_header_identity_binding
+      target: A
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "T2-1（2026-09-24）：identity 节 + engine 统一注入（用户头优先）；fp oracle 硬断言 7 预设全绿；accept/accept-language/UA-CH 精确值待 E1 校准"
+
+  http2:
+    - id: h2.settings_order_values
+      target: A
+      status: implemented
+      evidence: E2
+    - id: h2.window_update
+      target: A
+      status: implemented
+      evidence: E2
+    - id: h2.priority_frames
+      target: A
+      status: implemented
+      evidence: E2
+    - id: h2.headers_priority
+      target: A
+      status: implemented
+      evidence: E2
+      blocking: null
+      note: "HEADERS 帧内嵌 priority（flags 0x20）。四族实测：Chrome/Edge excl=true/w=255、Firefox excl=false/w=41、Safari 17.3.1 excl=false/w=254、Safari 18.6 excl=false/w=255（2026-09-28 真 Safari 收口 G11 剩余面）；断言见 tests/e2e/fp_oracle_test.go"
+    - id: h2.pseudo_header_order
+      target: A
+      status: implemented
+      evidence: E2
+    - id: h2.hpack_indexing
+      target: A
+      status: missing
+      evidence: null
+      blocking: "H2-1：fhttp 无钩子；阶段 3 spike 决策"
+    - id: h2.connection_preface_timing
+      target: A
+      status: implemented
+      evidence: E2
+    - id: h2.missing_setting_signal
+      target: A
+      status: partial
+      evidence: local
+      blocking: "H2-2：缺失项断言待阶段 3"
+
+  http3_quic:
+    - id: h3.quic_version
+      target: A
+      status: implemented
+      evidence: local
+    - id: h3.transport_params_order_custom
+      target: A
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "T4-1（2026-09-24）：transport_params_raw blob 直通（vendor patch #7），顺序/值硬断言全绿"
+    - id: h3.nonstandard_transport_params
+      target: A
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "T4-1：任意 id + hex 值；GREASE 参数位置可控（H3-4 一并解决）"
+    - id: h3.initial_datagram_layout
+      target: A
+      status: missing
+      evidence: null
+      blocking: "D5：行业共性（packer 无钩子），结案不投入（T4-6）"
+    - id: h3.quic_grease_frames
+      target: A
+      status: implemented
+      evidence: unverified
+      blocking: "H3-3：E2 验证待阶段 4"
+    - id: h3.settings_order_values
+      target: A
+      status: implemented
+      evidence: E4
+      blocking: "H3-2/H3-3：4 预设 H3 profile 为空，证据待升 E2"
+    - id: h3.pseudo_header_order
+      target: A
+      status: implemented
+      evidence: E4
+      blocking: "H3-3：证据待升 E2"
+    - id: h3.zero_rtt
+      target: C
+      status: missing
+      evidence: null
+      blocking: "H3-5：依赖 QUIC 会话缓存（T4-5）"
+    - id: h3.h2_h3_racing
+      target: C
+      status: implemented
+      evidence: local
+    - id: h3.alt_svc_cache
+      target: C
+      status: implemented
+      evidence: local
+
+  tcp:
+    - id: tcp.ttl
+      target: B
+      status: implemented
+      evidence: local
+    - id: tcp.mss
+      target: B
+      status: partial
+      evidence: local
+      blocking: "Windows 不支持（WSAENOPROTOOPT），上游限制"
+    - id: tcp.window_size
+      target: B
+      status: partial
+      evidence: unverified
+      blocking: "仅 Linux 探测模式；探测不影响真实连接；阶段 5 降级承诺（T5-1）"
+    - id: tcp.window_scale_options_order
+      target: B
+      status: partial
+      evidence: unverified
+      blocking: "同 tcp.window_size"
+    - id: tcp.ip_flags
+      target: B
+      status: missing
+      evidence: null
+      blocking: "不做"
+
+  http1:
+    - id: http1.header_order_case
+      target: A
+      status: implemented
+      evidence: E2
+    - id: http1.method_version_string
+      target: A
+      status: implemented
+      evidence: E2
+    - id: http1.redirect_cookie_reuse
+      target: C
+      status: partial
+      evidence: local
+      blocking: "E-1：连接复用未实现；连接池做成可选开关（默认关）"
+    - id: http1.request_timing
+      target: C
+      status: partial
+      evidence: null
+      blocking: "仅 delay 钩子，不做精确时钟"
+
+evidence_baselines:
+  e1_real_browser:
+    tool: tests/e2e/cmd/e1-browser
+    records: profiles/evidence/browsers/
+    captured: "2026-09-24"
+    items:
+      - name: chrome_windows
+        browser: Chrome 149.0.7827.54 (Windows)
+        compared_to: chrome_150
+        result: exact_match
+        note: "ciphers/扩展集合/curves/points/versions/sig_algs/ALPN + H2 SETTINGS/WINDOW_UPDATE 全等"
+      - name: edge_windows
+        browser: Edge 153.0.4234.48 (Windows)
+        compared_to: edge_141_macos
+        result: diff
+        note: "sig_algs 多 0x0904/0x0905/0x0906（rsa_pss_pss_*，Chromium ≥150 新增）"
+  firefox_156_windows:
+    source: "真 Firefox 156 / Windows 对 tls.peet.ws 的字段级实测（2026-09-24）"
+    grade: E1r
+    grade_note: "真机 + 外部 oracle 逐字段记录，无原始 ClientHello 字节（与 Chrome/Edge 的字节级 E1 区分）"
+    preset: firefox_156_windows
+    guard: tests/e2e/firefox_groundtruth_test.go
+    fixed: "Firefox 导航身份头补全为实测 11 头（含 te: trailers、无 UA-CH）；首访发 35 / 复访用 41 的形态建模；HEADERS 内嵌 priority 按实测修正（excl=false/weight=41）"
+    extra_captures:
+      - "2026-09-24 无痕窗口第二次实测：14 项扩展（**无 35/45/41**，即关闭会话恢复）＋ `sec-gpc: 1`（用户偏好，不建模）＋ HEADERS priority 同为 excl=false/weight=42 ⇒ 与普通窗口一致"
+    open_gaps: [G13]
+  chrome_154_macos:
+    source: "真 Chrome 154 / macOS 对 tls.peet.ws 的字段级实测（2026-09-28）"
+    grade: E1r
+    grade_note: "真机 + 外部 oracle 逐字段记录，无原始 ClientHello 字节（与 Chrome/Edge 字节级 E1 区分）"
+    preset: chrome_154_macos
+    guard: core/tls/presets_test.go（TestPresetJA4Pinned / TestPresetECHIsNotFrozenLiteral）
+    fixed: "新增 154/macOS 预设；JA4 与 chrome_152_macos 逐字符相同（152→154 TLS 面无漂移）；sec-ch-ua 新版形态（Chromium 在前 + Not A(Brand;v=99）；UA-CH 断言放宽为不钉位置"
+    open_gaps: ["H3 未实测（http3 节借自 chrome_152_macos，为免 H3 露通用 Go 客户端）", "扩展 51764 子项顺序：Chrome 侧洗牌 vs 我们转录重排，未定论"]
+  safari_17_3_macos:
+    source: "真 Safari 17.3.1 / macOS 对 tls.peet.ws 的字段级实测（2026-09-28）"
+    grade: E1r
+    grade_note: "真机 + 外部 oracle 逐字段记录，无原始 ClientHello 字节"
+    preset: safari_17_3_macos
+    guard: core/tls/presets_test.go（TestPresetJA4Pinned / TestPresetSafariPadding）
+    fixed: "新增：21 cipher（含 3DES 三条）、14 扩展、padding 390B、sig_algs 含 ecdsa_sha1、HEADERS priority excl=false/w=254、H2 四段 m,s,p,a；JA3/JA4 与抓包逐字符一致（773906b0… / t13d2014h2_a09f3c656075_14788d8d241b）"
+    open_gaps: ["H3 未实测（Safari 的 QUIC 参数属族内独立，不能靠 Chromium 继承）"]
+  safari_18_6_macos:
+    source: "真 Safari 18.6 / macOS 对 tls.peet.ws 的字段级实测（2026-09-28）"
+    grade: E1r
+    grade_note: "真机 + 外部 oracle 逐字段记录，无原始 ClientHello 字节（故只能手写入库；生成器要求原始 hex 标本）"
+    preset: safari_18_6_macos
+    guard: core/tls/presets_test.go（TestPresetJA4Pinned / TestPresetSafariPadding）
+    fixed: "新增：8 头导航形态含 priority、padding 394B、HEADERS priority excl=false/w=255、SETTINGS 含 9(NO_RFC7540_PRIORITIES)、H2 四段 m,s,a,p；JA3/JA4 与抓包逐字符一致"
+    open_gaps: ["H3 未实测", "safari_18 / safari_26_macos 为无实测来源的历史预设（JA4 t13d2013…，13 扩展、wire≈2.9KB vs 真机≈1.26KB）⇒ 待校验；导航场景请用 safari_17_3_macos / safari_18_6_macos"]
+  ios_17_2_trio:
+    source: "同一台 iPhone / iOS 17.2 / 同一网络：Safari、Chrome(CriOS 148)、Edge(EdgiOS 148) 对 tls.peet.ws 的字段级实测（2026-09-28）"
+    grade: E1r
+    grade_note: "真机 + 外部 oracle 逐字段记录，无原始 ClientHello 字节"
+    presets: [safari_17_2_ios, chrome_148_ios, edge_148_ios]
+    guard: core/tls/presets_test.go（TestIOSBrowsersShareWebKitShape / TestPresetJA4Pinned）
+    finding: "iOS 上第三方浏览器必须用 WebKit ⇒ 三者 TLS/H2 面逐字符相同（JA4 t13d2014h2_a09f3c656075_14788d8d241b），唯一差异是 UA；且与 macOS Safari 17.3.1 的 JA3/JA4 相同 ⇒ WebKit 形态跨平台一致（仅 H2 setting 4 不同：iOS 2097152 / macOS 4194304）"
+    tcp_note: "首个可信真机移动端 SYN：mss=1380/win=65535/ws=6/无时间戳/ip_id=0/选项补至 40B —— Apple 设备典型形态"
+    open_gaps: ["H3 未实测", "iOS 新版（18/26）未采"]
+  android_14_trio:
+    source: "同一台 Android 14 手机：Chrome 154、Edge 153(EdgA)、Firefox 156 对 tls.peet.ws 的字段级实测（2026-09-28）"
+    grade: E1r
+    grade_note: "真机 + 外部 oracle 逐字段记录，无原始 ClientHello 字节"
+    presets: [chrome_154_android, edge_153_android, firefox_156_android]
+    guard: core/tls/presets_test.go（TestCrossPlatformSameVersionShape / TestPresetJA4Pinned）
+    findings:
+      - "Chromium 与 Firefox 的 TLS 面**跨平台一致**：JA4 与桌面同版本逐字符相同（Android 154==macOS 154、Android 153==Windows 153、Android 156==Windows 156）"
+      - "Firefox 的 H2 SETTINGS **随平台不同**（Windows 1:65536/4:131072 vs Android 1:4096/4:32768）⇒ H2 按平台各留一份；Chromium 无此差异"
+      - "sec-ch-ua **按版本固定而非每会话随机**（跨平台双样本逐字符相同）⇒ 不做 UA-CH 洗牌；docs/08 S1 前半结案"
+      - "Chrome/Android 的 UA 是缩减形态（Android 10; K），Firefox 不缩减"
+    open_gaps: ["H3 未实测（http3 节借用桌面 Chromium 参数）", "扩展 51764 子项顺序仍待同版本双抓判定"]
+  preset_coverage:
+    source: "自测（E1/E1r/E2）+ 第三方导入 tls_config-0.0.2（E3）"
+    grade_rule: "预设的 grade 留空 = 本项目自测；\"E3\" = 第三方配置集导入，未经我们实测。所有 E1 级断言（fp oracle / GT / TLS1.2 回退）一律跳过 E3"
+    counts: "自测 29 + 谱系内插 14 + 第三方 E3 319 = 362"
+    lineage:
+      tool: "tests/e2e/cmd/gen-profiles -lineage（代码 lineage.go，测试 lineage_test.go）"
+      anchors: "chrome 137,141,142,143,152 / edge 141 / firefox 140,144 / safari 18,26（我们自己的真机抓包）"
+      mechanism: "逐字段跨版本稳定性判定 + step 语义内插（identity 按目标版本重算）+ 窗口外拒绝 + 密码套件变化拒绝 + 逐字段可信度标注"
+      output: "profiles/evidence/lineage.json（含每个内插版本的逐字段来源）"
+      result: "chrome 138/139/140=E2i、144–151=E2i-u（3 个未定界字段）、firefox 141–143=E2i；safari 19–25 按设计拒绝"
+      evolution_findings: ["Chrome 143→152：新增 51764；sig_algs 增 GREASE 与 ML-DSA 0x0904/0905/0906", "Safari 18→26：ciphers 序变化、supported_versions 丢 1.1/1.0、groups/key_shares 加 0x11ec(X25519MLKEM768)、padding 消失"]
+    docs: "docs/09-alignment-and-superiority.md（与 curl_cffi / curl-impersonate / tls_client / cycletls / uls / gospider / pyhttpx / requests_go 的对齐与超越）"
+    families: "29 族：opera/chrome/curl/safari/firefox/charles/edge/wechat/okhttp/reqable/ie/powershell/heytap/mqq/miui/huawei/quarkpc/vivo/gold/uc/… + safari/vivo 等子平台"
+    pipeline: "tests/e2e/cmd/import-tlsconfig/{dump.py,main.go}（可复现：快照入库 → 转换 → 落盘 → 清理陈旧 E3）"
+    guard: "core/profiles/provenance_test.go"
+    crosscheck: "第三方与实测对拍：chrome_131_windows / chrome_141_macos / edge_141_macos / safari_17_3_macos 全部一致 ✓；chrome_133_windows（cipher 序）与 firefox_135_windows（缺 18/27）有差异 ⇒ 登记为待重测（docs/08 S8/S9）"
+    unsupported: ["无法表达\"不发连接级 WINDOW_UPDATE\"（window_update=0 与未设置同义）", "无法表达\"首个请求用 stream_id=3\"（Firefox 实测如此，本库固定 1）"]
+  h3_e1:
+    tool: tests/e2e/e1_h3_test.go
+    records: profiles/evidence/browsers/chrome_windows_h3.json
+    captured: "2026-09-24"
+    status: partial
+    note: "采集链路已建（RFC 9001 Initial 嗅探 + --origin-to-force-quic-on），Chrome 149 已采到；Firefox/Safari 待环境"
+    gaps:
+      - id: H3-6
+        what: "QUIC 内层 ClientHello 未做 TLS1.3 专属裁剪（真机 3 cipher / 11 扩展 / 无 GREASE / sig_algs 含 0x0201）"
+        status: fixed
+        fixed: "2026-09-24"
+        note: "http3.inner_hello_drop_extensions / inner_hello_extra_sig_algs / inner_hello_drop_grease + clampSpecForQUIC 裁剪；我方 JA4(QUIC) 现与真机一致 = q13d0311h3_55b375c5d22e_653d80c3fe9d（quic_sniff_test.go 按 E1 值钉住）"
+      - id: H3-7
+        what: "H3 transport params 值与缺失项与真机不符"
+        status: partial
+        fixed: "2026-09-24 部分"
+        note: "已修 initial_max_data=15728640 并删除 3 个无效键（ack_delay_exponent/max_ack_delay/active_connection_id_limit）；残余 max_datagram_frame_size(16383 vs 65536)/max_udp_payload_size(1452 vs 1472)/max_ack_delay 多发/私有参数 0x11,0x3128 需 transport_params_raw blob，而 blob 整块替换与连接级参数冲突 ⇒ 待 fork 决策"
+
+verification:
+  baseline_ok: true
+  baseline_cmd: "cd core && go build ./... && go test ./..."
+  baseline_date: "2026-09-24"
+  notes:
+    - "core 7 包 go build/test 全绿（Windows/go1.27.0）"
+    - "c-shared 构建需 gcc（本机暂缺），不影响纯 Go 开发"
+    - "external oracle 测试为 //go:build external、只打印不断言（V-3，阶段 1 修）"
+    - "2026-09-24 追加：tests/e2e 全套绿，含 fp 第二 oracle（17 预设 TLS+H2 逐字段）、G1 TLS1.2 回退（17 预设）、corpus 语料重放；core 7 包全绿"
+    - "2026-09-24 第三轮：G11 收口（HEADERS 内嵌 priority 分族 + oracle 断言，Safari 未实测已登记）；spec 复用契约与 PSK 占位守门（core/tls/spec_reuse_test.go、TestPresetCarriesPskPlaceholder）；会话复用结案 G2a（resumed=true 真机+本地；engine 丢票回退）；e2e/core 全绿"
+    - "2026-09-28 第四轮：第三方互证（curl_cffi 该 profile 实为 Edge 形状，JA4 与我们逐字符同）；0-RTT 取证（TCP 侧依赖栈不可做、H3 侧可做）；macOS Chrome 154 实测→新增 chrome_154_macos（JA4 与 152 相同）+ CH 归一化（normalizeECHGrease，10 预设）+ UA-CH 断言放宽（三样本三顺序）；core/e2e 全绿"
+    - "2026-09-28 第五轮：真 Safari 两版实测（17.3.1 / 18.6）→ 新增 safari_17_3_macos、safari_18_macos 换为实测导航形态；G11 收口（四族 priority 全实测，Safari exclusive=false）；新增 padding_len 表达 + TestPresetSafariPadding；更正“Safari 从不发 GREASE”的错误论断；TCP SYN 判定为中转节点产物（不改 tcp 节）；core/e2e 全绿"
+    - "2026-09-28 第六轮：iOS 17.2 三份实测（Safari/CriOS/EdgiOS）→ 新增 safari_17_2_ios / chrome_148_ios / edge_148_ios；发现并钉住“iOS 三兄弟共用 WebKit TLS/H2 形态（唯一差异是 UA）”；新增 docs/08 待补采样计划（plan）；core/e2e 全绿、生成器守门 0 差异"
+    - "2026-09-28 第七轮：Android 14 三份实测（Chrome/Edge/Firefox）→ 新增 chrome_154_android / edge_153_android / firefox_156_android；钉住“TLS 跨平台一致 + Firefox 的 H2 随平台不同 + sec-ch-ua 按版本固定（否掉每会话随机）”；docs/08 S1 前半结案；core/e2e 全绿"
+    - "2026-09-28 第八轮：导入第三方指纹集 tls_config-0.0.2（可复现管线 dump.py+import-tlsconfig）→ 预设 29→348（29 族，含 curl/okhttp/IE/代理工具与微信/UC/QQ/夸克等 App 浏览器），并覆盖 G1 的 1.2-era 面；新增 grade/source 证据分级与 provenance 守门，E1 断言全部跳过 E3；交叉校验 4 条完全一致 ✓、发现 2 条差异（chrome_133 序 / firefox_135 缺扩展）登记待测；core/e2e 全绿"

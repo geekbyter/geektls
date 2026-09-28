@@ -1,0 +1,203 @@
+{
+  "name": "opera_71_0_3770_148_windows",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "grease",
+        "0x1301",
+        "0x1302",
+        "0x1303",
+        "0xc02b",
+        "0xc02f",
+        "0xc02c",
+        "0xc030",
+        "0xcca9",
+        "0xcca8",
+        "0xc013",
+        "0xc014",
+        "0x009c",
+        "0x009d",
+        "0x002f",
+        "0x0035"
+      ],
+      "extensions": [
+        {
+          "type": 39578,
+          "grease_random": true
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 10,
+          "groups": [
+            "grease",
+            "0x001d",
+            "0x0017",
+            "0x0018"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": "AA=="
+        },
+        {
+          "type": 35
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "grease",
+            "0x0403",
+            "0x0804",
+            "0x0401",
+            "0x0503",
+            "0x0805",
+            "0x0501",
+            "0x0806",
+            "0x0601"
+          ]
+        },
+        {
+          "type": 18
+        },
+        {
+          "type": 51,
+          "key_shares": [
+            "grease",
+            "0x001d"
+          ]
+        },
+        {
+          "type": 45,
+          "psk_modes": "AQ=="
+        },
+        {
+          "type": 43,
+          "versions": [
+            "grease",
+            "0x0304",
+            "0x0303",
+            "0x0302",
+            "0x0301"
+          ]
+        },
+        {
+          "type": 27,
+          "cert_compression": [
+            "brotli"
+          ]
+        },
+        {
+          "type": 21,
+          "padding_to": 512
+        },
+        {
+          "type": 14906,
+          "grease_random": true,
+          "data": "00"
+        },
+        {
+          "type": 41
+        }
+      ],
+      "extension_permutation": true
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        1,
+        65536
+      ],
+      [
+        3,
+        1000
+      ],
+      [
+        4,
+        6291456
+      ],
+      [
+        6,
+        262144
+      ]
+    ],
+    "window_update": 15663105,
+    "pseudo_header_order": [
+      "m",
+      "a",
+      "s",
+      "p"
+    ],
+    "headers_priority": {
+      "exclusive": true,
+      "weight": 255
+    }
+  },
+  "http3": {
+    "enabled": true,
+    "quic_version": "0x00000001",
+    "transport_params": {
+      "initial_max_data": 15728640,
+      "initial_max_stream_data_bidi_local": 6291456,
+      "initial_max_stream_data_bidi_remote": 6291456,
+      "initial_max_stream_data_uni": 6291456,
+      "initial_max_streams_bidi": 100,
+      "initial_max_streams_uni": 103,
+      "max_idle_timeout": 30000
+    },
+    "inner_hello_drop_extensions": [
+      5,
+      18
+    ],
+    "inner_hello_extra_sig_algs": [
+      "0x0201"
+    ],
+    "inner_hello_drop_grease": true,
+    "grease_frames": true,
+    "settings": [
+      [
+        7,
+        268435456
+      ]
+    ],
+    "pseudo_header_order": [
+      "m",
+      "a",
+      "s",
+      "p"
+    ],
+    "priority_param": 984832
+  },
+  "identity": {
+    "headers": [
+      [
+        "user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36 OPR/71.0.3770.148"
+      ]
+    ]
+  },
+  "grade": "E3",
+  "source": "tls_config-0.0.2/TLS_OPR_71_0_3770_148"
+}

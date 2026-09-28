@@ -21,6 +21,16 @@ type Profile struct {
 	TCP      *TCPProfile      `json:"tcp,omitempty"`      // P6
 	HTTP1    *HTTP1Profile    `json:"http1,omitempty"`    // P3
 	Behavior *BehaviorProfile `json:"behavior,omitempty"` // P3
+	Identity *IdentityProfile `json:"identity,omitempty"` // T2-1
+
+	// Grade / Source 是**证据等级**与其出处（第三方导入用）。
+	//
+	// 约定：**留空 = 本项目自测**（E1 真机抓包 / E1r 字段级实测 / E2 本机可复现）；
+	// "E3" = 第三方配置集导入，**未经我们实测**。回归测试里所有"E1 断言"
+	// （真机实测的 JA3/JA4、身份头顺序、HEADERS priority 等）都必须跳过 E3，
+	// 否则等于用第三方的猜测去"验证"第三方的猜测。
+	Grade  string `json:"grade,omitempty"`
+	Source string `json:"source,omitempty"`
 }
 
 // TLSProfile 的三种便捷入口互斥且优先于 Detail（P1-T5 编译为 Detail）。
@@ -90,6 +100,18 @@ type Extension struct {
 	// type 65037 (0xfe0d)：ECH。
 	ECH *ECHConfig `json:"ech,omitempty"`
 
+	// type 21：padding 的**实测字节数**（全零负载）。Safari 实测 390 / 394：
+	// 与 padding_to 的区别——padding_to 是"对齐到总长"的策略（我们自算），
+	// padding_len 是"抓包实测到多少字节就写多少"（数据驱动）。
+	// 二者互斥：Data 非空时原样透传；否则优先 PaddingLen；再否则用 PaddingTo 策略。
+	PaddingLen int `json:"padding_len,omitempty"`
+
+	// GreaseRandom 为 true 时，该扩展是"随机 GREASE 扩展"：线上 type 每次连接
+	// 重取随机值（真浏览器行为）。启用时 Type 仍须是一个 GREASE 值（0x?a?a），
+	// 以便与真实扩展号区分与校验。
+	// 默认 false = 字面 GREASE 值按 P1-T3 原样透传（用户可钉死确切 GREASE 值）。
+	GreaseRandom bool `json:"grease_random,omitempty"`
+
 	// 未识别 type 的透传负载（hex 字符串，经 GenericExtension 发出）。
 	Data string `json:"data,omitempty"`
 }
@@ -111,7 +133,10 @@ type HTTP2Profile struct {
 	WindowUpdate      uint32       `json:"window_update,omitempty"`       // 连接级 WINDOW_UPDATE 增量
 	PseudoHeaderOrder []string     `json:"pseudo_header_order,omitempty"` // 短码 m/a/s/p
 	Priorities        []H2Priority `json:"priorities,omitempty"`
-	HpackStrategy     string       `json:"hpack_strategy,omitempty"` // 保留，P2 未细分
+	// HeadersPriority：HEADERS 帧**内嵌**的 priority（见 H2HeadersPriority 注释）。
+	// nil = 用 fhttp 默认值（= Chrome 实测量形状）。
+	HeadersPriority *H2HeadersPriority `json:"headers_priority,omitempty"`
+	HpackStrategy   string             `json:"hpack_strategy,omitempty"` // 保留，P2 未细分
 }
 
 // H2Priority 是一个 priority 帧（03 文档示例的数组形 [[3,true,0,255]] 改为
@@ -123,17 +148,54 @@ type H2Priority struct {
 	Weight    uint8  `json:"weight"` // 0-255（线上值 = +1）
 }
 
+// H2HeadersPriority 是 **HEADERS 帧内嵌**的 priority（RFC 7540 §6.3），
+// 与 H2Priority（独立 PRIORITY 帧）不同：真 Chrome/Firefox 都**不发**独立
+// PRIORITY 帧，而是把 priority 写在请求 HEADERS 里（线上 flags 置 0x20）。
+//
+// 实测（2026-09-24，tls.peet.ws；peet 报的 weight = 线上值 +1）：
+//
+//	Chrome 149 / Edge：exclusive=true,  stream_dep=0, weight=255（peet 报 256）
+//	Firefox 156（普通+无痕两次）：exclusive=false, stream_dep=0, weight=41（peet 报 42）
+//
+// 字段为 nil 时用 fhttp 的默认值（exclusive=true/weight=255，即 Chrome 形状）；
+// Safari 未实测 ⇒ 保持 nil，缺口记在 docs/07 G11。
+type H2HeadersPriority struct {
+	Exclusive bool   `json:"exclusive"`
+	StreamDep uint32 `json:"stream_dep,omitempty"`
+	Weight    uint8  `json:"weight"` // 0-255（线上值；浏览器/peet 报数 = +1）
+}
+
 // HTTP3Profile（P4）。
 type HTTP3Profile struct {
 	Enabled           bool              `json:"enabled,omitempty"`
 	QUICVersion       string            `json:"quic_version,omitempty"` // "0x00000001"
 	TransportParams   map[string]uint64 `json:"transport_params,omitempty"`
-	InitialLayout     *H3InitialLayout  `json:"initial_layout,omitempty"` // P4-T4 结论：quic-go 不可控，见 capability 文档
-	GreaseFrames      bool              `json:"grease_frames,omitempty"`
-	Settings          [][]uint32        `json:"settings,omitempty"`
-	PseudoHeaderOrder []string          `json:"pseudo_header_order,omitempty"`
-	PriorityParam     uint32            `json:"priority_param,omitempty"` // Chrome 的 PRIORITY 帧参数（如 984832）
-	H2RaceMs          int               `json:"h2_race_ms,omitempty"`     // H2/H3 竞速：H3 起跑后多少 ms 内无响应头则并发 H2
+	// TransportParamsRaw（T4-1，blob 直通）：有序 QUIC transport parameters，
+	// 每项 [id, value]；id 为数值或 "grease"（随机 GREASE id + value 长度的随机数据），
+	// value 为数值（按 varint 编码）或 "hex:..."（原始字节）。
+	// 设置后优先于 TransportParams（map 形态被忽略）；数组顺序即线上顺序，
+	// 可表达非标参数与任意顺序（整块有序直通，非逐项 setter）。
+	TransportParamsRaw [][]any         `json:"transport_params_raw,omitempty"`
+	InitialLayout      *H3InitialLayout `json:"initial_layout,omitempty"` // P4-T4 结论：quic-go 不可控，见 capability 文档
+
+	// --- QUIC 内层 ClientHello 的 TLS1.3 形态（实测驱动，见 docs/07-capability-gaps.md §6.1）---
+	// 真实浏览器在 QUIC 上只发 TLS1.3 有意义的扩展，且不发任何 TLS 层 GREASE。
+	// 协议最小剔除（11/23/35/65281）在 core/h3 里硬编码；以下三项表达**实现选择**。
+	//
+	// InnerHelloDropExtensions：在协议最小剔除之外，额外剔除的扩展号。
+	//   Chrome 149 (Windows) 实测 = [5, 18]（status_request / SCT：TLS1.3 里本可发，Chrome QUIC 不发）。
+	InnerHelloDropExtensions []uint16 `json:"inner_hello_drop_extensions,omitempty"`
+	// InnerHelloExtraSigAlgs：QUIC 内层追加的签名算法（追加在末尾）。
+	//   Chrome 149 实测 = ["0x0201"]（rsa_pkcs1_sha1）。
+	InnerHelloExtraSigAlgs []string `json:"inner_hello_extra_sig_algs,omitempty"`
+	// InnerHelloDropGrease：QUIC 内层是否完全不发 TLS 层 GREASE
+	//   （Chrome 149 实测 true：cipher / 扩展 / group / key_share / version 五处全无）。
+	InnerHelloDropGrease bool `json:"inner_hello_drop_grease,omitempty"`
+	GreaseFrames       bool             `json:"grease_frames,omitempty"`
+	Settings           [][]uint32       `json:"settings,omitempty"`
+	PseudoHeaderOrder  []string         `json:"pseudo_header_order,omitempty"`
+	PriorityParam      uint32           `json:"priority_param,omitempty"` // Chrome 的 PRIORITY 帧参数（如 984832）
+	H2RaceMs           int              `json:"h2_race_ms,omitempty"`     // H2/H3 竞速：H3 起跑后多少 ms 内无响应头则并发 H2
 }
 
 // H3InitialLayout（P4）。
@@ -155,6 +217,14 @@ type TCPProfile struct {
 type HTTP1Profile struct {
 	HeaderOrder []string `json:"header_order,omitempty"`
 	HeaderCase  string   `json:"header_case,omitempty"` // "preserve"/"lower"/"title"
+}
+
+// IdentityProfile（T2-1）：profile 携带的缺省请求头身份（UA/UA-CH 等），
+// 解决"TLS 指纹是 chrome_150 但 user-agent 却是 Go-http-client"的身份分裂。
+// 语义：engine 在 H1/H2/H3 三条路径统一注入；用户请求里同名头（大小写不敏感）
+// 优先于本表；本表内部顺序即线上顺序。
+type IdentityProfile struct {
+	Headers [][2]string `json:"headers,omitempty"` // 有序缺省请求头 [[name, value],...]
 }
 
 // BehaviorProfile（P3）。
@@ -192,6 +262,16 @@ func (e *ParseError) Error() string {
 }
 
 func (p *Profile) validate() error {
+	if p.Identity != nil {
+		for i, kv := range p.Identity.Headers {
+			if kv[0] == "" {
+				return &ParseError{Field: "identity.headers", Msg: fmt.Sprintf("entry %d has empty name", i)}
+			}
+			if kv[0][0] == ':' {
+				return &ParseError{Field: "identity.headers", Msg: fmt.Sprintf("entry %d %q is a pseudo-header (not allowed)", i, kv[0])}
+			}
+		}
+	}
 	if p.TLS == nil || p.TLS.Detail == nil {
 		return nil
 	}
@@ -286,8 +366,16 @@ func (e *Extension) validate() error {
 			return fmt.Errorf("ech.mode %q unsupported (want \"grease\"/\"real\")", e.ECH.Mode)
 		}
 	}
+	if e.GreaseRandom && !IsGrease(e.Type) {
+		return fmt.Errorf("grease_random requires a GREASE type (0x?a?a), got %#04x", e.Type)
+	}
 	return nil
 }
 
 // GreaseToken 是 ciphers/groups/extensions/versions 列表里的 GREASE 字面量。
 const GreaseToken = "grease"
+
+// IsGrease 判断 RFC 8701 GREASE 值（0x?a?a：两字节相同且低半字节为 0xa）。
+func IsGrease(v uint16) bool {
+	return v>>8 == v&0xff && v&0xf == 0xa
+}

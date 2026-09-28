@@ -49,6 +49,33 @@ uTLS QUIC 路径）。
    `internal/handshake/crypto_setup_test.go`**：调用点补尾参 `nil`
    （签名变更的机械跟随，无行为变化）。
 
+## patch #7（2026-09-24）：transport params blob 直通
+
+动机：QUIC transport params 此前只能经 `quic.Config` 映射 6 个键的值，
+**顺序、非标参数、GREASE 参数位置不可控**。设计移植自
+`lexiforest/curl-impersonate` 的 `ngtcp2_conn_set_local_transport_params_raw()`
+（调用方给整块有序参数、库原样发出，而非逐项 setter）。
+
+改动清单（同样只加不改）：
+
+1. **`interface.go`**：`Config` 新增 `TransportParamsOverride tls.TransportParameters`
+   ——非空时原样写入 ClientHello 的 quic_transport_parameters 扩展（顺序即线上顺序）。
+2. **`config.go`**（`populateConfig`）：补复制该字段（同 ClientHelloSpec 的坑）。
+3. **`internal/handshake/crypto_setup.go`**：`NewCryptoSetupClient` 追加尾参
+   `transportParamsOverride tls.TransportParameters`，构造 `uquicSpecConn` 时注入。
+4. **`internal/handshake/uquic_spec_conn.go`**：适配器新增 `tpOverride` 字段；
+   `SetTransportParameters` 中 override 非空时优先使用（空则维持原解析填充路径）。
+5. **`connection.go`**：调用点传入 `conf.TransportParamsOverride`。
+6. **`fuzzing/handshake/cmd/corpus.go`、`fuzzing/handshake/fuzz.go`、
+   `internal/handshake/crypto_setup_test.go`（3 处）**：调用点补尾参 `nil`。
+
+注意：override 只改变 wire 上的扩展内容；quic-go 的流控行为仍由其 Config 字段
+驱动——geektls core 侧（`core/h3/transport_params.go` 的 `applyKnownRawTP`）
+负责把已知流控键值映射回 Config 保证 wire 声明与实际行为一致。
+
+验证：`tests/e2e` 的 `TestQUICTransportParamsRaw`（顺序/非标/GREASE 位置断言）
++ 既有 `TestQUICInitialSniff`（map 路径回归）。
+
 ## 升级流程（rebase 上游时）
 
 1. 用新版本模块缓存内容覆盖本目录（保留本文件与 `.patch` 语义）。

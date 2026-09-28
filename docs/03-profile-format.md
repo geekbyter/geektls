@@ -48,6 +48,12 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
     "enabled": true,
     "quic_version": "0x00000001",
     "transport_params": {"max_idle_timeout": 30000, "..." : "..."},
+    "transport_params_raw": [                  // T4-1：有序 blob 直通（优先于 transport_params）
+      [8, 100],                                // [id, 数值] → varint
+      [4660, "hex:deadbeef"],                  // [id, "hex:..."] → 原始字节（非标参数）
+      [1, 30000],
+      ["grease", 8]                            // 随机 GREASE id + 8 字节随机数据，位置任意
+    ],
     "initial_layout": {"padding": "chrome", "coalesce": true},
     "grease_frames": true,
     "settings": [[7, 268435456]],
@@ -69,6 +75,17 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
     "redirect_max": 10,
     "cookie_jar": true,
     "session_resumption": true
+  },
+  "identity": {
+    "headers": [
+      ["sec-ch-ua", "\"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\", \"Not/A)Brand\";v=\"99\""],
+      ["sec-ch-ua-mobile", "?0"],
+      ["sec-ch-ua-platform", "\"Windows\""],
+      ["user-agent", "Mozilla/5.0 ... Chrome/150.0.0.0 Safari/537.36"],
+      ["accept", "*/*"],
+      ["accept-language", "en-US,en;q=0.9"],
+      ["accept-encoding", "gzip, deflate, br, zstd"]
+    ]
   }
 }
 ```
@@ -79,6 +96,13 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
 - `ja4r` 输入按 FoxIO JA4 raw 语义解析：cipher/扩展段为**排序后**形式，无法还原原始顺序——因此 ja4r 入口得到的 profile 其扩展顺序标记为 `sorted`，`warnings` 提示与真实浏览器的差异。
 - `"sni": "auto"` 等运行时占位符在发请求时解析。
 - `extension_permutation: true` 时 detail.extensions 是"基准顺序"，core 每次连接做 Chrome 同算法的 Fisher-Yates 洗牌（含 GREASE 固定位）。
+- **`transport_params_raw`（T4-1，2026-09-24 起）**：QUIC transport parameters 的有序 blob 直通——顺序、非标参数、GREASE 参数位置全可控（移植 lexiforest `ngtcp2` 的 blob 直通设计，经 `quic-go-utls` vendor patch #7 原样上 wire）。每项 `[id, value]`：id 为数值或 `"grease"`（随机 GREASE id + value 长度的随机数据）；value 为数值（varint 编码）或 `"hex:..."`（原始字节）。设置后优先于 `transport_params`（map 形态）。注意：已知流控键（1/4/5/6/7/8/9）的值会自动映射回 `quic.Config`，保证 wire 声明与实际流控行为一致——不要写与真实意图矛盾的值。
+- **`identity`（T2-1，2026-09-24 起）**：profile 携带的缺省请求头身份，解决"TLS 指纹是浏览器但 `user-agent` 却是 `Go-http-client`"的身份分裂。语义：
+  - engine 在 H1/H2/H3 三条协议路径统一注入；**用户请求里的同名头（大小写不敏感）优先**，不覆盖；表内顺序即线上顺序。
+  - 头部名一律小写（H2 强制小写；H1 下大小写整形由 `http1.header_case` 另行控制）。
+  - 禁止伪头（`:` 开头）与空头名，加载即校验。
+  - `accept-encoding` 一旦显式下发，HTTP 栈不再自动解压（body 为原始流，解码归调用方）——与库的流式 API 语义一致。
+  - 无 `identity` 节的 profile 行为与注入机制引入前完全一致。
 
 ## 3. 预设体系
 

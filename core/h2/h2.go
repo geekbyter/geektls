@@ -55,6 +55,17 @@ func TransportFromProfile(p *profiles.HTTP2Profile) (*http2.Transport, error) {
 	}
 	tr.PseudoHeaderOrder = order
 
+	// HEADERS 帧内嵌 priority（flags 0x20）。缺省时 fhttp 用 exclusive=true/
+	// weight=255（= Chrome 实测形状）；Firefox 实测是 exclusive=false/weight=41，
+	// 必须显式覆盖，否则会在 HEADERS 里露出 Chrome 的优先级形态（G11）。
+	if hp := p.HeadersPriority; hp != nil {
+		tr.HeaderPriority = &http2.PriorityParam{
+			StreamDep: hp.StreamDep,
+			Exclusive: hp.Exclusive,
+			Weight:    hp.Weight,
+		}
+	}
+
 	for i, pr := range p.Priorities {
 		if pr.StreamID%2 == 0 || pr.StreamID == 0 {
 			return nil, fmt.Errorf("h2: priorities[%d]: stream_id must be a positive odd client stream id", i)

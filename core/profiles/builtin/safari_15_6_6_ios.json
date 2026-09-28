@@ -1,0 +1,164 @@
+{
+  "name": "safari_15_6_6_ios",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "grease",
+        "0x1301",
+        "0x1302",
+        "0x1303",
+        "0xc02c",
+        "0xc02b",
+        "0xcca9",
+        "0xc030",
+        "0xc02f",
+        "0xcca8",
+        "0xc00a",
+        "0xc009",
+        "0xc014",
+        "0xc013",
+        "0x009d",
+        "0x009c",
+        "0x0035",
+        "0x002f",
+        "0xc008",
+        "0xc012",
+        "0x000a"
+      ],
+      "extensions": [
+        {
+          "type": 39578,
+          "grease_random": true
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 10,
+          "groups": [
+            "grease",
+            "0x001d",
+            "0x0017",
+            "0x0018",
+            "0x0019"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": "AA=="
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0403",
+            "0x0804",
+            "0x0401",
+            "0x0503",
+            "0x0203",
+            "0x0805",
+            "0x0805",
+            "0x0501",
+            "0x0806",
+            "0x0601",
+            "0x0201"
+          ]
+        },
+        {
+          "type": 18
+        },
+        {
+          "type": 51,
+          "key_shares": [
+            "grease",
+            "0x001d"
+          ]
+        },
+        {
+          "type": 45,
+          "psk_modes": "AQ=="
+        },
+        {
+          "type": 43,
+          "versions": [
+            "grease",
+            "0x0304",
+            "0x0303",
+            "0x0302",
+            "0x0301"
+          ]
+        },
+        {
+          "type": 27,
+          "cert_compression": [
+            "zlib"
+          ]
+        },
+        {
+          "type": 21,
+          "padding_len": 390
+        },
+        {
+          "type": 14906,
+          "grease_random": true,
+          "data": "00"
+        },
+        {
+          "type": 41
+        }
+      ]
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        4,
+        2097152
+      ],
+      [
+        3,
+        100
+      ]
+    ],
+    "window_update": 10485760,
+    "pseudo_header_order": [
+      "m",
+      "s",
+      "p",
+      "a"
+    ],
+    "headers_priority": {
+      "exclusive": false,
+      "weight": 254
+    }
+  },
+  "identity": {
+    "headers": [
+      [
+        "user-agent",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1"
+      ]
+    ]
+  },
+  "grade": "E3",
+  "source": "tls_config-0.0.2/TLS_SAFARI_15_6_6_IPHONE_IOS_15_8_2"
+}

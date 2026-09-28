@@ -28,7 +28,8 @@
       ],
       "extensions": [
         {
-          "type": 2570
+          "type": 2570,
+          "grease_random": true
         },
         {
           "type": 0,
@@ -118,7 +119,8 @@
           ]
         },
         {
-          "type": 2570
+          "type": 2570,
+          "grease_random": true
         },
         {
           "type": 21,
@@ -147,10 +149,22 @@
       "s",
       "a",
       "p"
-    ]
+    ],
+    "headers_priority": {
+      "exclusive": false,
+      "weight": 255
+    }
   },
   "tcp": {
     "ttl": 64,
     "mss": 1460
+  },
+  "identity": {
+    "headers": [
+      ["user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"],
+      ["accept", "*/*"],
+      ["accept-language", "en-US,en;q=0.9"],
+      ["accept-encoding", "gzip, deflate, br"]
+    ]
   }
 }

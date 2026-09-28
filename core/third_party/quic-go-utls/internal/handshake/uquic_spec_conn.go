@@ -20,6 +20,9 @@ import (
 type uquicSpecConn struct {
 	*tls.UQUICConn
 	spec *tls.ClientHelloSpec
+	// tpOverride 为 geektls patch #7：非空时原样写入扩展（顺序/非标/GREASE 全可控），
+	// 取代对 quic-go 自身 marshal 字节的解析填充。
+	tpOverride tls.TransportParameters
 }
 
 func (c *uquicSpecConn) StoreSession(*tls.SessionState) error { return nil }
@@ -27,7 +30,11 @@ func (c *uquicSpecConn) StoreSession(*tls.SessionState) error { return nil }
 func (c *uquicSpecConn) SetTransportParameters(params []byte) {
 	for _, ext := range c.spec.Extensions {
 		if qtp, ok := ext.(*tls.QUICTransportParametersExtension); ok {
-			qtp.TransportParameters = rawToTransportParameters(params)
+			if len(c.tpOverride) > 0 {
+				qtp.TransportParameters = c.tpOverride
+			} else {
+				qtp.TransportParameters = rawToTransportParameters(params)
+			}
 			return
 		}
 	}

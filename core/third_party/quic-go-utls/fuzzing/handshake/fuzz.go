@@ -287,6 +287,7 @@ func runHandshake(runConfig [confLen]byte, messageConfig uint8, clientConf *tls.
 		utils.DefaultLogger.WithPrefix("client"),
 		protocol.Version1,
 		nil, // geektls patch
+		nil, // geektls patch
 	)
 	if err := client.StartHandshake(context.Background()); err != nil {
 		log.Fatal(err)
