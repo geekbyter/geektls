@@ -73,12 +73,16 @@ char*    gtls_check_profile(const char* profile_json_or_ja3_or_ja4r);
 from geektls import Session
 
 s = Session(impersonate="chrome_150")          # 或 profile={...} / ja3="..." / ja4r="..."
-r = s.get("https://example.com", stream=True)
-for chunk in r.iter_bytes(65536): ...
-assert r.selfcheck.ja3_match
+r = s.get("https://example.com")               # requests 风格：params/data/json/timeout 都支持
+r.status_code, r.ok, r.used_protocol           # 200 True 'h2'
+r.headers["content-type"]                      # 大小写不敏感
+r.text, r.content, r.json()                    # 按需读取并缓存（无需手动 iter_bytes）
+assert r.selfcheck["ja3_match"]
+for line in r.iter_lines(): ...                # 需要流式时
 ```
 
-- `ctypes.CDLL` 加载；`iter_bytes` 内部循环 `gtls_response_read`。
+- `ctypes.CDLL` 加载；`.content`/`.text`/`.json()` 内部循环 `gtls_response_read` 读完并缓存，
+  大响应想边收边处理再用 `iter_content(chunk_size)`（旧名 `iter_bytes` 仍可用）。
 - `__del__` + context manager 双保险释放 handle。
 - 发布：纯 Python wheel + 按平台分发动态库（auditwheel/delocate 策略 P7 定）。
 

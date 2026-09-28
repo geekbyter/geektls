@@ -50,12 +50,17 @@ type SelfCheck struct {
 }
 
 // Response 是响应头到达时刻的视图；Body 流式。
+//
+// 便捷读取（Bytes/Text/JSON/OK/Reason/HeaderValues）见 response.go，
+// 与 Python/Node 绑定保持同一套语义。
 type Response struct {
 	Status       int
 	Headers      [][2]string
 	UsedProtocol string
 	SelfCheck    SelfCheck
 	Body         io.ReadCloser
+
+	body []byte // Bytes() 读完后的缓存（Body 随之消费）
 }
 
 // Header 取首个同名响应头（大小写不敏感）。
@@ -76,6 +81,7 @@ type Session struct {
 	jar          *cookiejar.Jar // nil = 禁用 cookie
 	altSvcH3     sync.Map       // host:port → 已知广告 H3
 	sessionCache utls.ClientSessionCache
+	closed       bool
 }
 
 // NewSession 基于 profile 建会话。profile 必须有可编译的 tls.detail。
@@ -109,8 +115,20 @@ func NewSession(p *profiles.Profile, opts SessionOptions) (*Session, error) {
 // Profile 返回会话的 profile（供 selfcheck 等读取）。
 func (s *Session) Profile() *profiles.Profile { return s.profile }
 
+// Close 释放会话持有的缓存（TLS 票据 / cookie / Alt-Svc 记忆）。
+// 与 Python/Node 绑定的 s.close() 对称；调用后 Do 返回错误。
+func (s *Session) Close() {
+	s.closed = true
+	s.jar = nil
+	s.sessionCache = nil
+	s.altSvcH3 = sync.Map{}
+}
+
 // Do 执行请求（含重定向链），阻塞到最终响应头到达。
 func (s *Session) Do(req *Request) (*Response, error) {
+	if s.closed {
+		return nil, fmt.Errorf("engine: session closed")
+	}
 	if req.Method == "" {
 		req.Method = "GET"
 	}

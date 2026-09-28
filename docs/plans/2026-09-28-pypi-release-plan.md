@@ -216,6 +216,28 @@ CI 产物**（同一批 `build/*geektls.*`）。
 
 ---
 
+## 8.5 首次发布踩到的坑（0.1.0/0.1.1 实录，已修进流水线）
+
+1. **`py3-none-any` 绝不能上传**：`python -m build` 先产出 `any` 包，再由
+   `wheel tags --platform-tag <t>` 生成平台包——若不加 `--remove`，两个都会留在
+   `dist/`，上传时会把 `any` 一起传上去（其他平台装完加载库失败）。**已加 `--remove`**。
+2. **只清包目录不够**：setuptools 的暂存目录 `bindings/python/build/lib/geektls/`
+   会保留上一次构建的动态库 ⇒ 只删 `geektls/*.so` 后重新打包，wheel 里
+   **仍会带上旧的 `.dll`**（0.1.0 的 Linux wheel 就这样混装了 dll）。
+   **修法：每次打包前 `rm -rf bindings/python/build`**。
+3. **上传后必须核对索引**：0.1.0 的 Windows wheel 上传成功（twine 200）并当场能装，
+   但一小时后 `https://pypi.org/simple/geektls/` 上**只剩 Linux wheel**（原因未明，
+   疑似新项目复核/文件被移除）。⇒ 发布流程末尾必须核对
+   `pip download geektls --platform <plat> --only-binary=:all:` 能否取到各平台文件，
+   不能只看 twine 的"成功"。
+4. **验证要避开本地目录**：在含 `geektls/` 源码目录的 cwd 下 `pip install geektls`
+   可能被本地目录影响 ⇒ 一律在**干净目录**装，并确认 `dist-info/direct_url.json`
+   **不存在**（存在 = 装的是本地目录，不是索引）。
+5. 本地补平台的可行性：Windows 用 llvm-mingw（免安装，~182MB，`CC=x86_64-w64-mingw32-gcc`）
+   ✓；Linux 在 WSL 里下 Go + 用系统 gcc ✓（glibc 底线取决于构建机 ⇒ 本次为
+   `manylinux_2_34`，想降到 2.28 需在 manylinux 容器里构建 ⇒ 只能靠 CI）。
+   **macOS / Linux-aarch64 无法本地构建，必须 CI**。
+
 ## 9. 风险
 
 | 风险 | 影响 | 缓解 |

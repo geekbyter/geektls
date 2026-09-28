@@ -143,8 +143,70 @@ function checkProfile(input) {
   return JSON.parse(raw);
 }
 
+// ---- 响应读取辅助（与 Go / Python 绑定同一套语义）----
+
+/** 状态码 → reason（RFC 9110 常见短语；引擎不上报服务端原文，这里本地映射）。 */
+const REASON = {
+  100: 'Continue', 101: 'Switching Protocols',
+  200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content', 206: 'Partial Content',
+  301: 'Moved Permanently', 302: 'Found', 303: 'See Other', 304: 'Not Modified',
+  307: 'Temporary Redirect', 308: 'Permanent Redirect',
+  400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found',
+  405: 'Method Not Allowed', 406: 'Not Acceptable', 408: 'Request Timeout',
+  409: 'Conflict', 410: 'Gone', 413: 'Payload Too Large', 415: 'Unsupported Media Type',
+  418: "I'm a teapot", 422: 'Unprocessable Entity', 429: 'Too Many Requests',
+  500: 'Internal Server Error', 501: 'Not Implemented', 502: 'Bad Gateway',
+  503: 'Service Unavailable', 504: 'Gateway Timeout',
+};
+
+/** 从 Content-Type 提取 charset；没有则返回 undefined。 */
+function parseCharset(contentType) {
+  if (!contentType) return undefined;
+  for (const part of String(contentType).split(';').slice(1)) {
+    const idx = part.indexOf('=');
+    if (idx < 0) continue;
+    if (part.slice(0, idx).trim().toLowerCase() === 'charset') {
+      return part.slice(idx + 1).trim().replace(/^["']|["']$/g, '') || undefined;
+    }
+  }
+  return undefined;
+}
+
+/** 大小写不敏感取头（与 Go 的 Header(name)、Python 的 headers[...] 对齐）。 */
+function headerOf(headers, name) {
+  const lower = String(name).toLowerCase();
+  for (const [k, v] of headers) {
+    if (String(k).toLowerCase() === lower) return v;
+  }
+  return undefined;
+}
+
+/**
+ * 按 charset 解码；未声明时依次尝试 utf-8 → gb18030 → latin-1
+ * （Node 内置 TextDecoder 支持 gb18030，无需额外依赖）。
+ */
+function decodeBytes(buf, encoding) {
+  if (encoding) {
+    try {
+      return new TextDecoder(encoding).decode(buf);
+    } catch {
+      /* 未识别的编码名，继续用探测 */
+    }
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    /* 不是合法 utf-8 */
+  }
+  try {
+    return new TextDecoder('gb18030').decode(buf);
+  } catch {
+    return buf.toString('latin1');
+  }
+}
+
 class Response {
-  constructor(handle) {
+  constructor(handle, { method, url, elapsedMs } = {}) {
     this._handle = handle;
     const info = gtls_response_info(handle);
     if (info == null) {
@@ -153,10 +215,50 @@ class Response {
     }
     const parsed = JSON.parse(info);
     this.status = parsed.status;
-    this.headers = parsed.headers || [];
+    this.statusCode = parsed.status; // 与 Python/Go 命名对齐
+    this.headers = parsed.headers || []; // 原始 [[k,v],...]（保兼容）
     this.usedProtocol = parsed.used_protocol || '';
+    this.httpVersion = this.usedProtocol;
     this.selfcheck = parsed.selfcheck || {};
+    this.method = method;
+    this.url = url;
+    this.elapsed = elapsedMs;
     this._body = null;
+    this._content = null;
+    this._json = null;
+  }
+
+  /** 4xx/5xx 之外为 true（requests 语义）。 */
+  get ok() {
+    return this.status < 400;
+  }
+
+  get reason() {
+    return REASON[this.status] || '';
+  }
+
+  /** 大小写不敏感取单个响应头值。 */
+  header(name) {
+    return headerOf(this.headers, name);
+  }
+
+  /** Content-Type 声明的编码（未声明为 undefined）。 */
+  get encoding() {
+    return parseCharset(this.header('content-type'));
+  }
+
+  /** 显然没声明 charset 时的探测结果。 */
+  get apparentEncoding() {
+    if (this.encoding) return this.encoding;
+    if (this._content) {
+      try {
+        new TextDecoder('utf-8', { fatal: true }).decode(this._content);
+        return 'utf-8';
+      } catch {
+        return 'gb18030';
+      }
+    }
+    return 'utf-8';
   }
 
   /** Node Readable 流式 body（内部循环 gtls_response_read）。 */
@@ -167,19 +269,62 @@ class Response {
     return this._body;
   }
 
-  /** 一次性读完。 */
+  /** 一次性读完（缓存，与 Python 的 .content 语义一致）。 */
   async read() {
+    if (this._content !== null) return this._content;
     const chunks = [];
     for await (const chunk of this.body) chunks.push(chunk);
-    return Buffer.concat(chunks);
+    this._content = Buffer.concat(chunks);
+    return this._content;
   }
 
+  /** 流式块（等价 Python 的 iter_content；chunkSize 需在 body 首次使用前指定）。 */
+  async *iterContent(chunkSize) {
+    const stream = chunkSize ? new ResponseBody(this._handle, chunkSize) : this.body;
+    for await (const chunk of stream) yield chunk;
+  }
+
+  /** 按行流式（保留行尾换行符）。 */
+  async *iterLines(chunkSize) {
+    let pending = Buffer.alloc(0);
+    for await (const chunk of this.iterContent(chunkSize)) {
+      pending = Buffer.concat([pending, chunk]);
+      let idx;
+      while ((idx = pending.indexOf(0x0a)) >= 0) {
+        const line = pending.subarray(0, idx + 1);
+        pending = pending.subarray(idx + 1);
+        yield line;
+      }
+    }
+    if (pending.length) yield pending;
+  }
+
+  /** body 字节（等价 Python 的 .content）。 */
+  async bytes() {
+    return this.read();
+  }
+
+  /** body 文本（按 charset 解码，未声明时自动探测，避免中文乱码）。 */
   async text() {
-    return (await this.read()).toString('utf-8');
+    return decodeBytes(await this.read(), this.encoding);
   }
 
+  /** body JSON（按 charset 解码，兼容 BOM；结果缓存）。 */
   async json() {
-    return JSON.parse(await this.text());
+    if (this._json === null) {
+      const text = (await this.text()).replace(/^\ufeff/, '');
+      this._json = JSON.parse(text);
+    }
+    return this._json;
+  }
+
+  /** >=400 时抛 GeekTLSError（异常上挂 .response）。 */
+  raiseForStatus() {
+    if (!this.ok) {
+      const err = new GeekTLSError('http_error', `${this.status} ${this.reason || 'HTTP error'}`);
+      err.response = this;
+      throw err;
+    }
   }
 
   async close() {
@@ -187,6 +332,10 @@ class Response {
       gtls_response_close(this._handle);
       this._handle = 0n;
     }
+  }
+
+  toString() {
+    return `<Response [${this.status}] ${this.usedProtocol || '-'}>`;
   }
 }
 
@@ -233,23 +382,43 @@ class ResponseBody extends Readable {
   }
 }
 
+/** 从 requests 风格 proxies（对象/字符串）里取出一个代理 URL。 */
+function pickProxy(proxies) {
+  if (!proxies) return undefined;
+  if (typeof proxies === 'string') return proxies;
+  return proxies.https || proxies.http || proxies.all || Object.values(proxies)[0];
+}
+
 /**
- * 指纹伪造会话。options: {impersonate|profile|ja3|ja4r|clienthello_hex,
- * proxy, timeoutMs, redirectMax, cookieJar, insecureSkipVerify}
+ * 指纹伪造会话。options:
+ * - 引擎字段：{impersonate|profile|ja3|ja4r|clienthello_hex, proxy, timeoutMs,
+ *             redirectMax, cookieJar, insecureSkipVerify}
+ * - requests 风格别名（与 Python 绑定一致）：{headers（会话默认头）, proxies, timeout（秒）,
+ *             verify:false, allowRedirects:false}
  */
 class Session {
   constructor(options = {}) {
-    const { proxy, timeoutMs, redirectMax, cookieJar, insecureSkipVerify, ...config } = options;
+    const {
+      proxy, proxies, timeoutMs, timeout, redirectMax, allowRedirects,
+      cookieJar, insecureSkipVerify, verify, headers, ...config
+    } = options;
+    this._headers = headers
+      ? Object.entries(Array.isArray(headers) ? Object.fromEntries(headers) : headers)
+      : [];
     this._client = gtls_client_new(JSON.stringify(config));
     if (!this._client) raiseLastError();
     this._session = 0n;
     try {
       const opts = {};
-      if (proxy !== undefined) opts.proxy = proxy;
+      const proxyURL = proxy !== undefined ? proxy : pickProxy(proxies);
+      if (proxyURL !== undefined) opts.proxy = proxyURL;
       if (timeoutMs !== undefined) opts.timeout_ms = timeoutMs;
+      else if (timeout !== undefined) opts.timeout_ms = Math.round(timeout * 1000);
       if (redirectMax !== undefined) opts.redirect_max = redirectMax;
+      else if (allowRedirects === false) opts.redirect_max = -1;
       if (cookieJar !== undefined) opts.cookie_jar = cookieJar;
       if (insecureSkipVerify !== undefined) opts.insecure_skip_verify = insecureSkipVerify;
+      else if (verify === false) opts.insecure_skip_verify = true;
       this._session = gtls_session_new(this._client, JSON.stringify(opts));
       if (!this._session) raiseLastError();
     } catch (err) {
@@ -261,27 +430,67 @@ class Session {
 
   /**
    * 发请求（Promise 化，不阻塞事件循环）。
-   * req: {method, url, headers, body, timeoutMs, proxy, forceHttp3, stream}
-   * headers: {k:v} 或 [[k,v],...]；body: string|Buffer|Uint8Array
+   * 请求级字段：{method, url, headers, params, data, json, body, timeoutMs, timeout,
+   *             proxy, forceHttp3, stream}
+   * - headers: {k:v} 或 [[k,v],...]（会与会话级默认头合并）
+   * - params: 对象/[[k,v]]/查询串 → 拼到 URL
+   * - data: 对象 → 表单编码；string/Buffer → 原样
+   * - json: 任意可序列化值 → JSON body（自动补 content-type）
+   * - timeout: 秒（与 Python 绑定一致）；timeoutMs: 毫秒
    */
   async request(req) {
-    const payload = { method: req.method || 'GET', url: req.url };
+    const method = (req.method || 'GET').toUpperCase();
+    let url = req.url;
+    if (req.params) {
+      const qs =
+        typeof req.params === 'string'
+          ? req.params.replace(/^\?/, '')
+          : new URLSearchParams(req.params).toString();
+      if (qs) url += (url.includes('?') ? '&' : '?') + qs;
+    }
+
+    const headers = [...(this._headers || [])];
+    const addHeader = (k, v) => headers.push([k, v]);
+    const hasHeader = (name) => headerOf(headers, name) !== undefined;
     if (req.headers) {
-      payload.headers = Array.isArray(req.headers)
+      for (const [k, v] of Array.isArray(req.headers)
         ? req.headers
-        : Object.entries(req.headers);
+        : Object.entries(req.headers)) {
+        addHeader(k, v);
+      }
     }
-    if (req.body != null) {
-      payload.body_b64 = Buffer.from(req.body).toString('base64');
+
+    const payload = { method, url };
+    let raw = null;
+    if (req.json !== undefined) {
+      raw = Buffer.from(JSON.stringify(req.json));
+      if (!hasHeader('content-type')) addHeader('content-type', 'application/json');
+    } else if (req.data !== undefined) {
+      if (req.data !== null && typeof req.data === 'object' && !Buffer.isBuffer(req.data) &&
+          !(req.data instanceof Uint8Array)) {
+        raw = Buffer.from(new URLSearchParams(req.data).toString());
+        if (!hasHeader('content-type')) {
+          addHeader('content-type', 'application/x-www-form-urlencoded');
+        }
+      } else {
+        raw = Buffer.from(req.data);
+      }
+    } else if (req.body != null) {
+      raw = Buffer.from(req.body);
     }
-    if (req.timeoutMs) payload.timeout_ms = req.timeoutMs;
+    if (raw !== null) payload.body_b64 = raw.toString('base64');
+    if (headers.length) payload.headers = headers;
+
+    if (req.timeoutMs !== undefined) payload.timeout_ms = req.timeoutMs;
+    else if (req.timeout !== undefined) payload.timeout_ms = Math.round(req.timeout * 1000);
     if (req.proxy) payload.proxy = req.proxy;
     if (req.forceHttp3) payload.force_http3 = true;
     if (req.stream !== undefined) payload.stream = req.stream;
 
+    const started = Date.now();
     const handle = await callAsync(gtls_request, this._session, JSON.stringify(payload));
     if (!handle) raiseLastError();
-    return new Response(handle);
+    return new Response(handle, { method, url, elapsedMs: Date.now() - started });
   }
 
   get(url, options = {}) {
@@ -290,6 +499,26 @@ class Session {
 
   post(url, options = {}) {
     return this.request({ method: 'POST', url, ...options });
+  }
+
+  put(url, options = {}) {
+    return this.request({ method: 'PUT', url, ...options });
+  }
+
+  patch(url, options = {}) {
+    return this.request({ method: 'PATCH', url, ...options });
+  }
+
+  delete(url, options = {}) {
+    return this.request({ method: 'DELETE', url, ...options });
+  }
+
+  head(url, options = {}) {
+    return this.request({ method: 'HEAD', url, ...options });
+  }
+
+  options(url, options = {}) {
+    return this.request({ method: 'OPTIONS', url, ...options });
   }
 
   close() {

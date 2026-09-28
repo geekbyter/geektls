@@ -41,9 +41,21 @@ endif
 
 all: build
 
+# -trimpath -s -w：去掉绝对路径与符号表，动态库体积明显下降（发布包体积直接受益）。
 build:
 	mkdir -p $(BUILD)
-	cd $(CORE) && $(GO) build -buildmode=c-shared -o ../$(LIBPATH) ./ffi
+	cd $(CORE) && $(GO) build -buildmode=c-shared -trimpath -ldflags "-s -w" -o ../$(LIBPATH) ./ffi
+
+# wheel：本地出一份"当前平台"的 wheel（发布用；CI 见 .github/workflows/release-pypi.yml）
+# 用法：make wheel PLAT=manylinux_2_28_x86_64|macosx_11_0_arm64|win_amd64|...
+PLAT ?= win_amd64
+wheel: build
+	cp $(LIBPATH) bindings/python/geektls/
+	cp README.md bindings/python/README.md
+	cd bindings/python && $(PYTHON) -m pip install --quiet --upgrade build wheel \
+		&& $(PYTHON) -m build --wheel \
+		&& $(PYTHON) -m wheel tags --platform-tag "$(PLAT)" dist/*.whl \
+		&& ls -l dist/
 
 smoke: build
 	GEEDTLS_LIB="$(ABSLIB)" $(PYTHON) tests/smoke/smoke.py

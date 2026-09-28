@@ -9,6 +9,15 @@
 __pycache__/
 *.py[cod]
 
+# Python 打包产物（wheel/sdist 不入库；README 是构建期从仓库根拷进来的副本）
+bindings/python/dist/
+bindings/python/build/
+bindings/python/README.md
+bindings/python/geektls/*.dll
+bindings/python/geektls/*.so
+bindings/python/geektls/*.dylib
+bindings/python/geektls/*.h
+
 # Node
 node_modules/
 

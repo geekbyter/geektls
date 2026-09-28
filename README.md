@@ -17,6 +17,23 @@
 | TCP（TTL/MSS setsockopt 档） | ✅（Windows 无 MSS） | getsockopt 读回 |
 | Python / Node / Go 绑定 | ✅ | pytest 8 / node:test 7 / go test 全绿；跨语言 JA4 三方全等 |
 
+## 安装
+
+```bash
+pip install geektls          # Python（Windows x64 / Linux x86_64，动态库随 wheel 分发）
+npm install geektls          # Node.js（⚠️ 尚未发布到 npm，当前请用仓库内 bindings/nodejs）
+go get github.com/geektls/core   # Go（⚠️ 模块尚未推送到公网仓库，当前用本地 replace）
+```
+
+已发布到 PyPI 的 wheel 覆盖 **Windows x64** 与 **Linux x86_64（glibc ≥ 2.34）**；
+macOS / Linux-ARM 的 wheel 待 CI 矩阵补齐（其余平台安装会提示无匹配版本）。
+
+Python 一行自检：
+
+```bash
+python -c "import geektls,json;print(json.dumps(geektls.version()));print(len(geektls.list_presets()),'presets')"
+```
+
 ## 快速上手
 
 **Python**（`pip install geektls`，动态库随包）：
@@ -25,9 +42,12 @@
 from geektls import Session
 
 with Session(impersonate="chrome_150") as s:
-    r = s.get("https://example.com", stream=True)
-    print(r.status, r.used_protocol, r.selfcheck["ja4"])
-    for chunk in r.iter_bytes(65536):
+    r = s.get("https://example.com")
+    print(r.status_code, r.ok, r.used_protocol)   # 200 True h2
+    print(r.headers["content-type"])             # 大小写不敏感
+    print(r.text[:200])                          # 直接当文本用
+    print(r.selfcheck["ja4"])                    # 本次握手的 JA4 自算
+    for line in r.iter_lines():                  # 需要流式时才用迭代
         ...
 ```
 
@@ -36,19 +56,31 @@ with Session(impersonate="chrome_150") as s:
 ```js
 const { Session } = require('geektls');
 
-const s = new Session({ impersonate: 'chrome_150' });
-const r = await s.get('https://example.com');
-console.log(r.status, r.usedProtocol, r.selfcheck.ja4);
-for await (const chunk of r.body) { ... }
+const s = new Session({ impersonate: 'chrome_150', timeout: 20 });
+const r = await s.get('https://example.com', { params: { q: 1 } });
+console.log(r.statusCode, r.ok, r.reason);     // 200 true OK
+console.log(r.header('content-type'));         // 大小写不敏感
+console.log(await r.text());                   // 直接当文本用
+console.log((await r.json()).slideshow);       // 直接当 JSON 用
+for await (const chunk of r.iterContent()) { ... }   // 需要流式时才迭代
 s.close();
 ```
 
 **Go**（`import "github.com/geektls/golang"`）：
 
 ```go
-rt, _ := geektls.NewRoundTripper("chrome_150", nil)
-client := &http.Client{Transport: rt}
-resp, _ := client.Get("https://example.com")
+// 引擎直连（要用到响应便捷方法时走这条；只要 net/http 习惯可用上面的 RoundTripper 形态）
+p, _ := profiles.Get("chrome_150")
+sess, _ := engine.NewSession(p, engine.SessionOptions{})
+defer sess.Close()
+
+resp, _ := sess.Do(&engine.Request{Method: "GET", URL: "https://example.com"})
+defer resp.Close()
+fmt.Println(resp.StatusCode(), resp.OK(), resp.Reason()) // 200 true OK
+fmt.Println(resp.Header("content-type"))                 // 大小写不敏感
+text, _ := resp.Text()                                   // charset → utf-8 → gb18030 → latin-1
+var v map[string]any
+_ = resp.JSON(&v)
 ```
 
 ## 自校验
