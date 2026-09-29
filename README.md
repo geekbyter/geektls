@@ -37,7 +37,7 @@
 | 连接池（H2 多路复用/H1 keep-alive/H3 共享 transport，并发安全） | ✅ | go test -race 零竞争；echo 侧连接数断言 |
 | 流式上传（H1 chunked / H2 DATA，三语言绑定迭代器入参） | ✅ | 线上字节逐字节断言 |
 | TCP（TTL/MSS setsockopt 档） | ✅（Windows 无 MSS） | getsockopt 读回 |
-| Python / Node / Go 绑定 | ✅ | pytest 11 / node:test 10 / go test -race 全绿；跨语言 JA4 三方全等 |
+| Python / Node / Go 绑定 | ✅ | pytest 12 / node:test 10 / go test -race 全绿；跨语言 JA4 三方全等 |
 
 ## 安装
 
@@ -380,62 +380,66 @@ with Session(impersonate="chrome_154_windows") as s:
 
 ## 与同类项目对比
 
-先说结论：**同类项目绝大多数是"一次性 TLS/H2 指纹伪装客户端"，我们的差异点在"四层 + 证据体系 + 三语言同引擎"。**
+对比依据：各项目公开 README / 文档，以及本机维护的库家族矩阵 `tls-spoofing-library-matrix`。
+**未做逐行源码审计的项目在"栈 / 语言"列标注"未核实"**；单元格里的 `—` 表示公开材料未说明该维度
+（不等于该库没有）。
 
-对比依据：各项目公开 README/文档，以及本仓库 `docs/00-architecture.md` 的选型记录与
-`tls-spoofing-library-matrix`（本机维护的库家族矩阵）。**未做逐行源码审计的项目已在下表标注"未核实"**。
+### 完整客户端（TLS / H2 / H3 伪装客户端）
 
-### 分组一览
+| 项目 | 栈 / 语言 | TLS 指纹 | H2 帧 + 头序 | H2 HPACK 策略 | H3 / QUIC | 四层 TCP | 预设与证据 | 响应内自校验 |
+|---|---|---|---|---|---|---|---|---|
+| **geektls** | Go（c-shared 动态库）+ Python / Node / Go 绑定 | ✅ uTLS fork + E1 真机采集链路 | ✅ | ✅ **四档**（generic / chrome / firefox / safari），249/363 预设带值 | ✅ ClientHello 注入 + transport params blob 直通；Initial 布局不可控 | ✅ TTL / MSS（Windows 无 MSS）；raw socket 仅 Linux 探测模式 | ✅ 363 条，`grade`/`source` 分级：30 自测 / 6 E2i / 8 E2i-u / 319 E3 | ✅ 响应带 selfcheck（JA3 / JA4 / 扩展序 / GREASE 实测值）+ `check_profile` 五入参离线自检 |
+| `bogdanfinn/tls-client`（+ `hrequests`、`noble-tls`、`Rckov/tls-client-sharp`、`wreq-js` 等绑定） | Go `fhttp` + `utls` | ✅ | ✅ | — | ✅ | — | 自带 profile 集；geektls 的 319 条 E3 覆盖即导入自这里 | — |
+| `lexiforest/curl_cffi`（活跃）/ `lwthiker/curl-impersonate`（原始） | libcurl 补丁 + BoringSSL / NSS | ✅ | ✅ | — | ❌ 只到 H2 | — | 内置若干浏览器画像；社区补丁节奏最快 | — |
+| `Danny-Dasilva/CycleTLS`、`cycletls_python` | Go `utls` + `fhttp` + `quic-go` | ✅ | ✅ | — | ✅ | — | profile 清单 | — |
+| `akamai/uls`（Unified TLS/HTTP spoofing） | Go（Akamai 内部实现开源版） | ✅ Chrome | ✅ Chrome | — | — | ❌ | 面向 Chrome | — |
+| `sardanioss/httpcloak`、`azuretls-client` | Go fork 系（utls / fhttp / uquic） | ✅ | ✅ | — | ✅ 依赖 fork | — | 浏览器 profile + 头序 | — |
+| `deedy5/primp`、`wreq` 系 | Rust + BoringSSL 风格控制 | ✅ | ✅ | — | 部分 | — | 未核实 | — |
+| `jaredboynton/specter` | Rust + BoringSSL + 自研 H2 / H3 | ✅ | ✅ 记录分帧 / 帧时序 / 池行为 | — | ✅ | — | 未核实 | — |
+| `zhkl0228/impersonator` | Java / BouncyCastle / OkHttp 改造 | ✅ | ✅ OkHttp 形态 | — | — | — | OkHttp 行为参照 | — |
+| `wangluozhe/requests`、`requests-go`、`z402166914/pyhttpx`、`tocha688/curl-cffi-node` | 各语言 HTTP 客户端封装 | 依赖上游 | 依赖上游 | — | — | — | — | — |
 
-| 组 | 项目 | 形态/栈 | 与我们最相关的点 |
-|---|---|---|---|
-| 完整客户端（直接竞品） | `bogdanfinn/tls-client`（+ `hrequests`、`noble-tls`、`Rckov/tls-client-sharp`、`wreq-js`/`curl-cffi-node` 等绑定） | Go `fhttp`+`utls`，含 H3 | 我们**用它导出的第三方指纹集**做 E3 覆盖（319 条）；它的 profile 是 H2 引擎默认行为的对照面 |
-| 完整客户端 | `lexiforest/curl_cffi`（活跃）/ `lwthiker/curl-impersonate`（原始） | libcurl 补丁 + BoringSSL/NSS | Python 生态兼容性最强；**只到 H2**，H3/HPACK 策略无；我们的 `chrome_149` 曾被它独立互证 |
-| 完整客户端 | `Danny-Dasilva/CycleTLS`、`cycletls_python` | Go `utls`+`fhttp`+`quic-go` | 能力面与我们最接近（含 H3）；差异在证据体系与四层 TCP 面 |
-| 完整客户端 | `akamai/uls`（Unified TLS/HTTP spoofing） | Akamai 内部实现开源版 | 面向 Chrome 的 TLS+H2 伪装；无四层/无 HPACK 策略/无多语言绑定 |
-| 完整客户端 | `sardanioss/httpcloak`、`azuretls-client` | Go fork 系（utls/fhttp/uquic） | 浏览器 profile + 头序；H3 依赖 fork，与我们同类取舍 |
-| 完整客户端 | `deedy5/primp`、`wreq` 系（Rust） | Rust + BoringSSL 风格控制 | Rust 栈形态参照；我们无 Rust 绑定 |
-| 完整客户端 | `jaredboynton/specter` | Rust + BoringSSL + 自研 H2/H3 | 缝隙少（记录分帧/帧时序/池行为）；是我们 H2 侧的对照对象 |
-| 完整客户端 | `zhkl0228/impersonator` | Java/BouncyCastle/OkHttp 改造 | JVM 生态；OkHttp 行为参照（我们只有 okhttp 预设，无 JVM 绑定） |
-| 完整客户端 | `wangluozhe/requests`、`requests-go`、`z402166914/pyhttpx`、`tocha688/curl-cffi-node` | 各语言 HTTP 客户端封装 | 形态参照（我们三语言同引擎、跨语言 JA4 全等） |
-| 采集/检测/代理 | `gospider007/fp` | 独立 ClientHello 解析器 | **我们的 E1 采集链路直接用它**（`tests/e2e/cmd/e1-browser`） |
-| 采集/检测/代理 | `FoxIO-LLC/ja4`、`Crank-Git/ja4plus-go`、`XOR-op/ja-tools` | JA3/JA4/JA4+ 参考实现 | JA4 规范与向量来源；**JA4+ 部分方法有许可证限制，我们只依赖 JA4 本体** |
-| 采集/检测/代理 | `wi1dcard/fingerproxy`、`LyleMi/ja3proxy`、`O-X-L/haproxy-ja4-fingerprint` | 反向代理/网关算指纹并透传 | 输出形态参照（我们把 selfcheck 做在响应里，不依赖网关） |
-| 采集/检测/代理 | `jaeles-project/gospider`、`pkg.go.dev/gitee.com/baixudong/gospider`、`Ecalose/gospider` | 爬虫/工具链（同名不同项目） | 爬虫侧用法参照；均不自带"证据分级"体系 |
-| 采集/检测/代理 | `tlsmask/tlsmask`、`thesatellite-ai/fetchr`、`Easonliuliang/helloprint` | 指纹伪装/一致性工具 | UA ↔ TLS 一致性思路参照（我们的身份层守门即这类规则） |
+### 采集 / 检测 / 代理（对照面，不是竞品）
 
-### 我们的优势
+| 项目 | 作用 | 与 geektls 的关系 |
+|---|---|---|
+| `gospider007/fp` | 独立 ClientHello 解析器 | E1 采集链路直接使用（`tests/e2e/cmd/e1-browser`） |
+| `FoxIO-LLC/ja4`、`Crank-Git/ja4plus-go`、`XOR-op/ja-tools` | JA3 / JA4 / JA4+ 参考实现 | JA4 规范与测试向量来源；只依赖 JA4 本体（JA4+ 部分方法有许可证限制） |
+| `wi1dcard/fingerproxy`、`LyleMi/ja3proxy`、`O-X-L/haproxy-ja4-fingerprint` | 反向代理 / 网关算指纹并透传 | 输出形态对照；selfcheck 做在响应里，不依赖网关 |
+| `jaeles-project/gospider`、gitee `baixudong/gospider`、`Ecalose/gospider` | 爬虫 / 工具链（同名不同项目） | 爬虫侧用法参照 |
+| `tlsmask/tlsmask`、`thesatellite-ai/fetchr`、`Easonliuliang/helloprint` | 指纹伪装 / 一致性工具 | UA ↔ TLS 一致性思路照面；落成身份层守门测试 |
 
-1. **四层一起**：TLS + H2（含 **HPACK 编码策略四档**）+ H3/QUIC + TCP（TTL/MSS 可承诺）。同类多数止步 TLS/H2，HPACK 编码策略几乎无人做（Chrome 档有 QUICHE 源码级证据）。
-2. **证据体系**：`grade` 分级 + `source` 守门 + E1 真机采集链路 + 语料回归 + 外部 oracle 周检。同类普遍只给"一份清单"，不区分实测与转写。
-3. **自校验**：响应里直接给"本次握手实际发出的" JA3/JA4/扩展序/GREASE 值，可当回归断言用；`check_profile` 支持五入参离线自检。
-4. **三语言同引擎**：Python / Node / Go 共用同一 C ABI，跨语言 JA4 三方全等；不需要为每种语言重写指纹栈。
-5. **预设规模与结构**：363 条（29 条自测可参与严格断言 + E2i 谱系内插 + 319 条 E3 导入），覆盖浏览器/App/工具/代理等 29 族，含跨平台同版本一致性断言。
-6. **部署形态干净**：Go 实现、CGO 只在构建动态库时用到，产物是单文件动态库 + 平台 wheel，无需 libcurl 补丁链。
+### 上表里 geektls 的差异点
 
-### 我们的劣势（客观）
+1. **四层一起**：TLS + H2（含 HPACK 编码策略四档）+ H3 / QUIC + TCP（TTL / MSS）。上表其他客户端多数止步 TLS / H2。
+2. **证据分级**：`grade`（30 自测 / 6 E2i / 8 E2i-u / 319 E3）+ `source` 守门 + E1 真机采集链路 + 语料回归 + 外部 oracle 周检；同类普遍只给一份清单，不区分实测与转写。
+3. **响应内自校验**：本次握手实际发出的 JA3 / JA4 / 扩展序 / GREASE 值直接从响应取，可当回归断言；`check_profile` 支持五种入参离线自检。
+4. **三语言同引擎**：Python / Node / Go 共用同一 C ABI，跨语言 JA4 三方全等，不需要为每种语言重写指纹栈。
+5. **预设结构**：363 条按 `grade` 分层（30 自测可参与严格断言 + 6 E2i / 8 E2i-u 谱系内插 + 319 E3 导入），覆盖浏览器 / App / 工具 / 代理等 29 族，含跨平台同版本一致性断言（`chrome_152` / `chrome_154` 在 macOS / Android / Windows 上 JA4 逐字符相同）。
+6. **部署形态**：Go 实现、CGO 只用于构建动态库，产物是单文件动态库 + 平台 wheel，无需 libcurl 补丁链。
 
-1. **生态与熟悉度**远不如 `curl_cffi`/`curl-impersonate`：Python 用户迁移成本、示例与社区最少；也没有 `hrequests` 那种浏览器自动化集成。
-2. **预设更新依赖人工采样**（SLA 2 周）：大量预设是 E3（外部转写）而非实测；而 curl_cffi/curl-impersonate 靠社区补丁节奏更快。
-3. **H3 可控面有限**：QUIC Initial 布局（分片/PADDING/coalesce）不可控；transport params 顺序靠 blob 直通；Firefox/Safari H3 未实测。
-4. **Safari 侧的近似**：HPACK 的 safari 档是全 literal 的保守近似、padding 用实测字节数表达、无 CFNetwork 字节级证据。
-5. **TCP 只有 TTL/MSS**（Windows 无 MSS）；window/window_scale/options 仅 Linux 探测模式。
-6. **发布面**：npm 与 Go module 尚未发布；wheel 只覆盖 5 平台（无 musllinux / Windows ARM64）。
-7. **依赖 fork**：`fhttp`、`quic-go-utls` 是 vendor fork，升级上游要重打 patch 并跑回归（已登记流程，但仍是维护成本）。
-8. **有损入口的保真度**：JA3/JA4 这类入口天然丢负载，我们选择"如实告警"而不是"看起来像"，这在某些"只要 JA3 过检测"的场景里不是最省事的路径。
+T-HPACK 四档的证据来源：chrome 档对齐 Chromium QUICHE `HpackEncoder` 的默认策略（源码级），
+firefox 档对齐 Firefox 59 抓包（字节级），safari 档为保守近似（待 E1 校验）；上游 x/net 编码器
+"一切皆可入动表"的行为与前三者都不同。
 
-### 我们借鉴了什么（并已落地）
+### 相对短板（同一张表下的客观差距）
 
-- **HPACK 编码策略**（T-HPACK）：借鉴 Chromium QUICHE `HpackEncoder` 的默认策略与 Firefox 59 抓包行为，落到四档策略钩子（原上游 x/net 编码器"一切皆可入动表"是明确不同的）。
-- **第三方指纹集导入**：借鉴 `bogdanfinn/tls-client` 的 profile 组织方式，做成可复现的"快照 + 转换器"管线，并补 `grade=E3` 证据分级。
-- **注释/证据风格**：`FoxIO-LLC/ja4` 的规范文本与 `gospider007/fp` 的解析器是我们 JA4 自算与 E1 采集的对照面。
-- **一致性守门**：`helloprint`/`tlsmask` 这类"UA 与 TLS 一致性"思路，落成身份层守门测试（禁 headless 令牌、UA ↔ UA-CH 平台/版本自洽）。
+| 维度 | 差距 |
+|---|---|
+| 生态与熟悉度 | 远不如 `curl_cffi` / `curl-impersonate`：Python 迁移成本、示例与社区最少；没有 `hrequests` 那种浏览器自动化集成 |
+| 预设更新 | 依赖人工采样（SLA 2 周）；大量预设是 E3 转写而非实测，`curl_cffi` / `curl-impersonate` 靠社区补丁更快 |
+| H3 可控面 | QUIC Initial 布局（分片 / PADDING / coalesce）不可控；transport params 顺序靠 blob 直通；Firefox / Safari H3 未实测 |
+| Safari 侧 | HPACK 的 safari 档是全 literal 保守近似；padding 用实测字节数表达；无 CFNetwork 字节级证据 |
+| 四层 | 只有 TTL / MSS（Windows 无 MSS）；window / window_scale / options 仅 Linux 探测模式 |
+| 发布面 | npm 与 Go module 尚未发布；wheel 只覆盖 5 平台（无 musllinux / Windows ARM64） |
+| 依赖 fork | `fhttp`、`quic-go-utls` 是 vendor fork，升级上游要重打 patch 并跑回归（流程已登记，仍是维护成本） |
+| 有损入口 | JA3 / JA4 入参天然丢负载，此处选择"如实告警"而不是"看起来像"，在只求"JA3 过检测"的场景不是最省事的路径 |
 
 ## 已知边界与不足（如实）
 
 | 边界 | 说明 |
 |---|---|
-| QUIC 内层 ECH 与 bogdanfinn 服务端 | 其 QUIC server 不处理 ECH-in-QUIC 会静默失败（客户端侧我们已合成 Chrome 等效 payload；真服务器按规范忽略 GREASE ECH） |
+| QUIC 内层 ECH 与 bogdanfinn 服务端 | 其 QUIC server 不处理 ECH-in-QUIC 会静默失败（客户端侧已合成 Chrome 等效 payload；真服务器按规范忽略 GREASE ECH） |
 | QUIC Initial 布局（分片/PADDING/coalesce） | quic-go packet packer 无钩子，不可控（降级登记） |
 | QUIC transport params 顺序/非标参数 | 已经 T4-1 blob 直通可控（顺序/值硬断言全绿）；个别残余值与 blob 整块替换冲突，待 fork 决策（能力矩阵 H3-7） |
 | Windows TCP MSS | 不支持（WSAENOPROTOOPT 实测），跳过+warning；raw socket 档仅 Linux 探测模式 |
@@ -463,7 +467,7 @@ wsl -d Ubuntu -- bash scripts/wsl-test.sh   # Linux 侧验证（WSL，Go 自动�
 发布物（wheel / npm 包 / Go module / 编译进动态库的依赖）内含第三方代码，各依赖的许可证与
 归属声明登记在 [LICENSES.md](LICENSES.md) 并随 wheel 一起分发：全量闭包审计**无 GPL/LGPL**；
 两个如实登记的注意项是**上游 `fhttp` 无显式 LICENSE**（仅"无授权使用"风险，行业生态同此依赖）
-与 **JA4+ 的许可证/商标边界**（我们只依赖 JA4 本体，见上文对比表）。
+与 **JA4+ 的许可证/商标边界**（只依赖 JA4 本体，见上文对比表）。
 
 ## 文档索引
 
@@ -490,6 +494,6 @@ wsl -d Ubuntu -- bash scripts/wsl-test.sh   # Linux 侧验证（WSL，Go 自动�
 
 ## 非目标
 
-- 不做服务端指纹采集（那是隔壁 `D:\work\tls` nginx 套件的事，两者互为验证端）。
+- 不做服务端指纹采集。
 - 不做浏览器级 JS 环境模拟（Canvas/WebGL 等）。
 - 不内置任何绕过具体站点防护的"开箱即用"策略——只提供精确的指纹原语。
