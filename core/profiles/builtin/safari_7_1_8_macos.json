@@ -101,7 +101,8 @@
     "headers_priority": {
       "exclusive": true,
       "weight": 255
-    }
+    },
+    "hpack_strategy": "safari"
   },
   "grade": "E3",
   "source": "tls_config-0.0.2/TLS_SAFARI_7_1_8_MACOS_10_9_5"

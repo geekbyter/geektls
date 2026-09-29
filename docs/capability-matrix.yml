@@ -154,9 +154,10 @@ layers:
       evidence: E2
     - id: h2.hpack_indexing
       target: A
-      status: missing
-      evidence: null
-      blocking: "H2-1：fhttp 无钩子；阶段 3 spike 决策"
+      status: implemented
+      evidence: E2
+      blocking: null
+      note: "2026-09-28 T-HPACK 落地：vendor fork fhttp（core/third_party/fhttp）加编码器策略钩子，profile.http2.hpack_strategy 四档——chrome=QUICHE DefaultPolicy 源码级（伪头仅 :authority 入动表/常规头全入/Huffman 更短则用/默认服务端无 TSU）、firefox 同形（FF59 抓包字节级）、safari 保守近似（不动表，无公开字节级证据，标注待 E1）、generic=上游默认对照；线上断言 tests/e2e/h2_hpack_strategy_test.go（表示形式+Huffman 位+动表复用逐字节）"
     - id: h2.connection_preface_timing
       target: A
       status: implemented
@@ -249,15 +250,17 @@ layers:
       target: A
       status: implemented
       evidence: E2
+      note: "2026-09-28：header_case 三档（preserve/lower/title）全部落地，单测覆盖"
     - id: http1.method_version_string
       target: A
       status: implemented
       evidence: E2
     - id: http1.redirect_cookie_reuse
       target: C
-      status: partial
-      evidence: local
-      blocking: "E-1：连接复用未实现；连接池做成可选开关（默认关）"
+      status: implemented
+      evidence: E2
+      blocking: null
+      note: "2026-09-28 二期阶段5：per-origin 连接池落地（H2 单连接多路复用 / H1 keep-alive 空闲池 / H3 共享 transport），默认开启、behavior.connection_pool=false 可关；redirect/cookie 在复用连接上正常工作（engine 池测试钉住）"
     - id: http1.request_timing
       target: C
       status: partial
@@ -385,3 +388,6 @@ verification:
     - "2026-09-28 第六轮：iOS 17.2 三份实测（Safari/CriOS/EdgiOS）→ 新增 safari_17_2_ios / chrome_148_ios / edge_148_ios；发现并钉住“iOS 三兄弟共用 WebKit TLS/H2 形态（唯一差异是 UA）”；新增 docs/08 待补采样计划（plan）；core/e2e 全绿、生成器守门 0 差异"
     - "2026-09-28 第七轮：Android 14 三份实测（Chrome/Edge/Firefox）→ 新增 chrome_154_android / edge_153_android / firefox_156_android；钉住“TLS 跨平台一致 + Firefox 的 H2 随平台不同 + sec-ch-ua 按版本固定（否掉每会话随机）”；docs/08 S1 前半结案；core/e2e 全绿"
     - "2026-09-28 第八轮：导入第三方指纹集 tls_config-0.0.2（可复现管线 dump.py+import-tlsconfig）→ 预设 29→348（29 族，含 curl/okhttp/IE/代理工具与微信/UC/QQ/夸克等 App 浏览器），并覆盖 G1 的 1.2-era 面；新增 grade/source 证据分级与 provenance 守门，E1 断言全部跳过 E3；交叉校验 4 条完全一致 ✓、发现 2 条差异（chrome_133 序 / firefox_135 缺扩展）登记待测；core/e2e 全绿"
+    - "2026-09-28 第九轮：selfcheck 语义修正——IP 字面量目标（含 IPv6）线上省略 SNI（uTLS 与真 Chrome 一致），engine 自算 JA3/JA4 前从 spec 副本剔除 SNI 占位，JA4 d/i 与扩展计数（及 JA3 扩展段）现反映线上实情；chrome_131/133/150 预设补 headers_priority（excl=1/w=255，= G11 实测形状 = 引擎原默认行为，仅数据补齐）；core/e2e/python/node 全绿"
+    - "2026-09-28 第十轮（二期阶段 5）：per-origin 连接池默认开启（H2 单连接多路复用 / H1 keep-alive 池 / H3 共享 transport；behavior.connection_pool=false 可关；CONTRACT-FREEZE #5 附理由解除）；Session 并发安全（100 goroutine × 100 请求 -race 零报告）；吞吐复测 Python 9.4k/Node 9.1k/Go 每 worker 12.7k req/s（≥10k 达成，benchmarks.md 前后对照）；http1.header_case 三档落地；流式上传 ABI 追加（gtls_request_begin/write/finish，h/ctypes/koffi 三处同步，H1 chunked 线上字节断言）；selfcheck 深化字段（ja3_fullstring/extensions/wire_extensions/grease/negotiated/sni_sent）；core/e2e race/pytest/node 全绿"
+    - "2026-09-28 第十一轮：T-HPACK——vendor fork fhttp（hpack 编码器 SetIndexPolicy/SetHuffmanMode 钩子 + Transport.HpackStrategy），hpack_strategy 四档落地（chrome=QUICHE 源码级/firefox=抓包字节级/safari=保守近似待 E1/generic=对照），h2 采集器下沉到 HPACK 表示形式级断言；D-7 许可证全量复核（LICENSES.md 重写：发布面 13 模块逐仓核对、零 GPL/LGPL、fhttp 无显式 LICENSE 登记为风险项、本项目自身许可证待定）；Go 版本线统一（发布面 1.26 / 测试面 1.27，versioning.md 成文）"

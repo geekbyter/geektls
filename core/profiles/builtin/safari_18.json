@@ -133,6 +133,7 @@
     }
   },
   "http2": {
+    "hpack_strategy": "safari",
     "settings": [
       [
         4,

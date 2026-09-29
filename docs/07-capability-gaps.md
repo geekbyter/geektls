@@ -128,6 +128,8 @@
    `excl=1/dep=0/w=256`、Firefox `excl=0/dep=0/w=42`。fhttp 的**默认值恰是 Chrome 形状**，
    故 Chromium 预设无需显式声明——由 `tests/e2e/fp_oracle_test.go` 的断言钉住，
    防止 fork 默认值无声漂移；Firefox 由新增的 `profile.http2.headers_priority` 显式覆盖。
+   （2026-09-28 补：手写预设 chrome_131/133/150 的 http2 节已显式补齐
+   `headers_priority{excl=1,w=255}`——与默认值同值，纯数据补齐，引擎行为不变。）
    剩余面：**Safari** —— 2026-09-28 已由真机实测收口（17.3.1 / 18.6 均 `exclusive=false`，见 §5.4）。
 
 ### 5.2 本轮据实测修复

@@ -53,7 +53,7 @@ __all__ = [
 
 # 包版本与动态库版本是**两个**版本（见 docs/versioning.md）：包内库与包版本锁死，
 # 运行时再用 version() 核对 ABI 主版本。
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 EXPECTED_ABI = 1
 
@@ -407,13 +407,17 @@ class Session:
     其余未知关键字原样透传给引擎会话选项。
     """
 
-    def __init__(self, impersonate: str = None, *, profile: dict = None,
-                 ja3: str = None, ja4r: str = None, clienthello_hex: str = None,
+    def __init__(self, impersonate: str = None, *, profile=None,
+                 ja3: str = None, ja4: str = None, ja4r: str = None,
+                 clienthello_hex: str = None,
                  headers=None, proxies=None, timeout=None, verify=None,
                  allow_redirects=None, cookies=None, **options):
         config = {}
+        if isinstance(profile, str):
+            # 允许直接传 profile JSON 文本（省得调用方自己 json.loads）。
+            profile = _json.loads(profile)
         for key, val in (("impersonate", impersonate), ("profile", profile),
-                         ("ja3", ja3), ("ja4r", ja4r),
+                         ("ja3", ja3), ("ja4", ja4), ("ja4r", ja4r),
                          ("clienthello_hex", clienthello_hex)):
             if val is not None:
                 config[key] = val
@@ -476,6 +480,7 @@ class Session:
         payload = {"method": method.upper(), "url": url}
 
         raw_body = None
+        stream_chunks = None
         if json is not None:
             raw_body = _json.dumps(json, ensure_ascii=False).encode()
             if "content-type" not in hdrs:
@@ -487,10 +492,17 @@ class Session:
                     hdrs["content-type"] = "application/x-www-form-urlencoded"
             elif isinstance(data, str):
                 raw_body = data.encode()
-            else:
+            elif isinstance(data, (bytes, bytearray, memoryview)):
                 raw_body = bytes(data)
+            else:
+                stream_chunks = data  # 可迭代 → chunked 流式上传
         elif body is not None:  # 0.1.x 早期参数名，保留兼容
-            raw_body = body.encode() if isinstance(body, str) else bytes(body)
+            if isinstance(body, str):
+                raw_body = body.encode()
+            elif isinstance(body, (bytes, bytearray, memoryview)):
+                raw_body = bytes(body)
+            else:
+                stream_chunks = body  # 迭代器/生成器 → chunked 流式上传
 
         if raw_body is not None:
             payload["body_b64"] = base64.b64encode(raw_body).decode()
@@ -505,10 +517,45 @@ class Session:
         payload.update(kwargs)
 
         started = time.monotonic()
+        if stream_chunks is not None:
+            return self._stream_upload(payload, stream_chunks,
+                                       method=payload["method"], url=url, started=started)
         resp = _ffi.lib.gtls_request(self._session, _json.dumps(payload).encode())
         if not resp:
             _check_error()
         return Response(resp, method=payload["method"], url=url,
+                        elapsed=time.monotonic() - started)
+
+    def _stream_upload(self, payload: dict, chunks, *, method: str, url: str,
+                       started: float) -> Response:
+        """迭代器 body 的 chunked 流式上传（H1 线上 chunked 编码 / H2 DATA 帧流）。
+
+        body 逐块经 gtls_request_write 发出，流尽后 finish 收响应头。
+        中途出错时仍调 finish 回收 handle（finish 本身的错误忽略）。
+        """
+        up = _ffi.lib.gtls_request_begin(self._session, _json.dumps(payload).encode())
+        if not up:
+            _check_error()
+        try:
+            for chunk in chunks:
+                if isinstance(chunk, str):
+                    chunk = chunk.encode()
+                else:
+                    chunk = bytes(chunk)
+                if not chunk:
+                    continue
+                if _ffi.lib.gtls_request_write(up, chunk, len(chunk)) < 0:
+                    _check_error()
+        except BaseException:
+            try:
+                _ffi.lib.gtls_request_finish(up)
+            except Exception:
+                pass
+            raise
+        resp = _ffi.lib.gtls_request_finish(up)
+        if not resp:
+            _check_error()
+        return Response(resp, method=method, url=url,
                         elapsed=time.monotonic() - started)
 
     def get(self, url: str, **kwargs) -> Response:

@@ -106,7 +106,9 @@ func computeJA4(spec *utls.ClientHelloSpec, protoFlag string) string {
 		switch ext := e.(type) {
 		case *utls.SNIExtension:
 			// 扩展存在即记 d：SNI "auto" 在 check 时未解析为具体 host，
-			// 但 profile 的意图是域名（空 ServerName 在线上省略的场景由 engine 保证不发生）。
+			// 但 profile 的意图是域名。IP 字面量目标线上省略 SNI（RFC 6066 §3，
+			// uTLS SNIExtension.Len 经 hostnameInSNI 判 IP 返回 0）——拨号路径的
+			// selfcheck 由 engine 先用 SpecWithoutSNI 剔除再调用本函数。
 			sniPresent = true
 		case *utls.ALPNExtension:
 			alpnCode = ja4ALPNCode(ext.AlpnProtocols)
@@ -250,6 +252,86 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// GreaseMark 记录一处 GREASE 出现的位置与实际取值（selfcheck 用）。
+// Where ∈ cipher/extension/group/version/key_share；Index 是该列表内的下标
+// （extension 的下标按线上扩展序，含 GREASE 自身）。
+type GreaseMark struct {
+	Where string `json:"where"`
+	Index int    `json:"index"`
+	Value uint16 `json:"value"`
+}
+
+// WireView 返回 spec 的线上视图：扩展 type 序列两份（含 GREASE 实际值的线上序 /
+// 剔 GREASE）与全部 GREASE 标记。供 selfcheck 报告用；不改变任何线上行为。
+// 扩展可见性与 JA3/JA4 同口径（effectiveExtensions：未武装 padding / 空 PSK 不计）。
+func WireView(spec *utls.ClientHelloSpec) (wireExts, plainExts []uint16, grease []GreaseMark) {
+	if spec == nil {
+		return nil, nil, nil
+	}
+	for i, c := range spec.CipherSuites {
+		if isGreaseUint16(c) {
+			grease = append(grease, GreaseMark{Where: "cipher", Index: i, Value: c})
+		}
+	}
+	effExts, _ := effectiveExtensions(spec)
+	for _, e := range effExts {
+		id, ok := extensionTypeID(e)
+		if !ok {
+			continue
+		}
+		idx := len(wireExts)
+		wireExts = append(wireExts, id)
+		if isGreaseUint16(id) {
+			grease = append(grease, GreaseMark{Where: "extension", Index: idx, Value: id})
+			continue
+		}
+		plainExts = append(plainExts, id)
+		switch ext := e.(type) {
+		case *utls.SupportedCurvesExtension:
+			for i, g := range ext.Curves {
+				if isGreaseUint16(uint16(g)) {
+					grease = append(grease, GreaseMark{Where: "group", Index: i, Value: uint16(g)})
+				}
+			}
+		case *utls.SupportedVersionsExtension:
+			for i, v := range ext.Versions {
+				if isGreaseUint16(v) {
+					grease = append(grease, GreaseMark{Where: "version", Index: i, Value: v})
+				}
+			}
+		case *utls.KeyShareExtension:
+			for i, ks := range ext.KeyShares {
+				if isGreaseUint16(uint16(ks.Group)) {
+					grease = append(grease, GreaseMark{Where: "key_share", Index: i, Value: uint16(ks.Group)})
+				}
+			}
+		}
+	}
+	return wireExts, plainExts, grease
+}
+
+// SpecWithoutSNI 返回剔除 SNI 扩展（type 0）后的 spec 浅拷贝，原 spec 不动。
+// 用途：IP 字面量目标（net.ParseIP 命中，含 IPv6）的 selfcheck——uTLS 与真
+// Chrome 一样在线上省略 SNI（SNIExtension.Len 对 IP 返回 0，扩展整体不上线），
+// 而编译出的 spec 里 SNI 只是 "auto" 占位；自算 JA3/JA4 前剔除才能反映线上实情
+// （JA4 的 d/i 标志与扩展计数变化；JA3 扩展段同步少 0）。spec 单次使用契约不受
+// 影响：本函数只在握手完成后作用于本次拨号的 spec 副本。
+func SpecWithoutSNI(spec *utls.ClientHelloSpec) *utls.ClientHelloSpec {
+	if spec == nil {
+		return nil
+	}
+	out := *spec
+	exts := make([]utls.TLSExtension, 0, len(spec.Extensions))
+	for _, e := range spec.Extensions {
+		if _, ok := e.(*utls.SNIExtension); ok {
+			continue
+		}
+		exts = append(exts, e)
+	}
+	out.Extensions = exts
+	return &out
 }
 
 // extensionTypeID 在 spec 层取扩展的线上 type（不能依赖 Read：SNI 空名、

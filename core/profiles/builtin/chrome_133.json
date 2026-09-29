@@ -169,6 +169,7 @@
     "priority_param": 984832
   },
   "http2": {
+    "hpack_strategy": "chrome",
     "settings": [
       [
         1,
@@ -193,7 +194,11 @@
       "a",
       "s",
       "p"
-    ]
+    ],
+    "headers_priority": {
+      "exclusive": true,
+      "weight": 255
+    }
   },
   "tcp": {
     "ttl": 128,

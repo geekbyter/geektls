@@ -19,11 +19,14 @@ import (
 )
 
 // transportConn 是一次请求的完整连接产物。
+// sc 在握手完成时算好（selfcheck 随连接走：连接池复用时不发新
+// ClientHello，复用方报告的就是这条连接建立时的指纹）。
 type transportConn struct {
 	conn  net.Conn
 	uconn *utls.UConn
 	spec  *utls.ClientHelloSpec
 	proto string // 协商出的 ALPN
+	sc    SelfCheck
 }
 
 // connect 完成 dial（可选代理）+ uTLS 握手，返回可用于 H1/H2 分发的连接。
@@ -128,6 +131,7 @@ func (s *Session) dialAndHandshake(d *net.Dialer, proxyURL, addr, host string) (
 		uconn: uconn,
 		spec:  spec,
 		proto: uconn.ConnectionState().NegotiatedProtocol,
+		sc:    selfCheck(s.profile, spec, host, uconn),
 	}, nil
 }
 

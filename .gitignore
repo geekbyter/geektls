@@ -17,6 +17,11 @@ bindings/python/geektls/*.dll
 bindings/python/geektls/*.so
 bindings/python/geektls/*.dylib
 bindings/python/geektls/*.h
+# setuptools 的暂存/元数据（构建产物，之前没忽略 ⇒ 会留一份过期的 PKG-INFO）
+bindings/python/*.egg-info/
+# 本地分平台留的 wheel（v0.1.4 的多余 manylinux_2_34 就是从这里传上去的）
+bindings/python/dist-linux/
+bindings/python/dist-win/
 
 # Node
 node_modules/

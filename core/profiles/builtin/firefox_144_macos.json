@@ -164,7 +164,8 @@
     "headers_priority": {
       "exclusive": false,
       "weight": 41
-    }
+    },
+    "hpack_strategy": "firefox"
   },
   "identity": {
     "headers": [

@@ -1,0 +1,150 @@
+{
+  "kind": "field_level_capture",
+  "preset": "chrome_154_windows",
+  "captured_at": "2026-09-28",
+  "oracle": "https://tls.peet.ws/api/all",
+  "grade_note": "真机字段级实测（E1r）：有逐字段值与 JA3/JA4，但**无原始 ClientHello 字节**（与 E1 字节级记录区分）。载荷类字段（key_share/ECH/PSK 大块）属逐连接随机，不作指纹证据，故未收录；只有扩展类型集合/顺序与结构字段进预设。",
+  "resumption": {
+    "resumed": true,
+    "why": "该抓包带 pre_shared_key(41) 非空载荷 + session_ticket(35) ⇒ 复用会话；因此 JA4 记 18 个扩展。我们的预设按**首访**形态（41 为空占位，无票据时线上省略 OmitEmptyPsk）⇒ JA4 记 17 个扩展。两者 cipher 段哈希相同（8daaf6152771），b 段差异仅由 41 产生。"
+  },
+  "request": {
+    "method": "GET",
+    "http_version": "h2",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+  },
+  "tls": {
+    "ciphers": [
+      "0xdada",
+      "0x1301",
+      "0x1302",
+      "0x1303",
+      "0xc02b",
+      "0xc02f",
+      "0xc02c",
+      "0xc030",
+      "0xcca9",
+      "0xcca8",
+      "0xc013",
+      "0xc014",
+      "0x009c",
+      "0x009d",
+      "0x002f",
+      "0x0035"
+    ],
+    "extension_types_sent": [
+      60138,
+      5,
+      43,
+      23,
+      51764,
+      51,
+      18,
+      65037,
+      16,
+      45,
+      13,
+      27,
+      10,
+      65281,
+      17613,
+      0,
+      11,
+      35,
+      6682,
+      41
+    ],
+    "supported_groups": [
+      "grease",
+      "0x11ec",
+      "0x001d",
+      "0x0017",
+      "0x0018"
+    ],
+    "key_share_types": [
+      "grease",
+      "0x11ec",
+      "0x001d"
+    ],
+    "supported_versions": [
+      "grease",
+      "0x0304",
+      "0x0303"
+    ],
+    "sig_algs": [
+      "0x2a2a",
+      "0x0904",
+      "0x0905",
+      "0x0906",
+      "0x0403",
+      "0x0804",
+      "0x0401",
+      "0x0503",
+      "0x0805",
+      "0x0501",
+      "0x0806",
+      "0x0601"
+    ],
+    "alpn": [
+      "h2",
+      "http/1.1"
+    ],
+    "ext_51764_payload": {
+      "same_as": "chrome_154_macos",
+      "bytes": 186
+    },
+    "ja3": "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,5-43-23-51764-51-18-65037-16-45-13-27-10-65281-17613-0-11-35-41,4588-29-23-24,0",
+    "ja3_hash": "3adca7070bc5d09827ee9e40d58cc700",
+    "ja4": "t13d1518h2_8daaf6152771_e2d80978ab2e",
+    "ja4_r": "t13d1518h2_002f,0035,009c,009d,1301,1302,1303,c013,c014,c02b,c02c,c02f,c030,cca8,cca9_0005,000a,000b,000d,0012,0017,001b,0023,0029,002b,002d,0033,44cd,ca34,fe0d,ff01_0904,0905,0906,0403,0804,0401,0503,0805,0501,0806,0601",
+    "peetprint": "GREASE-772-771|2-1.1|GREASE-4588-29-23-24|GREASE-2308-2309-2310-1027-2052-1025-1283-2053-1281-2054-1537|1|2|GREASE-4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53|0-10-11-13-16-17613-18-23-27-35-41-43-45-5-51-51764-65037-65281-GREASE-GREASE",
+    "peetprint_hash": "5fa343c29062ede7d0e28fd46c1052a7"
+  },
+  "http2": {
+    "akamai_fingerprint": "1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p",
+    "akamai_fingerprint_hash": "52d84b11737d980aef856699f885ca86",
+    "settings": [
+      [1, 65536],
+      [2, 0],
+      [4, 6291456],
+      [6, 262144]
+    ],
+    "window_update": 15663105,
+    "pseudo_header_order": "m,a,s,p",
+    "headers_priority": {
+      "exclusive": 1,
+      "depends_on": 0,
+      "weight": 256
+    },
+    "headers": [
+      ["cache-control", "max-age=0"],
+      ["sec-ch-ua", "\"Chromium\";v=\"154\", \"Google Chrome\";v=\"154\", \"Not A(Brand\";v=\"99\""],
+      ["sec-ch-ua-mobile", "?0"],
+      ["sec-ch-ua-platform", "\"Windows\""],
+      ["upgrade-insecure-requests", "1"],
+      ["user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"],
+      ["accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"],
+      ["sec-fetch-site", "none"],
+      ["sec-fetch-mode", "navigate"],
+      ["sec-fetch-user", "?1"],
+      ["sec-fetch-dest", "document"],
+      ["accept-encoding", "gzip, deflate, br, zstd"],
+      ["accept-language", "en-GB,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7,zh;q=0.6"],
+      ["priority", "u=0, i"]
+    ]
+  },
+  "tcp_syn": {
+    "ttl": 117,
+    "mss": 1320,
+    "window": 65535,
+    "window_scale": 8,
+    "sack_permitted": true,
+    "timestamps": false,
+    "options_raw": "020405280103030801010402",
+    "note": "ttl=117 且与 149 那份同出口同参数 ⇒ 中转节点产物，不据此改 tcp 节（与既有结论一致）。"
+  },
+  "identity_normalization": {
+    "cache-control": "抓包带 cache-control: max-age=0（地址栏回车/reload 才有），同机的 149 抓包没有 ⇒ 判为动作相关，不进预设。",
+    "accept-language": "抓包为现场用户偏好（en-GB,…/zh-CN,…），属可配置项 ⇒ 预设沿用族内规范值 en-US,en;q=0.9（与 chrome_154_macos 一致）。"
+  }
+}

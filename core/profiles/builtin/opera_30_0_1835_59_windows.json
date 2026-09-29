@@ -105,7 +105,8 @@
     "headers_priority": {
       "exclusive": false,
       "weight": 255
-    }
+    },
+    "hpack_strategy": "chrome"
   },
   "http3": {
     "enabled": true,

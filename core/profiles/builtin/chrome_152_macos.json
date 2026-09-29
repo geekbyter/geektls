@@ -164,7 +164,8 @@
       "a",
       "s",
       "p"
-    ]
+    ],
+    "hpack_strategy": "chrome"
   },
   "http3": {
     "enabled": true,

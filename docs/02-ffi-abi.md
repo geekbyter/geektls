@@ -41,6 +41,22 @@ int64_t  gtls_response_read(uint64_t resp, char* buf, int64_t buf_len);
 int      gtls_response_close(uint64_t resp);  // 未读完即关闭 = 取消
 ```
 
+### 流式上传（二期 T2 追加；ABI 号不变——只增不改）
+
+```c
+// 开始流式上传：request_json 同 gtls_request（body_b64 忽略）；
+// 请求行与头部立即发出，body 逐块写。返回 upload handle；0 = 失败。
+uint64_t gtls_request_begin(uint64_t session, const char* request_json);
+
+// 写一块 body：H1 = 一个 chunk 帧（Transfer-Encoding: chunked），H2 = DATA 帧流。
+// 返回写入字节数；-1 = 错误。空写（len 0）是 no-op。
+int64_t  gtls_request_write(uint64_t upload, const char* buf, int64_t buf_len);
+
+// 结束 body（H1 发终止 0-chunk）并阻塞至响应头到达，返回 response handle
+// （之后与 gtls_request 返回值同样使用）；0 = 失败。成败 upload handle 都失效。
+uint64_t gtls_request_finish(uint64_t upload);
+```
+
 ### 错误与内存
 
 ```c
@@ -64,6 +80,9 @@ char*    gtls_check_profile(const char* profile_json_or_ja3_or_ja4r);
 3. `gtls_response_read` 的 `buf` 由调用方分配，core 只写不持有。
 4. 无回调：进度/异步一律 poll。需要后台下载的场景由绑定层在自己的线程里循环 `read`。
 5. Go 侧 panic 在 FFI 边界全部 recover，转成 `gtls_last_error`——panic 绝不越过 ABI。
+6. **并发（二期阶段 5 起）**：同一 **session** handle 可并发发 `gtls_request` /
+   `gtls_request_begin`（引擎内连接池/缓存均加锁，Python 线程池、Node worker
+   场景安全）；**response / upload handle 仍不可并发使用**（属于单次请求的状态）。
 
 ## 3. 绑定层形态
 

@@ -148,7 +148,8 @@
       "s",
       "a",
       "p"
-    ]
+    ],
+    "hpack_strategy": "safari"
   },
   "identity": {
     "headers": [

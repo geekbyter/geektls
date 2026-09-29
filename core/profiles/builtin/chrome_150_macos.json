@@ -48,7 +48,9 @@
         },
         {
           "type": 11,
-          "point_formats": [0]
+          "point_formats": [
+            0
+          ]
         },
         {
           "type": 0,
@@ -70,7 +72,9 @@
         },
         {
           "type": 45,
-          "psk_modes": [1]
+          "psk_modes": [
+            1
+          ]
         },
         {
           "type": 51,
@@ -132,6 +136,7 @@
     }
   },
   "http2": {
+    "hpack_strategy": "chrome",
     "settings": [
       [
         1,
@@ -156,7 +161,11 @@
       "a",
       "s",
       "p"
-    ]
+    ],
+    "headers_priority": {
+      "exclusive": true,
+      "weight": 255
+    }
   },
   "http3": {
     "enabled": true,

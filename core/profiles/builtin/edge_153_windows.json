@@ -160,7 +160,8 @@
       "a",
       "s",
       "p"
-    ]
+    ],
+    "hpack_strategy": "chrome"
   },
   "http3": {
     "enabled": true,
@@ -217,7 +218,7 @@
       ],
       [
         "user-agent",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0"
       ],
       [
         "accept",

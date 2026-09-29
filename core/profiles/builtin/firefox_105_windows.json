@@ -139,7 +139,8 @@
       "exclusive": false,
       "stream_dep": 13,
       "weight": 41
-    }
+    },
+    "hpack_strategy": "firefox"
   },
   "grade": "E3",
   "source": "tls_config-0.0.2/TLS_FIREFOX_105"

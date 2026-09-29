@@ -314,10 +314,29 @@ func buildRecord(name, browser string, c captured) (*record, error) {
 		rec.H2 = &h2Record{
 			Settings:       settings,
 			WindowUpdate:   c.h2Spec.ConnFlow,
-			RegularHeaders: c.h2Spec.OrderHeaders,
+			RegularHeaders: sanitizeHeaders(c.h2Spec.OrderHeaders),
 		}
 	}
 	return rec, nil
+}
+
+// sanitizeHeaders 把记录里的身份头归一成**有头浏览器**形态。
+//
+// 为什么必须做：采集链路用 `--headless=new`（见 launch），于是 UA 里会多出
+// giveaway 令牌——`HeadlessChrome/153.0.0.0 … Edg/153.0.0.0`。无头与有头的
+// ClientHello/H2 逐字段相同（已用真机抓包复核，见
+// profiles/evidence/browsers/chrome_149_windows_peetws.json），但 UA 这样露出来
+// 就是"一眼假"；生成器会把记录里的头原样写进预设，所以必须在记录这一层抹掉。
+// （历史：chrome_149_windows / edge_153_windows 曾带着该令牌入库。）
+func sanitizeHeaders(in [][2]string) [][2]string {
+	out := make([][2]string, 0, len(in))
+	for _, kv := range in {
+		if strings.EqualFold(kv[0], "user-agent") {
+			kv = [2]string{kv[0], strings.ReplaceAll(kv[1], "HeadlessChrome", "Chrome")}
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // pickPreset 从 H2 常规头里的 UA 推断内置预设（Chrome/Edge/Firefox + 主版本）。

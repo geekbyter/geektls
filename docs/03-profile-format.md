@@ -74,7 +74,8 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
   "behavior": {
     "redirect_max": 10,
     "cookie_jar": true,
-    "session_resumption": true
+    "session_resumption": true,
+    "connection_pool": true                     // 默认开；false = 每请求新连接（旧行为）
   },
   "identity": {
     "headers": [
@@ -103,6 +104,23 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
   - 禁止伪头（`:` 开头）与空头名，加载即校验。
   - `accept-encoding` 一旦显式下发，HTTP 栈不再自动解压（body 为原始流，解码归调用方）——与库的流式 API 语义一致。
   - 无 `identity` 节的 profile 行为与注入机制引入前完全一致。
+- **`behavior.connection_pool`（二期阶段 5，2026-09-28 起，默认开）**：per-origin
+  连接复用——H2 同 origin 单连接多路复用、H1 keep-alive 空闲池（每键上限 8、
+  空闲 90s 淘汰）、H3 共享 transport（quic-go 按 host 复用 QUIC 连接）。
+  池键 = scheme+host:port+生效代理 URL；池挂在 Session 上（profile 恒定不串）。
+  复用连接不发新 ClientHello，selfcheck 报告本连接握手时的指纹。显式 `false`
+  完整恢复"每请求一条新连接"的旧行为（CONTRACT-FREEZE #5 的解除开关）。
+- **`http1.header_case` 三档（2026-09-28 起全量落地）**：`preserve`（默认，
+  原样保留）/ `lower`（全小写）/ `title`（逐 dash 段首字母大写，如
+  `User-Agent`）；Host 头名随档（preserve/lower 档 `host`，title 档 `Host`），
+  头值不变换。
+- **流式上传（二期 T2）**：绑定层把可迭代 body（Python 迭代器/生成器、Node
+  Iterable/AsyncIterable）映射到 `gtls_request_begin/write/finish`——H1 线上为
+  chunked 编码（每写一块一个 chunk 帧，终止 0-chunk 由 finish 发，用户给的
+  content-length 被剥离），H2 为 DATA 帧流；H3 不支持（明确报错）。
+- **`http2.hpack_strategy`（T-HPACK，2026-09-28 起生效）**：HPACK 编码策略四档
+  `chrome`/`firefox`/`safari`/`generic`（空 = generic = 上游默认）。语义与证据
+  等级见 docs/p2-h2-capability.md「T-HPACK spike」；safari 档为保守近似（未验证）。
 
 ## 3. 预设体系
 

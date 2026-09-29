@@ -1,0 +1,151 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # 测试套件（Linux runner = V-4 要求的那条链路：core 与 e2e 都必须在 Linux 上真实跑过）。
+  # 此前 CI 只有 smoke（c-shared + 三语言），**一个测试都没跑**；且 setup-go 用 1.24，
+  # 而 tests/e2e/go.mod 要求 go 1.27.0 ⇒ Go 步骤会直接失败。
+  test:
+    name: ${{ matrix.os }} tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # 必须满足**最高**的那个要求：tests/e2e/go.mod = 1.27.0（core 与
+          # bindings/golang 是 1.26.0）。用 go.mod 会自动取到 1.26 而失败。
+          go-version: '1.27'
+          cache-dependency-path: |
+            core/go.sum
+            tests/e2e/go.sum
+
+      # 版本守门：**四处**字面量必须一致（core/version、pyproject.toml、
+      # package.json、绑定 __version__）。0.1.4 及之前的发布清单只写了三处、
+      # 漏掉绑定里的 __version__，靠人手同步 ⇒ 这里显式钉住（docs/versioning.md）。
+      # 注：pytest 与 node:test 不在 CI 里（只有 tests/smoke 的轻量冒烟），
+      # 所以这条检查不能只放在 pytest 里，必须在这里跑。
+      - name: version literals must agree (四处)
+        shell: bash
+        run: |
+          set -eu
+          # tr -d '\r'：Windows runner 上若检出为 CRLF，捕获组会带上 \r，导致比对/与 tag
+          # 比较全部假红（与内容无关的平台差异）。
+          core=$(sed -n 's/.*Core = "\([^"]*\)".*/\1/p' core/version/version.go | head -1 | tr -d '\r')
+          py=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' bindings/python/pyproject.toml | head -1 | tr -d '\r')
+          node=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' bindings/nodejs/package.json | head -1 | tr -d '\r')
+          pyb=$(sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' bindings/python/geektls/__init__.py | head -1 | tr -d '\r')
+          echo "core=$core  pyproject=$py  package.json=$node  __init__=$pyb"
+          if [ "$core" != "$py" ] || [ "$core" != "$node" ] || [ "$core" != "$pyb" ]; then
+            echo "::error::四处版本字面量不一致（见 docs/versioning.md，四处必须同步）"
+            exit 1
+          fi
+          echo "四处版本一致：$core ✅"
+
+      - name: core vet and test
+        working-directory: core
+        run: |
+          go vet ./...
+          go test ./... -timeout 15m
+
+      - name: e2e build vet and test
+        working-directory: tests/e2e
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./... -timeout 15m
+
+      # 预设守门：core/profiles/builtin 里"由生成器产出"的文件必须逐字节等于
+      # 生成器当前输出（防止手改预设后忘记同步生成器，或生成器改动未重跑）。
+      # 手写预设（chrome_131/133/150、firefox_120/135、safari_16/18）不在生成器
+      # 输出里，会被自动跳过。
+      - name: presets must equal generator output (Linux)
+        if: runner.os == 'Linux'
+        working-directory: tests/e2e
+        run: |
+          set -eu
+          tmpdir="$(mktemp -d)"
+          # 抓包标本 + E1 真浏览器记录一起产出（后者对应 chrome_149_windows /
+          # edge_153_windows；H3 记录不参与预设生成，故不列入）。
+          go run ./cmd/gen-profiles -out "$tmpdir" \
+            -record ../../profiles/evidence/browsers/chrome_windows.json,../../profiles/evidence/browsers/edge_windows.json \
+            >/dev/null
+          rc=0
+          for f in "$tmpdir"/*.json; do
+            name="$(basename "$f")"
+            if [ ! -f "../../core/profiles/builtin/$name" ]; then
+              echo "::error::$name 由生成器产出但未入库"
+              rc=1
+              continue
+            fi
+            if ! diff -q "$f" "../../core/profiles/builtin/$name" >/dev/null; then
+              echo "::error::$name 与生成器产物不一致（请重跑 gen-profiles 并提交）"
+              diff -u "../../core/profiles/builtin/$name" "$f" | head -40 || true
+              rc=1
+            fi
+          done
+          exit $rc
+
+  # c-shared 构建 + 三语言 smoke（原有链路，保留）。
+  smoke:
+    name: ${{ matrix.os }} smoke
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27' # 同上：需满足 tests/e2e/go.mod 的 1.27.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # c-shared 在 Windows 上需要 gcc；choco 装的 mingw 只改注册表 PATH，
+      # 需要 Update-SessionEnvironment 后把 gcc 所在目录显式写进 GITHUB_PATH。
+      - name: Install toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y --no-progress make mingw
+          Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
+          Update-SessionEnvironment
+          Add-Content $env:GITHUB_PATH (Split-Path (Get-Command gcc).Source)
+
+      - name: Install Node binding deps
+        working-directory: bindings/nodejs
+        run: npm install --no-audit --no-fund
+
+      - name: Build core (c-shared)
+        shell: bash
+        run: make build
+
+      - name: Smoke (Python / Node / Go)
+        shell: bash
+        run: |
+          set -e
+          case "$RUNNER_OS" in
+            Windows) GEEDTLS_LIB="$(cygpath -w "$PWD/build/geektls.dll")" ;;
+            macOS)   GEEDTLS_LIB="$PWD/build/libgeektls.dylib" ;;
+            *)       GEEDTLS_LIB="$PWD/build/libgeektls.so" ;;
+          esac
+          export GEEDTLS_LIB
+          python tests/smoke/smoke.py
+          node tests/smoke/smoke.js
+          (cd tests/smoke && go run .)

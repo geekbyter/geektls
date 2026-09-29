@@ -48,13 +48,27 @@ build:
 
 # wheel：本地出一份"当前平台"的 wheel（发布用；CI 见 .github/workflows/release-pypi.yml）
 # 用法：make wheel PLAT=manylinux_2_28_x86_64|macosx_11_0_arm64|win_amd64|...
+# ⚠️ 两件事：
+#   1) PYTHON 必须是**能装包**的解释器。Debian/Ubuntu 23+ 起系统 python3 受 PEP 668 保护，
+#      直接 `make wheel` 会在 `pip install build wheel` 这步失败（externally-managed-environment）
+#      ⇒ 用 venv：make wheel PYTHON=.venv/bin/python
+#   2) PLAT 是**断言**不是检测：本机（比如 glibc 2.4x 的发行版）构建出的 .so 引用的 GLIBC
+#      符号往往高于 manylinux_2_28 基线 ⇒ 本地给 2_28 标签会是"说谎的标签"，
+#      只能本地自测用，别拿去上传（v0.1.4 那个多余的 manylinux_2_34 就是这么来的）。
+#      真正的 2_28 轮子必须在 manylinux_2_28 容器里构建（CI 的构建步骤）。
 PLAT ?= win_amd64
 wheel: build
+	# 关键清理（与 CI 的"组装 wheel"步一致；0.1.0 踩过两次坑）：
+	# 1) setuptools 暂存目录 bindings/python/build/lib/ 会残留旧平台的动态库，
+	#    只清包目录不够——它会把别的平台的 .dll/.so 一起打进 wheel；
+	# 2) dist 里的旧文件会让后续步骤/上传拿到错的包。
+	rm -rf bindings/python/build bindings/python/dist
+	rm -f bindings/python/geektls/*.dll bindings/python/geektls/*.so bindings/python/geektls/*.dylib
 	cp $(LIBPATH) bindings/python/geektls/
 	cp README.md bindings/python/README.md
 	cd bindings/python && $(PYTHON) -m pip install --quiet --upgrade build wheel \
 		&& $(PYTHON) -m build --wheel \
-		&& $(PYTHON) -m wheel tags --platform-tag "$(PLAT)" dist/*.whl \
+		&& $(PYTHON) -m wheel tags --remove --platform-tag "$(PLAT)" dist/*.whl \
 		&& ls -l dist/
 
 smoke: build

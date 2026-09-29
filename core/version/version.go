@@ -5,7 +5,7 @@ const (
 	// ABI 是 C ABI 主版本号，只增不改；破坏性变更升号（docs/02-ffi-abi.md §4）。
 	ABI = 1
 	// Core 是 core 语义版本。
-	Core = "0.1.4"
+	Core = "0.1.5"
 	// UTLS 记录所集成 uTLS fork 的版本/commit；P0 尚未接入，为空。
 	UTLS = ""
 )

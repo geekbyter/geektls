@@ -150,7 +150,8 @@
       "s",
       "p",
       "a"
-    ]
+    ],
+    "hpack_strategy": "safari"
   },
   "http3": {
     "enabled": true,

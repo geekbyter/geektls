@@ -11,6 +11,7 @@ import (
 	"time"
 
 	fhttp "github.com/bogdanfinn/fhttp"
+	"github.com/bogdanfinn/quic-go-utls/http3"
 
 	h3core "github.com/geektls/core/h3"
 )
@@ -43,9 +44,18 @@ func (s *Session) h3Eligible(req *Request, host string) bool {
 	return known && v.(bool)
 }
 
-// doH3 单次 H3 请求。
+// doH3 单次 H3 请求。池开启时用 Session 级共享 transport（quic-go 内部按
+// host 复用 QUIC 连接——真 Chrome 的同 origin 单 QUIC 连接形态）；池关闭时
+// 维持旧行为：每请求新 transport，随 body 关闭。
 func (s *Session) doH3(req *Request, headers [][2]string) (*Response, error) {
-	tr, err := h3core.NewTransport(s.profile, s.opts.InsecureSkipVerify)
+	shared := s.poolOn()
+	var tr *http3.Transport
+	var err error
+	if shared {
+		tr, err = s.sharedH3Transport()
+	} else {
+		tr, err = h3core.NewTransport(s.profile, s.opts.InsecureSkipVerify)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -70,14 +80,21 @@ func (s *Session) doH3(req *Request, headers [][2]string) (*Response, error) {
 
 	resp, err := tr.RoundTrip(freq)
 	if err != nil {
+		if !shared {
+			tr.Close()
+		}
 		return nil, fmt.Errorf("engine: h3 request: %w", err)
 	}
 	out := &Response{
 		Status:       resp.StatusCode,
 		UsedProtocol: "h3",
-		Body: &connClosingReader{ReadCloser: resp.Body, onClose: func() {
+	}
+	if shared {
+		out.Body = resp.Body // 共享 transport 留在池里，body 关闭只收尾当前流
+	} else {
+		out.Body = &connClosingReader{ReadCloser: resp.Body, onClose: func() {
 			tr.Close()
-		}},
+		}}
 	}
 	for name, vals := range resp.Header {
 		for _, v := range vals {
@@ -85,6 +102,22 @@ func (s *Session) doH3(req *Request, headers [][2]string) (*Response, error) {
 		}
 	}
 	return out, nil
+}
+
+// sharedH3Transport 懒建并返回 Session 级共享 H3 transport（并发安全）。
+// Session.Close 时随池排空。
+func (s *Session) sharedH3Transport() (*http3.Transport, error) {
+	s.h3mu.Lock()
+	defer s.h3mu.Unlock()
+	if s.h3tr != nil {
+		return s.h3tr, nil
+	}
+	tr, err := h3core.NewTransport(s.profile, s.opts.InsecureSkipVerify)
+	if err != nil {
+		return nil, err
+	}
+	s.h3tr = tr
+	return tr, nil
 }
 
 // raceH3H2 实现 Chrome 式 H2/H3 竞速：H3 先跑，h2_race_ms 内没拿到响应头

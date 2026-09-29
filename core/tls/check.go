@@ -22,8 +22,9 @@ type CheckResult struct {
 	Warnings []profiles.Warning `json:"warnings"`
 }
 
-// CheckProfile 统一处理四种入参：完整 profile JSON、{"ja3"/"ja4r"/"clienthello_hex":...}
-// 包装 JSON、裸 JA3 串、裸 JA4R 串。
+// CheckProfile 统一处理五种入参：完整 profile JSON、
+// {"ja3"/"ja4"/"ja4r"/"clienthello_hex":...} 包装 JSON、裸 JA3 串、裸 JA4R 串、
+// 裸 JA4 短哈希串（哈希不可逆 ⇒ 反查内置预设，见 ResolveJA4Preset）。
 func CheckProfile(input string) (*CheckResult, error) {
 	p, warnings, err := profileFromInput(input)
 	if err != nil {
@@ -32,6 +33,9 @@ func CheckProfile(input string) (*CheckResult, error) {
 	if p.TLS == nil || p.TLS.Detail == nil {
 		return nil, fmt.Errorf("profile has no tls.detail to compile")
 	}
+	// 用户输入统一做重放自洽归一（pre_shared_key 占位双向约束），
+	// 让 check 的结果等于"引擎实际会发出的形状"。
+	warnings = append(warnings, profiles.NormalizeForReplay(p)...)
 	spec, err := CompileDetail(p.TLS.Detail)
 	if err != nil {
 		return nil, err
@@ -60,6 +64,7 @@ func profileFromInput(input string) (*profiles.Profile, []profiles.Warning, erro
 		// 先试便捷入口包装：{"ja3":...} / {"ja4r":...} / {"clienthello_hex":...}
 		var probe struct {
 			JA3            string `json:"ja3"`
+			JA4            string `json:"ja4"`
 			JA4R           string `json:"ja4r"`
 			ClientHelloHex string `json:"clienthello_hex"`
 		}
@@ -71,6 +76,8 @@ func profileFromInput(input string) (*profiles.Profile, []profiles.Warning, erro
 			return profiles.FromJA3(probe.JA3)
 		case probe.JA4R != "":
 			return profiles.FromJA4R(probe.JA4R)
+		case probe.JA4 != "":
+			return profileFromJA4Input(probe.JA4)
 		case probe.ClientHelloHex != "":
 			return profiles.FromClientHelloHex(probe.ClientHelloHex)
 		}
@@ -93,14 +100,25 @@ func profileFromInput(input string) (*profiles.Profile, []profiles.Warning, erro
 		return p, nil, nil
 	}
 
-	// 裸串：JA4R 形如 t13d1516h2_...；JA3 形如 771,4865-...-23-...。
+	// 裸串：JA4 形如 t13d1516h2_<12位>_<12位>；JA4R 形如 t13d1516h2_002f,...（四段）；
+	// JA3 形如 771,4865-...-23-...。
+	// 注意顺序：JA4 短哈希（三段、无逗号）必须先判——isJA4RShape 对"第一段像 t13d… +
+	// 含下划线"是宽松的，会把它一起吞掉。
+	if isJA4HashShape(s) {
+		return profileFromJA4Input(s)
+	}
 	if isJA4RShape(s) {
 		return profiles.FromJA4R(s)
 	}
 	if isJA3Shape(s) {
 		return profiles.FromJA3(s)
 	}
-	return nil, nil, fmt.Errorf("input is neither profile JSON, JA3, nor JA4R")
+	return nil, nil, fmt.Errorf("input is neither profile JSON, JA3, JA4R, nor JA4")
+}
+
+// profileFromJA4Input 处理 "ja4" 字段与裸 JA4 串（语义见 tlscore.ResolveJA4Profile）。
+func profileFromJA4Input(v string) (*profiles.Profile, []profiles.Warning, error) {
+	return ResolveJA4Profile(v)
 }
 
 func isJA4RShape(s string) bool {

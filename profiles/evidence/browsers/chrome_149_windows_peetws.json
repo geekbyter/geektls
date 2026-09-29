@@ -1,0 +1,119 @@
+{
+  "kind": "field_level_capture",
+  "preset": "chrome_149_windows（已存在；本条为其**独立来源互证** + UA 修正依据）",
+  "captured_at": "2026-09-28",
+  "oracle": "https://tls.peet.ws/api/all",
+  "grade_note": "真机（非无头）Chrome 149 / Windows 字段级实测，用于独立复现既有 chrome_149_windows 的 TLS/H2 面，并暴露其 identity 的 UA 问题。",
+  "agreement_with_existing_preset": {
+    "ja4": "t13d1516h2_8daaf6152771_d8a2da3f94cd —— 与 core/profiles/builtin/chrome_149_windows.json 的自算 JA4 **逐字符相同**（该预设由 E1 无头浏览器记录生成）",
+    "akamai": "1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p —— 与预设一致",
+    "sec_ch_ua": "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\" —— 与预设一致（且与 E1 记录逐字符相同，第三方复现）",
+    "sig_algs": "不含 GREASE（0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601）—— 与预设一致 ⇒ 印证『149 及更早的 Chromium sig_algs 无 GREASE；152+ 才加 0x0904/0905/0906 + GREASE』"
+  },
+  "finding_ua_mismatch": {
+    "preset_current": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.0.0 Safari/537.36",
+    "real_browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "why": "E1 记录（profiles/evidence/browsers/chrome_windows.json）来自**无头** Chrome，UA 里带 HeadlessChrome 令牌 ⇒ 生成器把它原样写进预设（identity 直接用记录头）。这是一眼假的破绽。",
+    "fix_path": "改记录里的 UA（或让 cmd/e1-browser 不把 headless 令牌带进记录）后重跑 gen-profiles，再确认与 builtin 逐字节一致。**本次未改**（生成器产物禁止手改，且需与另一处代码改动协同）。"
+  },
+  "request": {
+    "method": "GET",
+    "http_version": "h2",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+  },
+  "tls": {
+    "ciphers": [
+      "0x7a7a",
+      "0x1301",
+      "0x1302",
+      "0x1303",
+      "0xc02b",
+      "0xc02f",
+      "0xc02c",
+      "0xc030",
+      "0xcca9",
+      "0xcca8",
+      "0xc013",
+      "0xc014",
+      "0x009c",
+      "0x009d",
+      "0x002f",
+      "0x0035"
+    ],
+    "extension_types_sent": [
+      10794,
+      35,
+      0,
+      10,
+      13,
+      51,
+      65037,
+      43,
+      45,
+      17613,
+      11,
+      16,
+      27,
+      23,
+      18,
+      65281,
+      5,
+      2570
+    ],
+    "supported_groups": ["grease", "0x11ec", "0x001d", "0x0017", "0x0018"],
+    "key_share_types": ["grease", "0x11ec", "0x001d"],
+    "supported_versions": ["grease", "0x0304", "0x0303"],
+    "sig_algs": ["0x0403", "0x0804", "0x0401", "0x0503", "0x0805", "0x0501", "0x0806", "0x0601"],
+    "alpn": ["h2", "http/1.1"],
+    "pre_shared_key_present": false,
+    "resumption_note": "首访形态：无 41、无 PSK 载荷（与 chrome_154_windows 那份复用会话抓包形成对照）",
+    "ja3": "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,35-0-10-13-51-65037-43-45-17613-11-16-27-23-18-65281-5,4588-29-23-24,0",
+    "ja3_hash": "4337d53c33263c707d686dbbd005720b",
+    "ja4": "t13d1516h2_8daaf6152771_d8a2da3f94cd",
+    "ja4_r": "t13d1516h2_002f,0035,009c,009d,1301,1302,1303,c013,c014,c02b,c02c,c02f,c030,cca8,cca9_0005,000a,000b,000d,0012,0017,001b,0023,002b,002d,0033,44cd,fe0d,ff01_0403,0804,0401,0503,0805,0501,0806,0601",
+    "peetprint": "GREASE-772-771|2-1.1|GREASE-4588-29-23-24|1027-2052-1025-1283-2053-1281-2054-1537|1|2|GREASE-4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53|0-10-11-13-16-17613-18-23-27-35-43-45-5-51-65037-65281-GREASE-GREASE",
+    "peetprint_hash": "1d4ffe9b0e34acac0bd883fa7f79d7b5"
+  },
+  "http2": {
+    "akamai_fingerprint": "1:65536;2:0;4:6291456;6:262144|15663105|0|m,a,s,p",
+    "akamai_fingerprint_hash": "52d84b11737d980aef856699f885ca86",
+    "settings": [
+      [1, 65536],
+      [2, 0],
+      [4, 6291456],
+      [6, 262144]
+    ],
+    "window_update": 15663105,
+    "pseudo_header_order": "m,a,s,p",
+    "headers_priority": {
+      "exclusive": 1,
+      "depends_on": 0,
+      "weight": 256
+    },
+    "headers": [
+      ["sec-ch-ua", "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\""],
+      ["sec-ch-ua-mobile", "?0"],
+      ["sec-ch-ua-platform", "\"Windows\""],
+      ["upgrade-insecure-requests", "1"],
+      ["user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"],
+      ["accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"],
+      ["sec-fetch-site", "none"],
+      ["sec-fetch-mode", "navigate"],
+      ["sec-fetch-user", "?1"],
+      ["sec-fetch-dest", "document"],
+      ["accept-encoding", "gzip, deflate, br, zstd"],
+      ["accept-language", "en-GB,en-US;q=0.9,en;q=0.8,zh-CN;q=0.7,zh;q=0.6"],
+      ["priority", "u=0, i"]
+    ]
+  },
+  "tcp_syn": {
+    "ttl": 117,
+    "mss": 1320,
+    "window": 65535,
+    "window_scale": 8,
+    "sack_permitted": true,
+    "timestamps": false,
+    "options_raw": "020405280103030801010402",
+    "note": "与 154 那份同出口同参数 ⇒ 中转节点产物，不建模。"
+  }
+}

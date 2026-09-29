@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -53,7 +54,13 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 		return nil, err
 	}
 
-	// 收取 Set-Cookie / 学习 Alt-Svc
+	s.absorbResponseMeta(u, resp)
+	return resp, nil
+}
+
+// absorbResponseMeta 收取响应的 Set-Cookie 进 jar、从响应头学习 Alt-Svc
+//（普通请求与流式上传共用）。
+func (s *Session) absorbResponseMeta(u *url.URL, resp *Response) {
 	if s.jar != nil {
 		var setCookies []string
 		for _, kv := range resp.Headers {
@@ -70,11 +77,37 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 		}
 	}
 	s.learnAltSvc(u.Host, resp.Headers)
-	return resp, nil
 }
 
 // doTCPLegacy 是 TCP 上的 h2/h1 路径（原 doSingle 主体）。
+// 连接池（默认开）：先试同键的共享 h2 连接 / 空闲 h1 连接，失败落新拨号
+// 重试一次（请求体在内存中可重放；静默死连接上的写对端未处理，重试安全）。
 func (s *Session) doTCPLegacy(req *Request, u *url.URL, headers [][2]string) (*Response, error) {
+	key := s.poolKey(req, u.Host)
+	if s.poolOn() {
+		if e := s.pool.getH2(key); e != nil {
+			if e.cc.CanTakeNewRequest() {
+				if resp, err := s.doH2(e, req, headers); err == nil {
+					return resp, nil
+				}
+			}
+			// 死连接或 RoundTrip 失败：摘除并落新拨号
+			s.pool.removeH2(key, e)
+			e.tc.uconn.Close()
+		}
+		if e := s.pool.popH1(key); e != nil {
+			if e.br != nil && e.br.Buffered() > 0 {
+				// 空闲连接上有未读字节 = 协议脱同步，不复用
+				e.tc.uconn.Close()
+			} else if resp, err := s.doH1(e, req, u, headers); err == nil {
+				return resp, nil
+			} else {
+				e.tc.uconn.Close()
+			}
+			// 池化连接失效 → 落新拨号
+		}
+	}
+
 	tc, err := s.connect(req, u)
 	if err != nil {
 		return nil, err
@@ -82,15 +115,18 @@ func (s *Session) doTCPLegacy(req *Request, u *url.URL, headers [][2]string) (*R
 
 	var resp *Response
 	if tc.proto == "h2" {
-		resp, err = s.doH2(tc, req, headers)
+		var e *poolEntry
+		e, err = s.newH2Entry(key, tc)
+		if err == nil {
+			resp, err = s.doH2(e, req, headers)
+		}
 	} else {
-		resp, err = s.doH1(tc, req, u, headers)
+		resp, err = s.doH1(&poolEntry{key: key, tc: tc}, req, u, headers)
 	}
 	if err != nil {
 		tc.uconn.Close()
 		return nil, err
 	}
-	resp.SelfCheck = selfCheck(s.profile, tc.spec)
 	return resp, nil
 }
 
@@ -141,24 +177,41 @@ func (s *Session) appendCookieHeader(u *url.URL, headers [][2]string) [][2]strin
 	return append(out, [2]string{"cookie", val})
 }
 
-// doH2 走 fhttp 帧层。
-func (s *Session) doH2(tc *transportConn, req *Request, headers [][2]string) (*Response, error) {
+// newH2Entry 在新握手的连接上建 h2 ClientConn 并尝试登记为池内共享连接
+// （并发撞车时本连接作孤儿：服务完当前请求后随 body 关闭）。
+func (s *Session) newH2Entry(key string, tc *transportConn) (*poolEntry, error) {
 	cc, err := h2core.NewClientConn(tc.uconn, s.profile.HTTP2)
 	if err != nil {
 		return nil, fmt.Errorf("engine: h2 client conn: %w", err)
 	}
+	e := &poolEntry{key: key, tc: tc, cc: cc}
+	if s.poolOn() {
+		s.pool.putH2(key, e)
+	}
+	return e, nil
+}
+
+// doH2 走 fhttp 帧层。SelfCheck 报告本连接握手时的指纹（池化复用不发新
+// ClientHello）；共享连接的 body 关闭只收尾当前流，孤儿/无池连接随 body
+// 关闭（旧行为）。
+func (s *Session) doH2(e *poolEntry, req *Request, headers [][2]string) (*Response, error) {
 	var body io.Reader
 	if req.Body != nil {
 		body = bytes.NewReader(req.Body)
 	}
-	resp, err := h2core.Do(cc, req.Method, req.URL, headers, body)
+	resp, err := h2core.Do(e.cc, req.Method, req.URL, headers, body)
 	if err != nil {
 		return nil, fmt.Errorf("engine: h2 request: %w", err)
+	}
+	var rc io.ReadCloser = resp.Body
+	if !e.shared {
+		rc = &connClosingReader{ReadCloser: resp.Body, onClose: func() { e.tc.uconn.Close() }}
 	}
 	out := &Response{
 		Status:       resp.StatusCode,
 		UsedProtocol: "h2",
-		Body:         &connClosingReader{ReadCloser: resp.Body, onClose: func() { tc.uconn.Close() }},
+		Body:         rc,
+		SelfCheck:    e.tc.sc,
 	}
 	for name, vals := range resp.Header {
 		for _, v := range vals {
@@ -183,13 +236,44 @@ func (r *connClosingReader) Close() error {
 }
 
 // selfCheck 用本次握手实际发出的 spec 自算 JA3/JA4；profile 来自 JA3/JA4R
-// 入口时与期望指纹比对。
-func selfCheck(p *profiles.Profile, spec *utls.ClientHelloSpec) SelfCheck {
-	ja3 := tlscore.ComputeJA3(spec)
+// 入口时与期望指纹比对。host 是本次拨号目标：IP 字面量（含 IPv6）时 uTLS
+// 与真 Chrome 一样在线上省略 SNI 扩展，而 spec 里的 SNI 只是 "auto" 占位，
+// 自算前从 spec 副本剔除，让 JA4 的 d/i 标志与扩展计数（及 JA3 扩展段）
+// 反映线上实情。uconn 非 nil 时附协商结果（cipher/版本/ALPN）。
+// 本函数在握手完成时调用一次，结果随连接走（连接池复用不重算）。
+func selfCheck(p *profiles.Profile, spec *utls.ClientHelloSpec, host string, uconn *utls.UConn) SelfCheck {
+	sniInSpec := false
+	for _, e := range spec.Extensions {
+		if _, ok := e.(*utls.SNIExtension); ok {
+			sniInSpec = true
+			break
+		}
+	}
+	sniSent := sniInSpec && net.ParseIP(host) == nil
+	calc := spec
+	if sniInSpec && !sniSent {
+		calc = tlscore.SpecWithoutSNI(spec)
+	}
+
+	ja3 := tlscore.ComputeJA3(calc)
+	wireExts, plainExts, grease := tlscore.WireView(calc)
 	sc := SelfCheck{
-		JA3:     ja3,
-		JA3Hash: tlscore.JA3Hash(ja3),
-		JA4:     tlscore.ComputeJA4(spec),
+		JA3:           ja3,
+		JA3Hash:       tlscore.JA3Hash(ja3),
+		JA3FullString: ja3,
+		JA4:           tlscore.ComputeJA4(calc),
+		SNISent:       sniSent,
+		Extensions:    plainExts,
+		WireExts:      wireExts,
+		Grease:        grease,
+	}
+	if uconn != nil {
+		st := uconn.ConnectionState()
+		sc.Negotiated = &NegotiatedInfo{
+			Cipher:  fmt.Sprintf("0x%04x", st.CipherSuite),
+			Version: fmt.Sprintf("0x%04x", st.Version),
+			ALPN:    st.NegotiatedProtocol,
+		}
 	}
 	if p.TLS.JA3 != "" {
 		match := tlscore.JA3Hash(p.TLS.JA3) == sc.JA3Hash

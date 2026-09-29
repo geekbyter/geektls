@@ -140,7 +140,8 @@
     "headers_priority": {
       "exclusive": false,
       "weight": 254
-    }
+    },
+    "hpack_strategy": "safari"
   },
   "identity": {
     "headers": [

@@ -26,6 +26,8 @@ import (
 	"strconv"
 	"strings"
 
+	http2 "github.com/bogdanfinn/fhttp/http2"
+
 	"github.com/geektls/core/profiles"
 	tlscore "github.com/geektls/core/tls"
 )
@@ -274,6 +276,32 @@ var platformTokens = map[string]string{
 // （chrome/windows.py、safari/macos.py 等）。无平台 token 时按族给默认值。
 var defaultPlatform = map[string]string{"safari": "macos", "ie": "windows"}
 
+// hpackStrategy 返回该族/平台应当使用的 HPACK 编码策略（T-HPACK，2026-09-28）。
+//
+// 与 tests/e2e/cmd/gen-profiles/main.go 的同名函数**保持一致**（两个 cmd 各自独立，
+// 刻意重复；改一处要同步另一处）。语义与证据分级见 docs/p2-h2-capability.md。
+//
+// 这里只认"栈归属明确"的族：Chromium 系（chrome/edge/opera/opr/yabrowser）、Firefox、
+// Safari（含 iOS —— 那儿所有浏览器都跑 WebKit）。**刻意不跟随 chromiumLike**：微信/UC/
+// QQ/夸克/小米/华为等内嵌浏览器的 Chromium fork 各自改过，没有证据就不编；curl/okhttp
+// 等工具同理（留空 = 上游 x/net 默认行为）。
+//
+// 等级：族级继承（E4 推断），不是实测——想让某条升级仍需采样本。
+func hpackStrategy(family, platform string) string {
+	if platform == "ios" {
+		return http2.HpackStrategySafari
+	}
+	switch family {
+	case "chrome", "edge", "opera", "opr", "yabrowser":
+		return http2.HpackStrategyChrome
+	case "firefox":
+		return http2.HpackStrategyFirefox
+	case "safari":
+		return http2.HpackStrategySafari
+	}
+	return ""
+}
+
 func parseName(constName string) (nameInfo, error) {
 	toks := strings.Split(strings.TrimPrefix(constName, "TLS_"), "_")
 	if len(toks) < 2 {
@@ -440,6 +468,9 @@ func convert(c cfg, ni nameInfo, h3 *profiles.HTTP3Profile) (*profiles.Profile, 
 		} else {
 			warns = append(warns, name+": 第三方未给 HEADERS priority（null）⇒ 该预设不发内嵌 priority")
 		}
+		// T-HPACK：第三方只给 JA3 与 H2 设置，不给 HPACK 编码策略 ⇒ 按族/平台映射补；
+		// 归不了族的族一律留空（= 上游默认行为），理由见下面的函数注释。
+		h2.HpackStrategy = hpackStrategy(ni.family, ni.platform)
 		p.HTTP2 = h2
 	} else {
 		warns = append(warns, name+": 第三方无 H2 settings ⇒ 不出 http2 节")

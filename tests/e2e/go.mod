@@ -8,6 +8,9 @@ require (
 	github.com/bogdanfinn/utls v1.7.8-barnius
 	github.com/geektls/core v0.0.0
 	github.com/geektls/golang v0.0.0-00010101000000-000000000000
+	github.com/gospider007/fp v0.0.0-20260922022940-11a30e1428c9
+	github.com/gospider007/gtls v0.0.0-20260922022900-37560707587c
+	github.com/gospider007/ja3 v0.0.0-20260922022812-54ae551bd740
 	github.com/refraction-networking/utls v1.8.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
@@ -38,9 +41,6 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20260906184651-6331bc6350fe // indirect
 	github.com/gospider007/conf v0.0.0-20260922022748-a9c513b9dffe // indirect
-	github.com/gospider007/fp v0.0.0-20260922022940-11a30e1428c9 // indirect
-	github.com/gospider007/gtls v0.0.0-20260922022900-37560707587c // indirect
-	github.com/gospider007/ja3 v0.0.0-20260922022812-54ae551bd740 // indirect
 	github.com/gospider007/kinds v0.0.0-20260824054539-a612e386b5ac // indirect
 	github.com/gospider007/re v0.0.0-20260824054539-32823144d328 // indirect
 	github.com/gospider007/tools v0.0.0-20260922022651-0a9e58d5bc65 // indirect
@@ -83,6 +83,7 @@ require (
 
 // replace 不随依赖传递，必须在本模块声明。
 replace (
+	github.com/bogdanfinn/fhttp => ../../core/third_party/fhttp
 	github.com/bogdanfinn/quic-go-utls => ../../core/third_party/quic-go-utls
 	github.com/geektls/core => ../../core
 	github.com/geektls/golang => ../../bindings/golang

@@ -78,6 +78,13 @@ const gtls_response_read = lib.func(
   'int64_t gtls_response_read(uint64_t resp, void *buf, int64_t buf_len)'
 );
 const gtls_response_close = lib.func('int gtls_response_close(uint64_t resp)');
+const gtls_request_begin = lib.func(
+  'uint64_t gtls_request_begin(uint64_t session, const char *request_json)'
+);
+const gtls_request_write = lib.func(
+  'int64_t gtls_request_write(uint64_t upload, const void *buf, int64_t buf_len)'
+);
+const gtls_request_finish = lib.func('uint64_t gtls_request_finish(uint64_t upload)');
 const gtls_list_presets = lib.func('GtlsStr gtls_list_presets(void)');
 const gtls_describe_preset = lib.func('GtlsStr gtls_describe_preset(const char *name)');
 const gtls_check_profile = lib.func('GtlsStr gtls_check_profile(const char *input)');
@@ -136,7 +143,7 @@ function describePreset(name) {
   return JSON.parse(raw);
 }
 
-/** 离线构造 ClientHello 自校验（profile JSON / ja3 / ja4r / hex 入参）。 */
+/** 离线构造 ClientHello 自校验（profile JSON / ja3 / ja4 / ja4r / hex 入参）。 */
 function checkProfile(input) {
   const raw = gtls_check_profile(typeof input === 'string' ? input : JSON.stringify(input));
   if (raw == null) raiseLastError();
@@ -391,7 +398,7 @@ function pickProxy(proxies) {
 
 /**
  * 指纹伪造会话。options:
- * - 引擎字段：{impersonate|profile|ja3|ja4r|clienthello_hex, proxy, timeoutMs,
+ * - 引擎字段：{impersonate|profile|ja3|ja4|ja4r|clienthello_hex, proxy, timeoutMs,
  *             redirectMax, cookieJar, insecureSkipVerify}
  * - requests 风格别名（与 Python 绑定一致）：{headers（会话默认头）, proxies, timeout（秒）,
  *             verify:false, allowRedirects:false}
@@ -475,7 +482,9 @@ class Session {
       } else {
         raw = Buffer.from(req.data);
       }
-    } else if (req.body != null) {
+    } else if (req.body != null &&
+               (typeof req.body === 'string' || Buffer.isBuffer(req.body) ||
+                req.body instanceof Uint8Array)) {
       raw = Buffer.from(req.body);
     }
     if (raw !== null) payload.body_b64 = raw.toString('base64');
@@ -487,8 +496,39 @@ class Session {
     if (req.forceHttp3) payload.force_http3 = true;
     if (req.stream !== undefined) payload.stream = req.stream;
 
+    // 迭代器/AsyncIterable body → chunked 流式上传（H1 chunked / H2 DATA 帧流）
+    const streamChunks =
+      raw === null && req.body != null &&
+      (typeof req.body[Symbol.asyncIterator] === 'function' ||
+        typeof req.body[Symbol.iterator] === 'function')
+        ? req.body
+        : null;
+
     const started = Date.now();
+    if (streamChunks) {
+      return this._streamUpload(payload, streamChunks, { method, url, started });
+    }
     const handle = await callAsync(gtls_request, this._session, JSON.stringify(payload));
+    if (!handle) raiseLastError();
+    return new Response(handle, { method, url, elapsedMs: Date.now() - started });
+  }
+
+  /** 迭代器 body 的流式上传：begin → 逐块 write → finish 收响应头。 */
+  async _streamUpload(payload, chunks, { method, url, started }) {
+    const up = await callAsync(gtls_request_begin, this._session, JSON.stringify(payload));
+    if (!up) raiseLastError();
+    try {
+      for await (const chunk of chunks) {
+        const buf = typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk);
+        if (!buf.length) continue;
+        const n = await callAsync(gtls_request_write, up, buf, BigInt(buf.length));
+        if (Number(n) < 0) raiseLastError();
+      }
+    } catch (err) {
+      try { await callAsync(gtls_request_finish, up); } catch { /* 回收 handle 即可 */ }
+      throw err;
+    }
+    const handle = await callAsync(gtls_request_finish, up);
     if (!handle) raiseLastError();
     return new Response(handle, { method, url, elapsedMs: Date.now() - started });
   }

@@ -1,5 +1,32 @@
 # 06 - 任务计划清单
 
+> ## ⚠️ 状态说明（2026-09-28）
+>
+> 本清单覆盖**一期 P0–P7，已收工**，不再滚动更新。二期工作登记在
+> [docs/plans/2026-09-24-geektls-hardening-and-h3-plan.md](plans/2026-09-24-geektls-hardening-and-h3-plan.md)
+> 与 [07-capability-gaps.md](07-capability-gaps.md)、[08-plan-pending-samples.md](08-plan-pending-samples.md)、
+> [capability-matrix.yml](capability-matrix.yml)。
+>
+> 本清单剩余未勾项的状态与阻塞原因汇总：
+>
+> | 未勾项 | 当前状态 | 阻塞原因 |
+> |---|---|---|
+> | P0 验收（CI） | CI 骨架已写；发布流水线 release-pypi.yml 已实跑（0.1.4 五平台 wheel 已上 PyPI） | "3 OS × 3 语言冒烟矩阵全绿 + ABI 冻结评审"未正式关闭 |
+> | P1-T8（nginx 采集端 L2 终审） | ✅ 已通过：7 预设 × nginx 采集端 diff 全绿（tests/e2e/nginx-l2/verify_l2.py，35 项断言） | — |
+> | P1 验收 | ✅ tls.peet.ws diff 全绿 + nginx 采集端 diff 全绿（P1-T8） | — |
+> | P3 验收 | 0.1.4 已发布 PyPI 五平台 | `pip install geektls` 后 e2e 矩阵回归未正式记录 |
+> | P6-T3（JA4TCP 验收） | 未开始 | 依赖 nginx 采集端（与 P1-T8 同链路） |
+>
+> **二期阶段 5 登记（2026-09-28 第十轮）**：① per-origin 连接池落地并默认开启
+> （H2 单连接多路复用 / H1 keep-alive 空闲池 / H3 共享 transport；
+> `behavior.connection_pool=false` 恢复旧行为，CONTRACT-FREEZE #5 已附理由解除）；
+> ② Session 并发安全（同一 session 多线程/多 goroutine 并发请求，100×100
+> `-race` 零报告）；③ 吞吐复测：Python 9.4k / Node 9.1k / Go 每 worker 会话
+> 12.7k req/s（回环 ≥10k 达成，详见 benchmarks.md 前后对照）；④ H1
+> header_case 三档全量落地；⑤ 流式上传 ABI 追加（`gtls_request_begin/write/
+> finish`，三处声明同步，H1 chunked 线上字节级断言）；⑥ selfcheck 深化
+> （ja3_fullstring/扩展序两份/GREASE 标记/协商结果/sni_sent）。
+
 > 与 `04-roadmap.md` 的阶段划分一一对应，展开为可勾选的原子任务。
 > 约定：`[ ]` 未开始 / `[x]` 完成；工期为单人全职当量；**加粗**为关键路径。
 > 依赖列表示该任务的前置任务 ID。
@@ -24,8 +51,9 @@
 - [x] **P1-T5 JA3/JA4R/hex 三入口编译器**：`core/profiles/entries.go`；JA3 有损项（GREASE 位置/扩展负载）warnings 标注；JA4R 置 `extensions_sorted` + 计数交叉校验；hex 为无损路径 — 2d，依赖 T2
 - [x] **P1-T6 自算 JA3/JA4 回读器**：`core/tls/fingerprint.go`（JA4 过 FoxIO 官方文档向量 `t13d1516h2_8daaf6152771_e5627efa2ab1`）；`gtls_check_profile` 落地（四入参形态，Python FFI 链路实测通过） — 2d，依赖 T2
 - [x] **P1-T7 预设体系 v1**：`core/profiles/registry.go`（go:embed builtin/）+ chrome_131/133/150、firefox_120/135、safari_16/18 七预设；`gtls_list_presets`/`gtls_describe_preset` 落地；入库自校验 TestPresetsAreValid + L1 回环矩阵（tests/e2e）全绿；tls.peet.ws 外部 oracle 实测 JA3/JA4 全 MATCH — 2d，依赖 T5/T6
-- [ ] **P1-T8 L2 闭环首次通电**：nginx 套件在 Linux/WSL2 起服，e2e 断言器对 21 个 `$http_clienthello_*` 字段 + JA3/JA4 全绿 — 2d，依赖 T7。**环境阻塞：本机 WSL2 因 Hyper-V 虚拟机平台未启用无法启动，无 Linux 环境；待 WSL2 修复 / CI runner / 独立 Linux 机。已用 L1 回环 + L3（tls.peet.ws）替代验证**
-- [ ] **P1 验收**：tls.peet.ws diff 全绿（✅ 7 预设 JA3/JA4 实测 MATCH）+ nginx 采集端 diff 全绿（随 P1-T8 环境阻塞延后）
+- [x] **P1-T8 L2 闭环首次通电**：nginx 套件（WSL2，hirosumee + ngf 补丁）起服于 127.0.0.1:8443；e2e 断言器 `tests/e2e/nginx-l2/verify_l2.py`（pytest，needs_nginx 标记，`GEEDTLS_NGINX_L2=1` 启用）对 7 自测预设 × 采集字段全绿（35 项断言）：`$http_clienthello_*`（ciphers_hex/extension_order_raw/supported_versions/signature_algorithms/supported_groups/key_share_groups/alpn/psk_key_exchange_modes/ec_point_formats/legacy_version/计数/GREASE 位置）逐项对齐 describe_preset 展开值，JA3 剔除采集端不可见扩展（ALPS 17613/ECH 65037/delegated_credential 34，OpenSSL pre_proc_exts 口径）后与 selfcheck 逐字符相等（safari 无裁剪、ja3_hash 直接相等），JA4 按采集端口径（无 ALPN 后缀、ja4_c 不拼 sigalgs 且剔 padding）分量对齐、ja4_b 逐字符相等，http2 settings/window_update/pseudo_headers/priorities（weight 线上值=规格+1）全中 — 2d，依赖 T7
+- [x] **P1 验收**：tls.peet.ws diff 全绿（✅ 7 预设 JA3/JA4 实测 MATCH）+ nginx 采集端 diff 全绿（✅ 随 P1-T8，2026-09-28 通过）
+- [x] **P1-T8 修复：采集端扩展盲区**（2026-09-28）：`patches/ngf-openssl-clienthello-raw.patch` 的 `SSL_client_hello_get_ngf_raw_data()` 原从 OpenSSL `pre_proc_exts`（只含已识别扩展）取数，ALPS(17613)/ECH(65037)/delegated_credential(34)/GREASE 扩展整体丢失；改为直接遍历 `CLIENTHELLO_MSG.extensions` 线上原始扩展块，全量按线序序列化（bundle 格式 NGFCH1 不变，patch 文件与 configure 内嵌 fallback 同步更新）。chrome_150 `extension_order_raw` 由 14 项增至 18 项（含 GREASE 首末位、17613、65037）。`verify_l2.py` 断言收紧：`extension_order_raw` 剔 GREASE 后与引擎发送记录逐位全量相等（不再做未知扩展裁剪），35 项全绿。注意：ja3/ja4 变量来自 hirosumee 参考实现（pre_proc_exts 口径，不经 NGFCH1 bundle），仍不含未知扩展，对应断言保留换算并已在 docstring 注明 — 依赖 T8
 
 ## P2 — HTTP/2 帧层（2 周）
 
@@ -86,6 +114,6 @@
 | uTLS 对某些扩展（ALPS/record_size_limit）支持不全 | P1 超期 | ~~P1-T2 第一天先做能力摸底 spike~~ **已摸底（docs/p1-utls-capability.md）：P1 所需能力 uTLS v1.8.2 全部原生支持，无需 fork**；首个可能 fork 点推迟到 P4 QUIC params 或 P7 真 ECH 定制 |
 | bogdanfinn fork 链上游变更断裂 | P2/P4 阻塞 | fork 全部 pin commit；rebase 流程文档化（P0-T2） |
 | Windows 上 TCP raw socket 不可行 | P6 缩水 | 已在设计层声明边界，不算失败 |
-| 本机无 Linux 环境（WSL2 Hyper-V 未启用） | P1-T8 及后续 L2 e2e 阻塞 | 用 L1 回环 + L3 外部 oracle 替代验证；尽快修 WSL2 或把 L2 挪到 Linux CI runner |
+| ~~本机无 Linux 环境（WSL2 Hyper-V 未启用）~~ | ~~P1-T8 及后续 L2 e2e 阻塞~~ | **已解除**：WSL2 nginx 采集端起服，P1-T8 已通过（2026-09-28）；P6-T3 同链路可用 |
 | H3 Initial 布局 quic-go 抽象拿不到 | P4-T4 降级 | 提前 spike；最坏情况标记"部分可控"并进文档 |
 | JA4H/JA4TCP FoxIO 商用授权 | 法务 | 只做生成不做计算；文档标注（00 文档 §7） |

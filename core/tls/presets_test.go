@@ -64,6 +64,11 @@ func TestPresetJA4Pinned(t *testing.T) {
 		// **完全相同** ⇒ 152→154 的 TLS 面（cipher 序 + 扩展集合 + sig_algs）无漂移。
 		"chrome_154_macos": "t13d1517h2_8daaf6152771_cb7bf5808d99",
 		"chrome_152_macos": "t13d1517h2_8daaf6152771_cb7bf5808d99",
+		// Chrome 154 / Windows 真机字段级抓包（2026-09-28）：TLS 面（cipher 序、扩展集合、
+		// groups/key_shares、sig_algs、ALPN）与 mac 版逐字段一致 ⇒ 首访形态 JA4 逐字符相同。
+		// 抓包自身记的是 `t13d1518h2_…_e2d80978ab2e`——那是**复用会话**（带 pre_shared_key
+		// 载荷）多算一个扩展；我们的预设是 41 空占位、无票据时线上省略 ⇒ 17 个扩展。
+		"chrome_154_windows": "t13d1517h2_8daaf6152771_cb7bf5808d99",
 		// 真 Safari 实测（2026-09-28）：17.3.1 与 18.6 的 cipher 序/扩展集合相同
 		// （b 段 a09f3c656075 一致），但 sig_algs 不同——17.3.1 含 ecdsa_sha1(0x0203)、
 		// 18.6 去掉了 ⇒ c 段（含 sig_algs 的哈希）不同。
@@ -146,6 +151,7 @@ func ja4Of(t *testing.T, name string) string {
 func TestCrossPlatformSameVersionShape(t *testing.T) {
 	pairs := [][2]string{
 		{"chrome_154_macos", "chrome_154_android"},
+		{"chrome_154_macos", "chrome_154_windows"},
 		{"edge_153_windows", "edge_153_android"},
 		{"firefox_156_windows", "firefox_156_android"},
 	}
@@ -169,7 +175,11 @@ func TestCrossPlatformSameVersionShape(t *testing.T) {
 		t.Errorf("② Firefox 156 的 H2 SETTINGS 实测**随平台不同**，两者却相同：%s", a)
 	}
 
-	for _, pr := range [][2]string{{"chrome_154_macos", "chrome_154_android"}, {"edge_153_windows", "edge_153_android"}} {
+	for _, pr := range [][2]string{
+		{"chrome_154_macos", "chrome_154_android"},
+		{"chrome_154_macos", "chrome_154_windows"},
+		{"edge_153_windows", "edge_153_android"},
+	} {
 		a, b := identityHeader(get(pr[0]), "sec-ch-ua"), identityHeader(get(pr[1]), "sec-ch-ua")
 		if a == "" || a != b {
 			t.Errorf("③ %s 与 %s 的 sec-ch-ua 应逐字符相同（按版本固定）：%q vs %q", pr[0], pr[1], a, b)

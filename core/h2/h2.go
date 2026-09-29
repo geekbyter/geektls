@@ -66,6 +66,17 @@ func TransportFromProfile(p *profiles.HTTP2Profile) (*http2.Transport, error) {
 		}
 	}
 
+	// HPACK 编码策略（T-HPACK）：generic/chrome/firefox/safari 四档，
+	// 由 vendor fork 的 Transport.HpackStrategy 落地（语义与证据见
+	// third_party/fhttp/GEEKTLS_PATCHES.md 与 docs/p2-h2-capability.md）。
+	switch p.HpackStrategy {
+	case "", http2.HpackStrategyGeneric, http2.HpackStrategyChrome,
+		http2.HpackStrategyFirefox, http2.HpackStrategySafari:
+		tr.HpackStrategy = p.HpackStrategy
+	default:
+		return nil, fmt.Errorf("h2: unknown hpack_strategy %q (want chrome/firefox/safari/generic)", p.HpackStrategy)
+	}
+
 	for i, pr := range p.Priorities {
 		if pr.StreamID%2 == 0 || pr.StreamID == 0 {
 			return nil, fmt.Errorf("h2: priorities[%d]: stream_id must be a positive odd client stream id", i)

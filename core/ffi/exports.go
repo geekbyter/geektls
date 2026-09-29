@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"github.com/geektls/core/engine"
@@ -179,31 +180,66 @@ func gtls_free_string(s *C.char) {
 // --- Client / Session ---
 
 // buildProfile 从 client config JSON 构造 profile：
-// {"impersonate":"chrome_150"} / {"profile":{...}} / {"ja3"|"ja4r"|"clienthello_hex":"..."}
+//
+//	{"impersonate":"chrome_150"}     内置预设
+//	{"profile":{...}}               自带完整指纹（对象，或直接给 profile JSON 文本）
+//	{"ja3":"..."}                   只给 JA3（有损入口，其余字段按引擎默认补齐并告警）
+//	{"ja4r":"..."}                  只给 JA4R（含 cipher/扩展列表）
+//	{"ja4":"..."}                   只给 JA4：短哈希走内置预设反查，带逗号的按 JA4R 处理
+//	{"clienthello_hex":"..."}       原始 ClientHello 字节
+//
+// 用户自带的输入统一过 profiles.NormalizeForReplay：把"没传的部分"按引擎语义补成
+// 自洽形态（pre_shared_key 占位的双向约束；否则会话复用时 uTLS 会 panic，见
+// core/profiles/replay.go）。内置预设（impersonate）已由守门测试保证自洽，不再处理。
 func buildProfile(cfg map[string]any) (*profiles.Profile, error) {
 	if name, ok := cfg["impersonate"].(string); ok && name != "" {
 		return profiles.Get(name)
 	}
-	if raw, ok := cfg["profile"]; ok {
-		b, err := json.Marshal(raw)
+	// userInput：用户自带指纹 ⇒ 构造完再过一次自洽归一。
+	userInput := func(p *profiles.Profile, err error) (*profiles.Profile, error) {
 		if err != nil {
 			return nil, err
 		}
-		return profiles.Parse(b)
+		profiles.NormalizeForReplay(p)
+		return p, nil
+	}
+	if raw, ok := cfg["profile"]; ok {
+		var b []byte
+		if s, isStr := raw.(string); isStr {
+			b = []byte(s)
+		} else {
+			var err error
+			if b, err = json.Marshal(raw); err != nil {
+				return nil, err
+			}
+		}
+		p, err := profiles.Parse(b)
+		return userInput(p, err)
 	}
 	if v, ok := cfg["ja3"].(string); ok && v != "" {
 		p, _, err := profiles.FromJA3(v)
-		return p, err
+		return userInput(p, err)
 	}
 	if v, ok := cfg["ja4r"].(string); ok && v != "" {
 		p, _, err := profiles.FromJA4R(v)
-		return p, err
+		return userInput(p, err)
+	}
+	if v, ok := cfg["ja4"].(string); ok && v != "" {
+		p, _, err := tlscore.ResolveJA4Profile(v)
+		if err != nil {
+			return nil, err
+		}
+		// JA4R 形态是用户给的原始列表 ⇒ 过自洽归一；短哈希是内置预设反查结果 ⇒ 已自洽。
+		if strings.Contains(v, ",") {
+			return userInput(p, nil)
+		}
+		return p, nil
 	}
 	if v, ok := cfg["clienthello_hex"].(string); ok && v != "" {
 		p, _, err := profiles.FromClientHelloHex(v)
-		return p, err
+		return userInput(p, err)
 	}
-	return nil, fmt.Errorf("config must set one of: impersonate, profile, ja3, ja4r, clienthello_hex")
+	return nil, fmt.Errorf("config must set one of: impersonate, profile, ja3, ja4, ja4r, clienthello_hex")
 }
 
 //export gtls_client_new
@@ -379,6 +415,85 @@ func gtls_response_close(respH C.uint64_t) (ret C.int) {
 	}
 	r.resp.Body.Close()
 	return closeHandle(uint64(respH))
+}
+
+// --- 流式上传（二期 T2，ABI 追加） ---
+
+type upload struct{ up *engine.Upload }
+
+//export gtls_request_begin
+func gtls_request_begin(sessionH C.uint64_t, requestJSON *C.char) (ret C.uint64_t) {
+	defer lockThread()()
+	defer guardHandle(&ret)
+	clearLastError()
+
+	s, ok := lookup[session](uint64(sessionH), "session")
+	if !ok {
+		return 0
+	}
+	var req engine.Request
+	if !parseJSONArg(requestJSON, &req) {
+		return 0
+	}
+	if req.URL == "" {
+		setLastError("invalid_argument", "request_json must set url")
+		return 0
+	}
+	up, err := s.eng.BeginUpload(&req)
+	if err != nil {
+		setLastError("request_failed", "%v", err)
+		return 0
+	}
+	return C.uint64_t(handles.Register(&upload{up: up}))
+}
+
+//export gtls_request_write
+func gtls_request_write(uploadH C.uint64_t, buf *C.char, bufLen C.int64_t) (ret C.int64_t) {
+	defer lockThread()()
+	defer guardInt64(&ret)
+	clearLastError()
+
+	u, ok := lookup[upload](uint64(uploadH), "upload")
+	if !ok {
+		return -1
+	}
+	if bufLen < 0 {
+		setLastError("invalid_argument", "buf_len must be >= 0")
+		return -1
+	}
+	var b []byte
+	if bufLen > 0 {
+		b = unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(bufLen))
+	}
+	n, err := u.up.Write(b)
+	if err != nil {
+		setLastError("write_failed", "%v", err)
+		return -1
+	}
+	return C.int64_t(n)
+}
+
+//export gtls_request_finish
+func gtls_request_finish(uploadH C.uint64_t) (ret C.uint64_t) {
+	defer lockThread()()
+	defer guardHandle(&ret)
+	clearLastError()
+
+	u, ok := lookup[upload](uint64(uploadH), "upload")
+	if !ok {
+		return 0
+	}
+	resp, err := u.up.Finish()
+	// Finish 后 upload handle 即失效（成败都回收，防泄漏）
+	if derr := handles.Delete(uint64(uploadH)); derr != nil {
+		setLastError("invalid_handle", "%v", derr)
+		return 0
+	}
+	if err != nil {
+		setLastError("request_failed", "%v", err)
+		return 0
+	}
+	return C.uint64_t(handles.Register(&response{resp: resp}))
 }
 
 // --- 预设与自校验（P0 stub） ---

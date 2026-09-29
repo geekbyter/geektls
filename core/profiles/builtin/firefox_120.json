@@ -126,6 +126,7 @@
     }
   },
   "http2": {
+    "hpack_strategy": "firefox",
     "settings": [
       [
         1,

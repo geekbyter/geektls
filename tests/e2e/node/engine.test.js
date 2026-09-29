@@ -4,13 +4,18 @@
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 
 const ROOT = path.join(__dirname, '..', '..', '..');
 const SERVER_EXE = path.join(ROOT, 'build', process.platform === 'win32' ? 'echo-server.exe' : 'echo-server');
-const DLL = path.join(ROOT, 'build', 'geektls.dll');
+// 默认库名也平台感知（此前硬编码 geektls.dll，Linux/macOS 上必须外部设 GEEDTLS_LIB）。
+const LIB_NAME = process.platform === 'win32'
+  ? 'geektls.dll'
+  : (process.platform === 'darwin' ? 'libgeektls.dylib' : 'libgeektls.so');
+const DLL = path.join(ROOT, 'build', LIB_NAME);
 
 process.env.GEEDTLS_LIB = process.env.GEEDTLS_LIB || DLL;
 
@@ -41,7 +46,7 @@ after(() => {
 test('version abi', () => {
   const v = geektls.version();
   assert.equal(v.abi, 1);
-  assert.equal(v.core, '0.1.0');
+  assert.match(v.core, /^\d+\.\d+\.\d+$/);
 });
 
 test('list/describe presets', () => {
@@ -60,11 +65,15 @@ test('preset matrix: echo over h2', async () => {
     try {
       const r = await s.get(`${baseUrl}/echo`, { headers: { 'user-agent': 'geektls-node' } });
       assert.equal(r.status, 200, name);
-      assert.equal(r.usedProtocol, 'h2', name);
+      // TLS1.2-era 预设（chrome_38/IE/curl 等）无 h2 ALPN，合法落到 http/1.1
+      assert.ok(['h2', 'http/1.1'].includes(r.usedProtocol), `${name}: ${r.usedProtocol}`);
       assert.equal(r.selfcheck.ja3_hash.length, 32, name);
-      assert.ok(r.selfcheck.ja4.startsWith('t13d'), `${name}: ${r.selfcheck.ja4}`);
+      // echo server 是 127.0.0.1（IP 字面量）：线上省略 SNI，ja4_a 的 SNI
+      // 标志位（协议符 + 2 位版本之后，index 3）为 i；版本可以是 12/13
+      const a = r.selfcheck.ja4.split('_')[0];
+      assert.ok('tq'.includes(a[0]) && a[3] === 'i', `${name}: ${r.selfcheck.ja4}`);
       const body = await r.json();
-      assert.equal(body.proto, 'HTTP/2.0', name);
+      assert.ok(['HTTP/2.0', 'HTTP/1.1'].includes(body.proto), `${name}: ${body.proto}`);
       await r.close();
     } finally {
       s.close();
@@ -107,6 +116,56 @@ test('h3 forced', async () => {
     assert.equal(r.status, 200);
     assert.equal(r.usedProtocol, 'h3');
     await r.close();
+  } finally {
+    s.close();
+  }
+});
+
+test('stream upload (async iterable body)', async () => {
+  const s = new geektls.Session({ impersonate: 'chrome_133', insecureSkipVerify: true });
+  try {
+    async function* gen() {
+      yield 'hello';
+      yield Buffer.from(',node-stream');
+      yield '';
+    }
+    const r = await s.post(`${baseUrl}/echo`, { body: gen() });
+    const body = await r.json();
+    assert.equal(body.body, 'hello,node-stream');
+    await r.close();
+  } finally {
+    s.close();
+  }
+});
+
+test('selfcheck extended fields', async () => {
+  const s = new geektls.Session({ impersonate: 'chrome_133', insecureSkipVerify: true });
+  try {
+    const r = await s.get(`${baseUrl}/echo`);
+    const sc = r.selfcheck;
+    assert.equal(sc.ja3_fullstring, sc.ja3);
+    assert.equal(createHash('md5').update(sc.ja3_fullstring).digest('hex'), sc.ja3_hash);
+    assert.equal(sc.sni_sent, false); // echo 是 127.0.0.1（IP 字面量）
+    assert.ok(sc.wire_extensions.length > 0 && sc.extensions.length > 0);
+    assert.ok(!sc.wire_extensions.includes(0));
+    assert.ok(sc.grease.length > 0);
+    assert.equal(sc.negotiated.alpn, 'h2');
+    await r.close();
+  } finally {
+    s.close();
+  }
+});
+
+test('connection pool reuse (same handshake)', async () => {
+  const s = new geektls.Session({ impersonate: 'chrome_133', insecureSkipVerify: true });
+  try {
+    const r1 = await s.get(`${baseUrl}/echo`);
+    const h1 = r1.selfcheck.ja3_hash;
+    await r1.close();
+    const r2 = await s.get(`${baseUrl}/echo`);
+    // chrome_133 扩展洗牌 ⇒ 同连接 JA3 恒定；相等即复用同一条连接
+    assert.equal(r2.selfcheck.ja3_hash, h1);
+    await r2.close();
   } finally {
     s.close();
   }

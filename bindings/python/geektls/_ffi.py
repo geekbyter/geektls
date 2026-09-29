@@ -92,6 +92,15 @@ lib.gtls_response_read.argtypes = [ctypes.c_uint64, ctypes.c_void_p, ctypes.c_in
 lib.gtls_response_close.restype = ctypes.c_int
 lib.gtls_response_close.argtypes = [ctypes.c_uint64]
 
+lib.gtls_request_begin.restype = ctypes.c_uint64
+lib.gtls_request_begin.argtypes = [ctypes.c_uint64, ctypes.c_char_p]
+
+lib.gtls_request_write.restype = ctypes.c_int64
+lib.gtls_request_write.argtypes = [ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int64]
+
+lib.gtls_request_finish.restype = ctypes.c_uint64
+lib.gtls_request_finish.argtypes = [ctypes.c_uint64]
+
 lib.gtls_list_presets.restype = ctypes.c_void_p
 lib.gtls_list_presets.argtypes = []
 

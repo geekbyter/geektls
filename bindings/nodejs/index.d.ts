@@ -7,12 +7,29 @@ declare module 'geektls' {
     utls: string;
   }
 
+  export interface GreaseMark {
+    where: 'cipher' | 'extension' | 'group' | 'version' | 'key_share';
+    index: number;
+    value: number;
+  }
+
   export interface SelfCheck {
     ja3: string;
     ja3_hash: string;
     ja4: string;
     ja3_match?: boolean;
     ja4_match?: boolean;
+    /** 与 ja3 同值（显式名） */
+    ja3_fullstring?: string;
+    /** SNI 实际上链与否（IP 字面量目标线上省略） */
+    sni_sent?: boolean;
+    /** 线上扩展序（剔 GREASE） */
+    extensions?: number[];
+    /** 线上扩展序（含 GREASE 实际值） */
+    wire_extensions?: number[];
+    grease?: GreaseMark[];
+    /** 握手协商结果（hex 串） */
+    negotiated?: { cipher: string; version: string; alpn: string };
   }
 
   export interface SessionOptions {
@@ -46,8 +63,8 @@ declare module 'geektls' {
     data?: Record<string, unknown> | string | Buffer | Uint8Array;
     /** JSON body（自动补 content-type） */
     json?: unknown;
-    /** 原始 body（等价 data 的原始字节路径） */
-    body?: string | Buffer | Uint8Array;
+    /** 原始 body；传 Iterable/AsyncIterable 则走 chunked 流式上传（H1 chunked / H2 DATA） */
+    body?: string | Buffer | Uint8Array | Iterable<string | Buffer | Uint8Array> | AsyncIterable<string | Buffer | Uint8Array>;
     timeoutMs?: number;
     /** 秒（与 Python 绑定一致） */
     timeout?: number;

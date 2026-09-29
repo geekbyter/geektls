@@ -16,7 +16,8 @@
   （`docs/versioning.md` 现在的写法是错的，已在本方案中修正）。
   好处：与 CPython ABI 无关 ⇒ **一个平台一个轮子（5 个），不是每个 Python 版本一个（30 个）**。
 - **D2｜平台矩阵（v0.1）**：`manylinux_2_28_x86_64`、`manylinux_2_28_aarch64`、
-  `macosx_11_0_arm64`、`macosx_10_15_x86_64`、`win_amd64`（共 5 个）。
+  `macosx_11_0_arm64`、`macosx_11_0_x86_64`、`win_amd64`（共 5 个；macOS x86_64 在
+  arm64 runner 上交叉编译，见 §8.5-7）。
   musllinux / Windows ARM64 / 32 位**暂不做**（见 §8）。
 - **D3｜不发 sdist**：源码包装了也没法编译（要 Go 工具链 + C 编译器），只会招来一堆
   “install failed” issue。**只发 wheel**；不支持的平台由绑定给出清晰报错。
@@ -62,7 +63,7 @@
 | Linux x86_64 | `manylinux_2_28_x86_64` | `quay.io/pypa/manylinux_2_28_x86_64` 容器 | 镜像自带 gcc | `objdump -T libgeektls.so \| grep GLIBC_` 最高 ≤ 2.28 |
 | Linux aarch64 | `manylinux_2_28_aarch64` | 同上（arm64 runner） | 同上 | 同上 |
 | macOS arm64 | `macosx_11_0_arm64` | GitHub `macos-14`（arm64） | Xcode CLT | `otool -L` 只依赖系统库 |
-| macOS x86_64 | `macosx_10_15_x86_64` | GitHub `macos-13`（x86_64） | 同上 | 同上 |
+| macOS x86_64 | `macosx_11_0_x86_64` | GitHub `macos-14` + `clang -arch x86_64` **交叉编译**（见 §8.5-7） | 同上 | `lipo -info` 断言为 x86_64 |
 | Windows x64 | `win_amd64` | GitHub `windows-2022` | mingw-w64（`choco install mingw`） | `dumpbin /dependents` 只依赖系统 DLL |
 
 > 为什么在 manylinux 容器里构建：Go 的 c-shared 库会链接 glibc，**glibc 版本决定
@@ -120,7 +121,7 @@ jobs:
           - { runner: ubuntu-24.04,      tag: manylinux_2_28_x86_64,  container: "quay.io/pypa/manylinux_2_28_x86_64" }
           - { runner: ubuntu-24.04-arm,  tag: manylinux_2_28_aarch64, container: "quay.io/pypa/manylinux_2_28_aarch64" }
           - { runner: macos-14,          tag: macosx_11_0_arm64 }
-          - { runner: macos-13,          tag: macosx_10_15_x86_64 }
+          - { runner: macos-14,          tag: macosx_11_0_x86_64 }   # 交叉编译，别用 macos-13
           - { runner: windows-2022,      tag: win_amd64 }
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
@@ -188,8 +189,19 @@ jobs:
 2. 推 tag（`v0.1.0`）→ CI 出 5 个轮子 → **TestPyPI** 上传；
 3. `pip install -i https://test.pypi.org/simple/ geektls` 在三平台各试一次（至少 Linux + 你的平台）；
 4. 切正式 PyPI（去掉 `repository-url`）；
-5. `pip install geektls` 后再跑一次 `tests/e2e/python`（装的必须是**已发布**的轮子）；
-6. 打 tag 前确认：`core/version`、`pyproject.version`、`bindings/nodejs/package.json` 三处一致（`docs/versioning.md` 的单源规则）。
+5. `pip install geektls` 后再跑一次 `tests/e2e/python`（装的必须是**已发布**的轮子）。
+   ⚠️ 现状：`tests/e2e/python` / `tests/e2e/node` 的**默认库名与 echo-server 名已改平台感知**
+   （2026-09-29；此前硬编码 `geektls.dll` / `echo-server.exe`，在 Linux/macOS 上只能靠外部
+   设 `GEEDTLS_LIB`），现在三平台都能直接跑；但它仍是**源码树模式**（插 `bindings/python`
+   到 `sys.path`、用仓库 `build/` 的库），要验"装好的包"仍需临时脚本化
+   （clean venv + 真实请求，见 §8.6 的方法）。想变成常规项需要 e2e 支持 wheel 模式（§5 表格最后一行）；
+6. 打 tag 前确认：**四处**版本字面量一致——`core/version`、`pyproject.version`、
+   `bindings/nodejs/package.json`、**`bindings/python/geektls/__init__.py` 的 `__version__`**
+   （第三处清单漏了最后一处，2026-09-29 修正）。已自动化，不用靠人眼：
+   - `ci.yml` 的 **"version literals must agree (四处)"** 步（pytest/node:test 不在 CI 里，
+     所以这条检查必须放在 CI 能跑到的地方）；
+   - `release-pypi.yml` 的 **"版本四处一致 + 与 tag 匹配"** 步：tag 触发的构建若
+     `v0.1.5` 与版本源不符，直接红。
 
 ---
 
@@ -237,6 +249,92 @@ CI 产物**（同一批 `build/*geektls.*`）。
    ✓；Linux 在 WSL 里下 Go + 用系统 gcc ✓（glibc 底线取决于构建机 ⇒ 本次为
    `manylinux_2_34`，想降到 2.28 需在 manylinux 容器里构建 ⇒ 只能靠 CI）。
    **macOS / Linux-aarch64 无法本地构建，必须 CI**。
+6. **step 的 `env:` 进不了 `docker run`**：Linux 那步用 `env: {GOARCH: ...}` 传给
+   `docker run ... bash -c '...${GOARCH}...'`，容器里根本没有这个变量 ⇒ 在
+   `set -u` 下直接 `bash: line 2: GOARCH: unbound variable`（两个 Linux 平台同时红）。
+   **修法：要进容器的参数一律 `docker run -e KEY=VAL` 显式传**；同时别再在容器里
+   `curl go.dev/VERSION` 取 latest（会和 `core/go.mod` 漂移）——直接把 runner 上
+   setup-go 的那套 `$GOROOT` 挂进去（同一路径 + `-e GOROOT`），容器里只负责用
+   **容器自己的 gcc** 链接（glibc 底线仍由镜像决定）。留了容器内下载同版本作为兜底。
+7. **`macos-13` 已下架**：它是 GitHub 托管池里最后的 Intel runner，写它只会永远停在
+   `Waiting for a runner to pick up this job`（不报错、不超时，看着像"卡死"）。
+   **修法：在 `macos-14`（arm64）上交叉编译 x86_64**——`GOARCH=amd64` +
+   `CC=clang` + `CGO_CFLAGS/CGO_LDFLAGS="-arch x86_64"`（编译和链接两侧都要，SDK 本身
+   是 universal 的；Go 1.26 的 darwin 底线是 11.0，所以标签跟着改
+   `macosx_11_0_x86_64`，压不回 10.15）。两个必须加的护栏：
+   - 构建后用 `lipo -info` **断言** dylib 架构（交叉编译最怕"成功但产出宿主架构"，
+     那样 wheel 标签就是假的）；
+   - 校验步骤不能直接用 runner 的 arm64 Python 装 x86_64 轮子（必然
+     `incompatible architecture`）。有 Rosetta 就 `arch -x86_64 /usr/bin/python3`
+     起个 x86_64 解释器真加载；没有则退化为"拆包 + lipo 断言"（打 warning 不红）。
+   顺带补了一条 Linux 护栏：`objdump -T` 取 `GLIBC_` 符号，出现 >2.28 的直接失败，
+   防止误标 `manylinux_2_28`。
+8. **glibc 基线护栏别用字符串比版本**：第一版写成
+   `[ "$MAX" \> "GLIBC_2.28" ]`，字典序下 `GLIBC_2.3.2` 被判成 > `GLIBC_2.28`
+   （第 8 位 `3` > `2`）⇒ x86_64 误报失败（`GLIBC_2.3.2` 其实是最老的符号之一，
+   aarch64 那侧最高是 2.17，字典序恰好没事，所以只有一边红）。
+   **修法：按版本号逐段数值比较**（awk：`$1>2 || ($1==2 && $2>28)`），
+   并把全部符号版本打出来便于定位。
+
+## 8.6 0.1.4 发布后核对（2026-09-28，逐个拆轮子验的）
+
+**PyPI 0.1.4 共 6 个文件**：CI 的 5 个平台（macOS arm64/x86_64、manylinux_2_28
+aarch64/x86_64、win_amd64）**+ 1 个多余的** `manylinux_2_34_x86_64`（06:49，本地 WSL
+构建，早于 CI 那批 07:19–07:26）。
+
+已核对的项（方法可复用）：
+
+| 检查 | 结果 |
+|---|---|
+| 每个 wheel 里的原生库架构 | mac arm64 / mac x86_64 / linux aarch64 / linux x86_64 / win x86_64 全部正确（交叉编译的 x86_64 dylib 真的是 x86_64） |
+| macOS dylib 最低系统版本与依赖 | `minOS=11.0.0`（与标签 `macosx_11_0_*` 一致）；只依赖 `libSystem.B` / `libresolv` / `CoreFoundation` / `Security`，无 Homebrew 路径 |
+| Linux glibc 符号 | 2_28 x86_64 最高 `GLIBC_2.3.2`、2_28 aarch64 最高 `GLIBC_2.17`、本地 2_34 最高 `GLIBC_2.34`（**标签不假**）；三者均无 `GLIBCXX_/CXXABI_` |
+| 文件名/内部 Tag 一致 | 5 个 CI 轮子都无 `py3-none-any` 混入 |
+| 运行期（真实请求，本地 echo server + selfcheck + redirect/cookie/POST/流式/H3/错误路径） | Windows：从 **PyPI 装到的包**全绿；Linux（WSL Ubuntu 26.04）：**PyPI 装到的 2_34** 与 **CI 的 2_28** 各跑一遍全绿 |
+
+**由此得出的两个待办**：
+
+1. **0.1.4 有两个 Linux x86_64 轮子，现代 glibc 上 pip 会优先取 2_34**（本地 WSL 构建），
+   而不是 CI 的 2_28。两者都能用（上面已各验一遍），但发布策略上应只留兼容面更大的
+   `manylinux_2_28` ⇒ 建议在 PyPI 网页上把 0.1.4 的 `manylinux_2_34_x86_64` **yank**
+   （别删版本、别删文件）。**只能人工在网页操作**。
+2. **macOS 是唯一没有运行期验证的平台**：CI 只能做静态断言（x86_64 还是在 arm64
+   runner 上交叉编译的）。需要在**一台 Intel Mac + 一台 Apple Silicon Mac** 上各
+   `pip install geektls` 跑 `version()` + 一次真实请求，之后才对外宣传 mac 支持。
+
+顺带记一个观测：同一预设连续两次请求，`ja3_hash` 会变（GREASE 随机），`ja4` 稳定
+⇒ **对拍/回归断言只能锁 JA4 与扩展指纹，不能锁 JA3 哈希**。
+
+## 8.7 0.1.5 发布准备（2026-09-29）
+
+**发布内容与差集见根目录 [CHANGELOG.md](../../CHANGELOG.md)**（不是照抄提交记录，是把
+已发布的 0.1.4 wheel 拆开跟当前仓库逐项比对得到的）。
+
+差集实测（0.1.4 win wheel 的 `geektls.dll` vs 当前仓库）：
+
+| 项 | 0.1.4 | 0.1.5 |
+|---|---|---|
+| 内置预设数 | 362 | **363**（新增 `chrome_154_windows`） |
+| `HeadlessChrome` 令牌 | **2 处**（chrome_149_windows / edge_153_windows） | **0 处** |
+| `hpack_strategy` | 只在 schema 里有字段（无预设带值） | **249/363 条预设带值** |
+| `ja4=` 入参（错误码 `ja4_resolved_to_preset`） | 无 | 有 |
+| 自洽归一告警 `psk_placeholder_added` | 无 | 有 |
+
+**发布动作（三步）**：
+
+1. 四处版本号已是 `0.1.5`（§6 第 6 条，已自动守门）；
+2. 打 tag 并推：`git tag v0.1.5 && git push origin v0.1.5`
+   ⇒ `release-pypi.yml` 出 5 平台 wheel 并发布（想先试 TestPyPI 就把 publish 步的
+   `repository-url: https://test.pypi.org/legacy/` 放开，核完再删）；
+   或 `workflow_dispatch` 手工触发（此时 tag 匹配检查会跳过，只查四处一致）。
+3. 发布后核对（方法沿用 §8.6）：下载 5 个轮子逐个拆包验原生库架构/`minOS`/glibc 符号，
+   再用干净 venv 装**已发布的**轮子跑一遍真实请求 e2e。
+
+**跨 0.1.4 仍未关闭的两项**（不阻塞发布，但别忘）：
+
+- **macOS 的运行期验证**：CI 只能静态断言（x86_64 还是在 arm64 runner 上交叉编译的），
+  需要在真 Intel Mac + Apple Silicon Mac 上各 `pip install geektls` 跑一次；
+- **License 元数据**：PyPI 页仍显示 License 未声明（§8 D-7）。
 
 ## 9. 风险
 

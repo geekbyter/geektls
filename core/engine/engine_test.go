@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -240,7 +241,59 @@ func TestEngineStreaming(t *testing.T) {
 	}
 }
 
-// TestEngineSelfCheckJA3Entry：JA3 入口 profile 的 selfcheck 应与期望值一致。
+// TestEngineSelfCheckExtendedFields：T3 深化字段——ja3_fullstring 与 ja3_hash
+// 自洽、扩展序两份、GREASE 标记、协商结果、SNI 上链标志。
+func TestEngineSelfCheckExtendedFields(t *testing.T) {
+	echo := startEchoServer(t)
+	s := testSession(t, "chrome_133")
+
+	resp, err := s.Do(&Request{URL: echo.URL + "/echo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	sc := resp.SelfCheck
+
+	if sc.JA3FullString == "" || sc.JA3FullString != sc.JA3 {
+		t.Errorf("ja3_fullstring = %q, 应与 ja3 同值", sc.JA3FullString)
+	}
+	if tlscore.JA3Hash(sc.JA3FullString) != sc.JA3Hash {
+		t.Errorf("md5(ja3_fullstring) != ja3_hash（%s vs %s）",
+			tlscore.JA3Hash(sc.JA3FullString), sc.JA3Hash)
+	}
+	if len(sc.WireExts) == 0 || len(sc.Extensions) == 0 {
+		t.Errorf("扩展序为空: wire=%v plain=%v", sc.WireExts, sc.Extensions)
+	}
+	// echo 目标是 127.0.0.1（IP 字面量）：SNI 不上链，线上扩展序不含 0
+	if sc.SNISent {
+		t.Error("IP 字面量目标 sni_sent 应为 false")
+	}
+	for _, id := range sc.WireExts {
+		if id == 0 {
+			t.Errorf("IP 目标线上扩展序不应含 SNI(0): %v", sc.WireExts)
+		}
+	}
+	// chrome_133 有 GREASE：扩展/cipher/group 至少一处有标记
+	if len(sc.Grease) == 0 {
+		t.Error("chrome_133 应有 GREASE 标记")
+	}
+	for _, g := range sc.Grease {
+		if g.Value&0x0f0f != 0x0a0a || g.Value>>8 != g.Value&0xff {
+			t.Errorf("GREASE 标记值非法: %+v", g)
+		}
+	}
+	// 协商结果：h2 + TLS1.3 + 非零 cipher
+	if sc.Negotiated == nil {
+		t.Fatal("negotiated 缺失")
+	}
+	if sc.Negotiated.ALPN != "h2" || sc.Negotiated.Version != "0x0304" ||
+		!strings.HasPrefix(sc.Negotiated.Cipher, "0x") {
+		t.Errorf("negotiated = %+v", sc.Negotiated)
+	}
+}
+
+// 期望 JA3 从含 SNI 占位的 spec 算出 ⇒ 必须用域名目标（localhost）让 SNI 上链；
+// IP 字面量目标线上省略 SNI，JA3 扩展段少 0，与域名形态的期望值自然不等。
 func TestEngineSelfCheckJA3Entry(t *testing.T) {
 	echo := startEchoServer(t)
 
@@ -261,7 +314,7 @@ func TestEngineSelfCheckJA3Entry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := s.Do(&Request{URL: echo.URL + "/echo"})
+	resp, err := s.Do(&Request{URL: strings.Replace(echo.URL, "127.0.0.1", "localhost", 1) + "/echo"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -237,6 +237,17 @@ func FromJA4R(ja4r string) (*Profile, []Warning, error) {
 			e.ALPN = alpnFromCode(alpnCode, &warnings)
 		case 43:
 			e.Versions = versionsFromCode(a[1:3], &warnings)
+		case 65037:
+			// ECH：JA4R 只给扩展 type，既没有负载、也分不清真 ECH 与 GREASE ECH
+			// ⇒ 与 FromJA3 同策略（按 GREASE 近似 + 告警）。
+			//
+			// 必须补这一条：编译期对"空 data 且没有 ech 配置"的 65037 直接报错
+			// （compile.go: "ech config is required for extension 65037"），
+			// 于是**带 ECH 的真实浏览器 JA4R 整条不可用**——Chrome 152+ 的
+			// JA4R 全都带 fe0d，等于把最主要的一类入口堵死。
+			e.ECH = &ECHConfig{Mode: "grease"}
+			warnings = append(warnings, warnf("ech_assumed_grease",
+				"JA4R cannot distinguish real ECH from GREASE ECH; assuming grease"))
 		}
 		d.Extensions = append(d.Extensions, e)
 	}

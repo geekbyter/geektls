@@ -220,9 +220,10 @@ func generateAt(fam string, anchors []lineageAnchor, version string, strict bool
 		src, ok := unstable[f.key]
 		trusted := true
 		if !ok {
-			src, trusted = "stable-in-window", true
+			src = "stable-in-window"
 		} else {
-			src, trusted = src, false
+			// 该字段在区间内有变化、边界未知 ⇒ 保留 unstable 里的说明，但不可信。
+			trusted = false
 		}
 		prov = append(prov, fieldProvenance{Field: f.key, Value: f.value(p), Source: src, Trusted: trusted})
 	}

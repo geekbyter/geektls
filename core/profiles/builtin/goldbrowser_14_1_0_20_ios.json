@@ -161,7 +161,8 @@
     "headers_priority": {
       "exclusive": true,
       "weight": 146
-    }
+    },
+    "hpack_strategy": "safari"
   },
   "http3": {
     "enabled": true,

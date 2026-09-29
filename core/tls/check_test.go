@@ -74,8 +74,10 @@ func TestCheckProfileFullJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CheckProfile: %v", err)
 	}
-	if len(r.Warnings) != 0 {
-		t.Errorf("detail path should have no warnings, got %+v", r.Warnings)
+	// 自洽归一（core/profiles/replay.go）：该 detail 声明了 TLS 1.3 却没有
+	// pre_shared_key(41) 占位 ⇒ 补一个空占位并告警（占位不计入 JA3/JA4、无票据时不上线）。
+	if len(r.Warnings) != 1 || r.Warnings[0].Code != "psk_placeholder_added" {
+		t.Errorf("detail path 应只报 psk_placeholder_added，实际 %+v", r.Warnings)
 	}
 	if !strings.HasPrefix(r.JA4, "t13d") {
 		t.Errorf("ja4 = %q, want TLS1.3 + SNI-d flag", r.JA4)

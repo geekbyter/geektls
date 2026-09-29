@@ -1,7 +1,8 @@
 {
   "name": "geektls",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "Multi-language TLS/HTTP fingerprint impersonation library (Node.js binding)",
+  "license": "MIT",
   "main": "index.js",
   "types": "index.d.ts",
   "engines": {
@@ -10,6 +11,8 @@
   "files": [
     "index.js",
     "index.d.ts",
+    "LICENSE",
+    "LICENSES.md",
     "*.dll",
     "*.so",
     "*.dylib"
@@ -20,5 +23,5 @@
   "dependencies": {
     "koffi": "^2.5.0"
   },
-  "comment": "动态库随包分发：发布流水线把 geektls.dll/libgeektls.so/libgeektls.dylib 放入包根（index.js 的包内查找已支持）；index.d.ts 类型定义随 P7 发布打磨补齐"
+  "comment": "动态库随包分发：发布流水线把 geektls.dll/libgeektls.so/libgeektls.dylib 放入包根（index.js 的包内查找已支持）；index.d.ts 类型定义随 P7 发布打磨补齐。另：打包前要把仓库根的 LICENSE 与 LICENSES.md 拷进本目录——npm 只会自动带上包根 LICENSE，LICENSES.md 必须落在 files 列表里（与 Python 侧 make wheel 的拷贝一致）"
 }

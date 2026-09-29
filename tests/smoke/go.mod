@@ -23,6 +23,7 @@ require (
 // replace 不随依赖传递，core 的 replace 必须在这里再写一遍。
 replace (
 	github.com/bogdanfinn/quic-go-utls => ../../core/third_party/quic-go-utls
+	github.com/bogdanfinn/fhttp => ../../core/third_party/fhttp
 	github.com/geektls/core => ../../core
 	github.com/geektls/golang => ../../bindings/golang
 )

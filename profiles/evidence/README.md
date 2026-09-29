@@ -43,6 +43,13 @@
   `grease_random`（两者都保留浏览器「每连接重随机化」行为）；`sig_algs` 的 GREASE 位
   由 compile 在编译期取值——uTLS 不做该处的握手期替换（见 07 文档 G12）。
 - `extension_permutation`：Chrome/Edge 置 true（逐连接洗牌），Firefox/Safari 不洗牌。
+- `hpack_strategy`（T-HPACK，2026-09-29 铺开，249/363 条）：按族/平台映射写入——
+  chrome/edge 与**栈归属明确**的 Chromium 系（opera/yabrowser）→ `chrome`；firefox → `firefox`；
+  safari 与**所有 iOS 预设**（iOS 上任何浏览器都是 WebKit）→ `safari`。
+  工具族（curl/okhttp/charles/fiddler/reqable/powershell/ie/postman）与无法确认栈归属的
+  内嵌浏览器（微信/UC/QQ/夸克/小米/华为/三星/百度…）**不写该字段**（= 上游 x/net 默认行为）：
+  族级继承只到"栈归属明确"这一层，逐条升级仍要采样。等级沿用各产物自身（手写/生成/血缘），
+  E3 导入的那批是 **E4 推断**。
 - `sni` 统一为 `auto`（抓包现场的 host 不固化进预设）。
 - `http2.pseudo_header_order` 标本内不可得，取浏览器族固定顺序（Chrome/Edge `m,a,s,p`、
   Firefox `m,p,a,s`、Safari `m,s,a,p`）——**该项仍为知识构造（E4）**，待 nginx 采集端实测校正。
@@ -75,6 +82,33 @@ go run ./cmd/gen-profiles -out ../../core/profiles/builtin \
 **identity 直接用抓包里的真实请求头**（真实 UA-CH 比合成值可靠；实测已发现
 UA-CH 的 GREASE 品牌名称/版本/位置随浏览器版本变化）。H3 记录
 （`chrome_windows_h3.json`）当前用于 transport params 实测，尚不参与预设生成。
+
+## 真机字段级实测（peet.ws oracle，2026-09-28）
+
+`browsers/*_peetws.json` 是**字段级抓包记录**（无原始 ClientHello 字节 ⇒ E1r），
+与 `browsers/*.json`（E1 字节级记录，`kind:"e1_real_browser"`）区分：
+
+| 记录 | 目标 | 结论 |
+|---|---|---|
+| `browsers/chrome_154_windows_peetws.json` | `chrome_154_windows`（本次新增） | 逐字段与 `chrome_154_macos` 一致（唯一差异是平台身份头）；该抓包是**复用会话**（带 PSK 载荷）故 JA4 记 18 扩展，我们的首访形态记 17 |
+| `browsers/chrome_149_windows_peetws.json` | `chrome_149_windows`（既有，独立复现） | JA4/Akamai/sec-ch-ua **逐字符相同**（第三方独立复现我们 E1 无头记录的同一条指纹）；**暴露既有预设 UA 是 `HeadlessChrome/...`**（见下） |
+
+| 预设 | TLS | H2 | H3 | 证据 |
+|---|---|---|---|---|
+| chrome_154_windows | **E1r**（真 Chrome 154 / Windows 字段级实测：cipher 序 / 扩展集合 / groups / key_shares / sig_algs / ALPN 全等，JA4 与 mac 版逐字符同） | E1r（`1:65536;2:0;4:6291456;6:262144\|15663105\|0\|m,a,s,p`，HEADERS priority excl=1/w=256） | E4（借用桌面 Chromium 参数，未实测，与 chrome_154_macos 同） | 2026-09-28 新增；回归钉待补（见 docs/08 §E） |
+
+**待修（已登记，未改）**：`chrome_149_windows` 的 UA 来自无头浏览器记录，带
+`HeadlessChrome` 令牌（一眼假）。修法是改 `browsers/chrome_windows.json` 的 UA
+（或让 `cmd/e1-browser` 不带 headless 令牌）后**重跑生成器**——生成器产物禁止手改。
+
+## 上游指纹集快照（补齐候选，未导入）
+
+`thirdparty/` 现有两份来源：
+
+| 文件 | 来源 | 状态 |
+|---|---|---|
+| `tls_config-0.0.2.json` | Python 包 `tls_config` 0.0.2（用户提供，339 条） | **已导入**：319 条 E3 预设（`source: "tls_config-0.0.2/..."`）；见 docs/07 §5.7 |
+| `tls-client-master-profiles-*.go` | `bogdanfinn/tls-client@master` 的 `profiles/`（原始源码，2026-09-28 抓） | **未导入**：差集与所需改动见 docs/08 §E |
 
 ## 待补证据（与 P1-T8/P6-T3 同环境）
 

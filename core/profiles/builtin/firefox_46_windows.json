@@ -97,7 +97,8 @@
       "exclusive": false,
       "stream_dep": 11,
       "weight": 31
-    }
+    },
+    "hpack_strategy": "firefox"
   },
   "identity": {
     "headers": [

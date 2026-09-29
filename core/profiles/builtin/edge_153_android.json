@@ -135,6 +135,7 @@
     }
   },
   "http2": {
+    "hpack_strategy": "chrome",
     "settings": [
       [
         1,

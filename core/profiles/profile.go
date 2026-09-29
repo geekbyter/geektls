@@ -136,7 +136,11 @@ type HTTP2Profile struct {
 	// HeadersPriority：HEADERS 帧**内嵌**的 priority（见 H2HeadersPriority 注释）。
 	// nil = 用 fhttp 默认值（= Chrome 实测量形状）。
 	HeadersPriority *H2HeadersPriority `json:"headers_priority,omitempty"`
-	HpackStrategy   string             `json:"hpack_strategy,omitempty"` // 保留，P2 未细分
+	// HpackStrategy：HPACK 编码策略（T-HPACK，2026-09-28 起生效）：
+	// ""/generic = 上游默认（一切皆可入动表）；chrome/firefox = 伪头仅 :authority 入动表、
+	// 常规头 incremental indexing；safari = 全 literal 保守近似。
+	// 生效路径：core/h2 → vendor fork Transport.HpackStrategy（见 third_party/fhttp/GEEKTLS_PATCHES.md）。
+	HpackStrategy string `json:"hpack_strategy,omitempty"`
 }
 
 // H2Priority 是一个 priority 帧（03 文档示例的数组形 [[3,true,0,255]] 改为
@@ -232,6 +236,9 @@ type BehaviorProfile struct {
 	RedirectMax       int  `json:"redirect_max,omitempty"`
 	CookieJar         bool `json:"cookie_jar,omitempty"`
 	SessionResumption bool `json:"session_resumption,omitempty"`
+	// ConnectionPool：per-origin 连接复用（二期阶段 5）。nil = 默认开启；
+	// 显式 false 回到"每请求一条新连接"的旧行为（CONTRACT-FREEZE #5 的解除开关）。
+	ConnectionPool *bool `json:"connection_pool,omitempty"`
 }
 
 // Parse 解析并校验 profile JSON。返回的 error 是 *ParseError（结构化，不 panic）。

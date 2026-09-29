@@ -22,3 +22,6 @@ require (
 
 // geektls vendor fork：QUIC 内层 ClientHelloSpec 注入（见 third_party/GEEKTLS_PATCHES.md）
 replace github.com/bogdanfinn/quic-go-utls => ./third_party/quic-go-utls
+
+// geektls vendor fork：HPACK 编码策略钩子（见 third_party/fhttp/GEEKTLS_PATCHES.md）
+replace github.com/bogdanfinn/fhttp => ./third_party/fhttp

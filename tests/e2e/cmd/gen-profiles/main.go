@@ -26,6 +26,8 @@ import (
 	"regexp"
 	"strings"
 
+	http2 "github.com/bogdanfinn/fhttp/http2"
+
 	"github.com/geektls/core/profiles"
 	"github.com/geektls/tests/e2e/specimens"
 )
@@ -150,6 +152,7 @@ func build(it specimens.Item) (*profiles.Profile, error) {
 			WindowUpdate:      it.H2ConnFlow,
 			PseudoHeaderOrder: pseudoHeaderOrder(it.Family),
 			HeadersPriority:   headersPriority(it.Family),
+			HpackStrategy:     hpackStrategy(it.Family, it.Platform),
 		}
 	}
 
@@ -312,6 +315,33 @@ func normalizeECHGrease(d *profiles.Detail) {
 // Safari 实测（2026-09-28，真机 17.3.1 与 18.6 两份）：**exclusive=false**——这是与
 // Chrome（exclusive=true）的硬区别；weight 线上值两版分别为 254 / 255，生成预设统一
 // 取 255（18.6 的值）。
+// hpackStrategy 返回该族/平台应当使用的 HPACK 编码策略（T-HPACK，2026-09-28）。
+//
+// 语义与证据分级见 docs/p2-h2-capability.md；这里只做族/平台映射：
+//
+//	chrome/edge ⇒ chrome    Chromium 现网 H2 栈 = QUICHE HpackEncoder 默认策略（源码级 E1r）
+//	firefox     ⇒ firefox   与 chrome 同形（Firefox 59 真实抓包字节级）
+//	safari      ⇒ safari    全 literal 保守近似（CFNetwork 闭源、无字节级证据，待 E1）
+//	other       ⇒ ""        空串 = 上游 x/net 默认行为：不是这三套栈，没有证据就不编
+//
+// 平台优先：**iOS 上所有浏览器都跑 WebKit**（Chrome/Edge 只是换了 UA 与界面），
+// 所以 iOS 的 chrome_*/edge_* 预设也按 safari 策略（依据见 presets_test.go 的
+// TestIOSBrowsersShareWebKitShape）。
+func hpackStrategy(family, platform string) string {
+	if strings.EqualFold(platform, "ios") {
+		return http2.HpackStrategySafari
+	}
+	switch family {
+	case "chrome", "edge":
+		return http2.HpackStrategyChrome
+	case "firefox":
+		return http2.HpackStrategyFirefox
+	case "safari":
+		return http2.HpackStrategySafari
+	}
+	return ""
+}
+
 func headersPriority(family string) *profiles.H2HeadersPriority {
 	switch family {
 	case "firefox":
