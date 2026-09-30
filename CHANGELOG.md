@@ -60,6 +60,17 @@
 
 ### 修复
 
+- **macOS 云编译红 + BSD 一系平台找回**（`core/tcp` 平台文件互斥）：
+  darwin 实现从原来的 `sockopt_unix.go`（约束 `!windows`）拆出来时，**老文件没有同步收窄
+  约束** ⇒ macOS runner 上两份同时参与编译，`applySockopts` / `readBackSockopts` /
+  `platformWarnings` 三重声明冲突，构建直接失败（本地与 linux runner 全绿，因为
+  linux/windows 各自独占一份、把重叠掩盖了）。
+  修法两步：① 把 darwin 之外的那份按 `!linux && !darwin && !windows` 补回
+  （FreeBSD / OpenBSD / NetBSD / DragonFly / Solaris 从"编不过"恢复为 TTL+MSS 档，
+  DF 与 raw 档项如实告警）；② CI 加 **cross-OS compile gate**：每个 GOOS 编一遍纯 Go 包，
+  并断言"每个 GOOS 恰好编译到一份 `sockopt_*.go`"（平台差异表见
+  [docs/tcp-platform-matrix.md](docs/tcp-platform-matrix.md)）。
+  这类问题**只有某个 GOOS 会暴露**，所以守门必须按平台遍历，不能只跑本机。
 - **`gtls_error_of` 的按对象归因**：此前 handle→error 的写入依赖"本线程最近 lookup 过的
   那个 handle"，worker 线程（Node/koffi 的 `.async`、Python 的 `run_in_executor`）
   直接对着一个 response/upload/ws handle 报错时，主线程查回来是 `{}`。
@@ -94,6 +105,9 @@
 - **仍未做（不在本次范围）**：npm 与 Go module 发布、musllinux / Windows ARM64 wheel、
   macOS 真机运行期验证、Safari 侧证据（E1）、SC-1/SC-2/SC-3 内化、pcap 导入工具
   （`import-pcap`）、MCP server。
+- **只做到编译验证的**：`core/tcp` 的 BSD 档（`sockopt_unix.go`，FreeBSD/OpenBSD/
+  NetBSD/DragonFly/Solaris）—— CI 逐 GOOS 编译通过、平台文件互斥断言通过，但**没有 BSD
+  运行器**做运行时读回断言（Linux 档有 `sockopt_linux_test.go` 的 getsockopt 读回）。
 
 ### 先前内容（0.1.6 之前的未发布改动）
 

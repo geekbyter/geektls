@@ -50,6 +50,36 @@ jobs:
           fi
           echo "四处版本一致：$core ✅"
 
+      # 跨平台编译守门（纯 Go 包）：只被"某个 GOOS"暴露的问题必须在这里就红，
+      # 而不是等到发版时在 macOS runner 上红。
+      # 由来（2026-09-30）：darwin 实现从 sockopt_unix.go（约束 !windows）拆出来时
+      # 老文件没同步收窄约束 ⇒ mac 上两份同时编译、符号重名；本地/linux runner 全绿
+      # 掩盖了它，直到云编译才炸。这条同时对"平台文件漏覆盖"（BSD 一系一度编不过）
+      # 有效。CGO_ENABLED=0 只编纯 Go 包（ffi 是 cgo，跳过）。
+      - name: cross-OS compile gate (pure Go)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -eu
+          pkgs=$(cd core && go list ./... | grep -v '/ffi$' | tr '\n' ' ')
+          for t in "linux amd64" "linux arm64" "darwin arm64" "darwin amd64" \
+                   "windows amd64" "freebsd amd64"; do
+            set -- $t
+            echo "== GOOS=$1 GOARCH=$2 =="
+            ( cd core && GOOS="$1" GOARCH="$2" CGO_ENABLED=0 go build $pkgs )
+          done
+          ( cd tests/e2e && GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./... )
+          # 平台文件互斥：每个 GOOS 只能编译出上表里的那一份 sockopt 实现
+          for os in linux darwin windows freebsd; do
+            n=$( ( cd core && GOOS="$os" go list -f '{{join .GoFiles " "}}' ./tcp/ ) \
+                 | tr ' ' '\n' | grep -c '^sockopt' )
+            if [ "$n" != "1" ]; then
+              echo "::error::GOOS=$os 编译到 $n 份 sockopt_*.go（应为 1；见 docs/tcp-platform-matrix.md）"
+              exit 1
+            fi
+          done
+          echo "跨平台编译与平台文件互斥检查通过 ✅"
+
       - name: core vet and test
         working-directory: core
         run: |

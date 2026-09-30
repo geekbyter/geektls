@@ -88,6 +88,39 @@ make build && (cd tests/e2e && go build -o ../../build/echo-server$(go env GOEXE
 | FoxIO ja4 spec / ja4plus-go | JA4 规则与向量更新 | 每月 |
 | tls.peet.ws 行为变化 | oracle 基线漂移 | 周检时顺带 |
 
+## 工作区与推送副本的一致性（幽灵文件）
+
+云编译红过三次，其中两次根因都在这儿，**与代码无关**：
+
+1. 2026-09-29 `bindings/python/pyproject.toml`：本地已删掉与 PEP 639 冲突的
+   `License ::` classifier，远端还是旧内容 ⇒ 5 个平台一起红（报错发生在
+   `get_requires_for_build_wheel`，与平台/Go/容器无关，别往那上面找）。
+2. 2026-09-30 `core/tcp/sockopt_unix.go`：本地已把它改名成 `sockopt_darwin.go`
+   并收窄约束，远端**两份都在** ⇒ mac 上 `applySockopts` 等三重声明冲突，
+   **只有 darwin runner 红**，linux/windows 全绿。
+
+共同点：**远端不是本地工作区的镜像**——改名/删除不会传播，构建产物的历史副本也留着。
+凡"本地绿、云上红，且报错像是文件重复或内容过期"，先做这一步对照：
+
+```bash
+# 只取远端文件清单（不下载 blob，秒级）
+rm -rf /tmp/remrepo && git clone --depth=1 --filter=blob:none --no-checkout -q \
+  https://github.com/geekbyter/geektls /tmp/remrepo
+git -C /tmp/remrepo ls-tree -r --name-only HEAD | sort > /tmp/remote_files.txt
+find . -type f -not -path './.git/*' -not -path './build/*' | sed 's|^\./||' | sort > /tmp/local_files.txt
+comm -23 /tmp/remote_files.txt /tmp/local_files.txt   # 远端有、本地没有 = 幽灵文件
+comm -13 /tmp/remote_files.txt /tmp/local_files.txt   # 本地有、远端没有 = 还没推上去
+```
+
+处理原则：
+
+- **幽灵文件必须在远端删除**（`git rm <path>` 后推，或网页上删）。本地补一个同名文件
+  只有在"推送会覆盖同名路径"时才管用，别赌这条。
+- 构建产物（`bindings/python/build/`、`dist-*/`、`*.egg-info/`）本就不该入库，
+  `.gitignore` 已覆盖；已入库的用 `git rm -r --cached <path>` 撤出跟踪。
+- CI 能自动挡的是"平台文件互斥/漏覆盖"（`ci.yml` 的 **cross-OS compile gate**），
+  挡不住推送副本本身不一致 —— 那部分只有上面这条对照能做。
+
 ## 版本号升级规则
 
 见 docs/versioning.md：core/bindings 三处同步；ABI 破坏性变更才升 abi 号；

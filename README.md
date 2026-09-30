@@ -41,7 +41,7 @@
 | 明文 `http://` / `ws://` | ✅（H1；无 TLS ⇒ selfcheck 恒为零值） | 引擎用例（基本请求/连接复用/重定向/流式上传/明文 WS/代理环境变量）+ pytest 一组；`force_http3` 与明文互斥（明确报错，不静默换路径） |
 | 命令行入口 `geektls`（version / presets / describe / check-profile / request） | ✅ | `go test ./cmd/geektls` 五个子命令冒烟 + 退出码口径（0/1/2） |
 | Python asyncio（AsyncSession，线程池异步，docstring 如实标注） | ✅ | asyncio 并发 20 请求用例 |
-| TCP（TTL/MSS setsockopt 档） | ✅（Windows 无 MSS） | getsockopt 读回 |
+| TCP（TTL/MSS setsockopt 档，按平台分文件：linux/darwin/windows/其它 Unix） | ✅（Windows 无 MSS；BSD 档 TTL+MSS，DF 如实告警） | getsockopt 读回；CI **cross-OS compile gate** 保证每个 GOOS 恰好一份实现 |
 | Python 请求语义对齐（cookie jar / timeout 元组 / auth / 重定向开关 / 表单编码） | ✅ | pytest `test_requests_parity.py`（10 条，本地明文服务端，零外部依赖） |
 | Python / Node / Go 绑定 | ✅ | pytest 34 passed / 2 skipped、node:test 18、`go test` 全绿；跨语言 JA4 三方全等 |
 

@@ -1,4 +1,4 @@
-# TCP 指纹平台矩阵（P6-T4，2026-09-29 重写：两档三平台终态）
+# TCP 指纹平台矩阵（P6-T4，2026-09-29 重写：两档三平台终态；2026-09-30 补 BSD 档 + 平台文件互斥表）
 
 > 承 docs/01-fingerprint-dimensions.md §4 的两档设计。结论先行：
 > **setsockopt 档三平台可用（Windows 缺 MSS）；netstack 档（gVisor 用户态栈）
@@ -43,12 +43,32 @@ SYN.window = min(rcvbuf>>1, 65535, 10×MSS×2)  再按 wscale 向下对齐
 **实例复用与回收**：全局单例 + 引用计数（每连接 acquire/close 释放），归零
 时 stack.Close + 关 TUN fd；engine Session.Close 不额外持有。
 
-## setsockopt 档（默认，三平台）
+## setsockopt 档（默认，按平台分文件）
+
+**平台文件互斥表**（每个 GOOS 必须有且只有一份实现，`core/tcp/sockopt_*.go`）：
+
+| GOOS | 文件 | 构建约束 | 覆盖项 |
+|---|---|---|---|
+| linux | `sockopt_linux.go` | `linux` | TTL / MSS / DF / window（夹击法）+ rmem_max 预警 |
+| darwin | `sockopt_darwin.go` | `darwin` | TTL / MSS / DF（`IP_DONTFRAG`=28，osx 私有常量） |
+| windows | `sockopt_windows.go` | `windows` | TTL（MSS 实测 `WSAENOPROTOOPT` ⇒ 跳过 + warning） |
+| 其它 Unix | `sockopt_unix.go` | `!linux && !darwin && !windows` | TTL / MSS（DF 各家取值不一致 ⇒ warning） |
+
+⚠️ **这份互斥表是被一次事故逼出来的**（2026-09-30）：darwin 从原来的
+`sockopt_unix.go`（约束 `!windows`）里拆出来时，**老文件没同步收窄约束**——
+mac 上两份同时参与编译、`applySockopts`/`readBackSockopts`/`platformWarnings`
+三重声明冲突，云编译 macOS runner 直接红；本地与 linux runner 全绿是因为
+`linux`/`windows` 各自独占一份、掩盖了重叠。修法两步：① 补回"其余 Unix"档（约束
+`!linux && !darwin && !windows`），② CI 加**跨平台编译守门**（每个 GOOS 编一遍
+纯 Go 包，见 `.github/workflows/ci.yml` 的 "cross-OS compile gate"）。
+验证口径：`GOOS=<os> go list -f '{{join .GoFiles " "}}' ./tcp/ | grep sockopt`
+应当**只列出上表对应的一行**。
 
 - TTL/MSS 必须在 connect 前设置（`net.Dialer.Control` 钩子），事后补设无效。
 - window 夹击法借鉴 httpcloak（MIT）；超内核 rmem_max 时告警
   `tcp_window_clamped`（钳制不中止）。
-- DF 三平台 best-effort；双栈 TTL 同设，单边失败无害。
+- DF 在 linux/darwin best-effort，windows 不支持，BSD 一档如实告警
+  `tcp_df_unsupported`；双栈 TTL 同设，单边失败无害。
 - 读回验证（WSL/Linux，`core/tcp/sockopt_linux_test.go`）：clamp=65535 设定
   读回 65535、DF 读回 IP_MTU_DISCOVER=2、IPv6 hops 读回 42。
 
