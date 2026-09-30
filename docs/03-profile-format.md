@@ -39,7 +39,8 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
   "http2": {
     "settings": [[1, 65536], [2, 0], [4, 6291456], [6, 262144]],  // 有序
     "settings_grease": true,
-    "window_update": 15663105,
+    "window_update": 15663105,          // 省略=引擎补默认；0=不发该帧；N=发 N
+    "first_stream_id": 3,               // 省略=1；必须是正奇数
     "pseudo_header_order": ["m", "s", "a", "p"],
     "priorities": [{"stream_id":3, "exclusive":true, "stream_dep":0, "weight":255}],
     "hpack_strategy": "chrome"
@@ -54,7 +55,9 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
       [1, 30000],
       ["grease", 8]                            // 随机 GREASE id + 8 字节随机数据，位置任意
     ],
-    "initial_layout": {"padding": "chrome", "coalesce": true},
+    "initial_packet_size": 1280,               // 首个 Initial datagram 尺寸（= PADDING 填到多少），1200..1452
+                                               // 不设 = 上游默认 1280；越界在建 transport 时报错（不静默夹取）
+    "initial_layout": {"padding": "chrome", "coalesce": true},  // 占位：仍不生效（coalesce/分片表要动 vendor packer）
     "grease_frames": true,
     "settings": [[7, 268435456]],
     "pseudo_header_order": ["m", "s", "a", "p"],
@@ -121,6 +124,16 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
 - **`http2.hpack_strategy`（T-HPACK，2026-09-28 起生效）**：HPACK 编码策略四档
   `chrome`/`firefox`/`safari`/`generic`（空 = generic = 上游默认）。语义与证据
   等级见 docs/p2-h2-capability.md「T-HPACK spike」；safari 档为保守近似（未验证）。
+- **`http2.window_update` 三态（A11，2026-09-29 起）**：省略 = 引擎补 15663105
+  （Chrome 形状）；`0` = **不发**连接级 WINDOW_UPDATE（RFC 7540 §6.9.1 把增量 0
+  判为 PROTOCOL_ERROR，故 0 只能解释为"不发"；此时读路径退回协议默认窗口做补充
+  额度，长响应不会卡死）；`N` = 发 N。之所以是可选指针而非 `uint32`：值形态的 0
+  会被 `omitempty` 在 marshal 时吞掉，预设 JSON 写不出"不发"这一档。
+- **`http2.first_stream_id`（A11，2026-09-29 起）**：这条连接上第一个请求的 stream
+  id，省略 = 1，必须是正奇数（`core/h2` 在建连接前校验，偶数/≥2³¹ 直接报
+  `invalid_config`），后续请求按 +2 递增。第三方 tls_config 对 Firefox 135/145/
+  l_latest 记的是 3 ⇒ 已写入对应 E3 预设；自测预设一律留空（无 E1 实测依据）。
+  Akamai 四段式不含流号，故此维度是 oracle 之外的可观测形态。
 
 ## 3. 预设体系
 

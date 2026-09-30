@@ -62,21 +62,22 @@ QUIC 化钳制规则（`clampSpecForQUIC`，2026-09-24 起含 TLS1.3 专属裁�
 
 QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT/复用随 P7-T2。
 
-## Initial datagram 布局（T4）——不可控（嗅探实证）
+## Initial datagram 布局（T4）——尺寸可控，布局仍不可控（2026-09-30 修订）
 
-嗅探实测 quic-go 客户端首发：2 个 1280B datagram、每 datagram 单 Initial 包
+嗅探实测 quic-go 客户端首发：2×默认尺寸的 datagram、每 datagram 单 Initial 包
 （pn 0/1）、ClientHello 被分片进两个 CRYPTO 帧跨包重组。
 
 | 维度 | 结论 |
 |---|---|
-| 分片策略 | ❌ quic-go 内部 packet packer 决定，无钩子 |
-| PADDING 位置/大小 | ❌ 同上（实测每 datagram pad 到 1280） |
-| coalesce（Initial+Handshake 合并） | ❌ 由对端时序驱动，无配置入口 |
+| 分片策略 | ❌ quic-go 内部 packet packer 决定，无钩子（`crypto_stream.go` 有内置的 clienthello scrambling，规则固定） |
+| PADDING 位置/大小 | ⚠️ **尺寸可控（部分关闭）**：`http3.initial_packet_size`（1200–1452）经上游 `quic.Config.InitialPacketSize` 决定首 datagram 被 pad 到多少；实测 1350 → `[1350 1350]`、1200 → `[1200 1200]`、不设 → `[1280 1280]`（默认路径逐字节不变）。**PADDING 在包内的位置**仍由 packer 决定 |
+| coalesce（Initial+Handshake 合并） | ❌ 由对端时序驱动，无配置入口（阈值 `MinCoalescedPacketSize` 是常量） |
 
-**结论**：Initial 布局控制需要 fork quic-go 的 packet packer / crypto stream
-层（比 crypto_setup 深得多），工作量与风险不成比例——P4 标"不可控"，
-真实 Chrome 的 Initial 布局差异点记入此文档，待 nginx 采集端（P1-T8 环境
-就绪）量化后再评估是否值得 deep fork。
+**结论**：能兑现的那半边（首包尺寸 / 填充量）已经落地，且不碰 fork——
+用的是上游字段；剩下 coalesce 阈值与 CRYPTO 分片表要动 packer 层
+（比 crypto_setup 深得多），归入 **SC-3（quic-go-utls 内化）** 一起做：
+内化时这些函数就变成自有代码，届时按 profile 暴露分片/合并策略才有意义。
+真实 Chrome 的 Initial 布局差异点仍待 nginx 采集端（P1-T8 环境就绪）量化。
 
 ## 行为层（T5）
 
@@ -84,7 +85,7 @@ QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT/复用
 |---|---|
 | H2/H3 racing | ✅ engine.raceH3H2：H3 先跑，h2_race_ms 未决则并发 H2，先到先得（本地实测 H3 赢/死端口正确回落） |
 | Alt-Svc 升级缓存 | ✅ 会话级 map（学习 `h3=` 广告；pytest 实测首访 h2 → 次访 h3） |
-| 0-RTT | ⚠️ 未接线：quic-go 客户端 0-RTT 依赖 DialEarly+会话票据缓存，engine 尚无连接/票据复用（P3 每请求一连接）；随 P7-T2 会话复用一起做 |
+| 0-RTT | ❌ **结案不做**（A10，2026-09-30）：quic-go 客户端 0-RTT 依赖 `DialEarly` + 会话票据缓存，而 spec 模式下 `StoreSession` 是 no-op、无可补导出面（docs/06 P7-T2 已取证），首飞 Initial 布局又不可控（上文结案项）；指纹侧的 `early_data`(42) 声明已可控，见 `core/tls/early_data_test.go` |
 
 ## QUIC 内层 ClientHello 形态（E1 实测，2026-09-24）
 

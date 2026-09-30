@@ -5,7 +5,8 @@
 //  1. **不覆盖**：与现有入库预设**同名**的条目一律跳过（我们的自测优先），但会做
 //     **结构对拍**并写进报告——这才是第三方数据的最大价值（交叉校验）。
 //  2. **可追溯**：导入的预设带 `grade: "E3"`（第三方配置集，非本机实测）与
-//     `source: "tls_config-0.0.2/<常量名>"`；所有 E1 级断言据此跳过 E3。
+//     `source: "<数据集>/<常量名>"`（默认数据集名见 `defaultSource`，`-source` 可换）；
+//     所有 E1 级断言据此跳过 E3。**换来源必须同时换 -source**，否则这个字段说谎。
 //  3. **不臆造**：第三方没给的信息（ECH 负载、padding 长度、UA-CH 取值…）要么用**我们
 //     已实测**的族级取值补、要么留空并记进报告，逐条列出"补了什么/为什么"。
 //  4. **可复现**：输入是 dump.py 产出的 JSON 快照（入库），本工具是纯转换。
@@ -14,6 +15,8 @@
 //
 //	go run ./cmd/import-tlsconfig -in ../../profiles/evidence/thirdparty/tls_config-0.0.2.json \
 //	    -out ../../core/profiles/builtin -dry
+//	# 另一批快照（如上游 master 的其余族）：-source tls_config-master —— 不带这个
+//	# 参数就会把新来源写成 tls_config-0.0.2，provenance 守门（provenance_test.go）看不出来。
 package main
 
 import (
@@ -58,11 +61,13 @@ type cfg struct {
 	} `json:"tls_extensions"`
 
 	H2 struct {
-		Settings       map[string]uint32 `json:"settings"`
-		Order          []string          `json:"settings_order"`
-		Flow           uint32            `json:"connection_flow"`
-		HeadersID      uint32            `json:"headers_id"`
-		SettingsAck    bool              `json:"settings_ack"`
+		Settings map[string]uint32 `json:"settings"`
+		Order    []string          `json:"settings_order"`
+		// Flow 保留原始 JSON：键缺失 / null / 数字是三件事，A11 之后 schema 能表达
+		// "明确不发"（0）与"未指定"（nil），所以不能再用 uint32 把 null 读成 0。
+		Flow           json.RawMessage `json:"connection_flow"`
+		HeadersID      *uint32         `json:"headers_id"`
+		SettingsAck    bool            `json:"settings_ack"`
 		HeaderPriority *struct {
 			Weight    uint32 `json:"weight"`
 			StreamDep uint32 `json:"streamDep"`
@@ -128,11 +133,23 @@ type report struct {
 	cross                          []string
 }
 
+// defaultSource 是本快照的数据集名。provenance 的 source 字段格式是
+// "<数据集>/<常量名>"（见文件头设计原则 2），E1 级断言据此识别 E3。
+// 换数据来源必须同时改这里或用 -source 传，否则 source 会指向不存在的数据集
+// ——那是整个证据分级体系的地基，不能让一个默认值替新来源撒谎。
+const defaultSource = "tls_config-0.0.2"
+
 func main() {
 	in := flag.String("in", "", "tls_config 导出的 JSON 快照")
 	out := flag.String("out", "", "输出目录（core/profiles/builtin）")
+	src := flag.String("source", defaultSource, "provenance 的 source 前缀（<前缀>/<常量名>）")
 	dry := flag.Bool("dry", false, "只打印，不落盘")
 	flag.Parse()
+
+	source := strings.TrimSuffix(*src, "/")
+	if source == "" {
+		must(fmt.Errorf("-source 不能为空：预设的 provenance.source 会变成 \"/<常量名>\"，无法追溯"))
+	}
 
 	raw, err := os.ReadFile(*in)
 	must(err)
@@ -168,7 +185,7 @@ func main() {
 			rep.warns = append(rep.warns, fmt.Sprintf("%s: 跳过（常量名无版本号，无法推导 UA/UA-CH）", cn))
 			continue
 		}
-		p, warns, sups, err := convert(c, ni, h3Block)
+		p, warns, sups, err := convert(c, ni, h3Block, source)
 		if err != nil {
 			rep.warns = append(rep.warns, fmt.Sprintf("%s → %s: 跳过（%v）", cn, ni.preset, err))
 			continue
@@ -342,7 +359,7 @@ func parseName(constName string) (nameInfo, error) {
 
 // ---------- 转换 ----------
 
-func convert(c cfg, ni nameInfo, h3 *profiles.HTTP3Profile) (*profiles.Profile, []string, []string, error) {
+func convert(c cfg, ni nameInfo, h3 *profiles.HTTP3Profile, source string) (*profiles.Profile, []string, []string, error) {
 	var warns, sups []string
 	name := ni.preset
 	if c.ForceHTTP1 {
@@ -354,18 +371,8 @@ func convert(c cfg, ni nameInfo, h3 *profiles.HTTP3Profile) (*profiles.Profile, 
 	if c.H2.SettingsAck {
 		warns = append(warns, name+": 第三方标记 settings_ack（我们不发额外 SETTINGS ACK）")
 	}
-	if c.H2.HeadersID > 1 {
-		warns = append(warns, fmt.Sprintf("%s: 第三方首个请求用 stream_id=%d（我们固定 1）⇒ H2 流号未建模", name, c.H2.HeadersID))
-	}
 	if len(c.H2.PriorityFrames) > 0 {
 		warns = append(warns, fmt.Sprintf("%s: 第三方给了 %d 个独立 PRIORITY 帧（本库 schema 支持但未导入）", name, len(c.H2.PriorityFrames)))
-	}
-
-	// 连接级 WINDOW_UPDATE：本库 schema 用 0 表示"未设置"，无法表达"明确不发"
-	//（fhttp 在未设置时会补默认 15663105）。第三方 flow=0 的条目（如 Safari 9）
-	// 因此无法忠实表达 ⇒ 跳过并登记（若将来要覆盖，需把 schema 改成指针/负数语义）。
-	if c.H2.Flow == 0 && len(c.H2.Order) > 0 {
-		return nil, nil, nil, fmt.Errorf("第三方 connection_flow=0（不发连接级 WINDOW_UPDATE），本库 schema 无法表达")
 	}
 
 	grease := !c.TLS.NotUsedGrease
@@ -441,12 +448,33 @@ func convert(c cfg, ni nameInfo, h3 *profiles.HTTP3Profile) (*profiles.Profile, 
 
 	p := &profiles.Profile{
 		Name: name, TLS: &profiles.TLSProfile{Detail: d},
-		Grade: "E3", Source: "tls_config-0.0.2/" + c.Const,
+		Grade: "E3", Source: source + "/" + c.Const,
 	}
 
 	// HTTP/2
 	if len(c.H2.Order) > 0 {
-		h2 := &profiles.HTTP2Profile{WindowUpdate: c.H2.Flow, PseudoHeaderOrder: pseudoOrder(c.PseudoHeaderOrder)}
+		// WindowUpdate 三态（A11）：数字照抄；显式 0 ⇒ 不发连接级 WINDOW_UPDATE；
+		// null/缺失 ⇒ 预设留 nil，由引擎补该族默认的 15663105。第三方对老 Safari
+		// 写的是 null（不是 0），我们没有该版本的 H2 实测说它"不发"，故按 nil 处理
+		// 并逐条登记 —— 不把来源的空白读成一种线上行为。
+		flow, flowGiven, ferr := parseFlow(c.H2.Flow)
+		if ferr != nil {
+			return nil, nil, nil, fmt.Errorf("connection_flow: %w", ferr)
+		}
+		h2 := &profiles.HTTP2Profile{WindowUpdate: flow, PseudoHeaderOrder: pseudoOrder(c.PseudoHeaderOrder)}
+		if !flowGiven {
+			warns = append(warns, name+": 第三方 connection_flow 为 null/缺失 ⇒ 预设不指定，线上按引擎默认 15663105 发（该族实测形态）")
+		}
+		// 首个请求的 stream_id：第三方给的奇数（>1）直接照做；偶数或 ≥2^31 不是
+		// 合法客户端流号 ⇒ 忽略并登记（不静默改语义）。
+		if id := c.H2.HeadersID; id != nil && *id > 1 {
+			if *id%2 == 1 && *id < 1<<31 {
+				h2.FirstStreamID = *id
+				sups = append(sups, fmt.Sprintf("%s: 首个请求 stream_id=%d（取自第三方 headers_id）", name, *id))
+			} else {
+				warns = append(warns, fmt.Sprintf("%s: 第三方 headers_id=%d 不是合法客户端流号（须为奇数且 <2^31）⇒ 忽略", name, *id))
+			}
+		}
 		for _, sn := range c.H2.Order {
 			id, ok := h2SettingID[sn]
 			if !ok {
@@ -489,6 +517,19 @@ func convert(c cfg, ni nameInfo, h3 *profiles.HTTP3Profile) (*profiles.Profile, 
 		sups = append(sups, name+": http3 节借自我们已入库的 Chromium 实测（第三方集不含 QUIC 数据）")
 	}
 	return p, warns, sups, nil
+}
+
+// parseFlow 解析第三方 connection_flow。第二个返回值区分"给了数"与
+// "null/缺失"：后者不能读成 0（0 在线上意味着"不发连接级 WINDOW_UPDATE"）。
+func parseFlow(raw json.RawMessage) (*uint32, bool, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, false, nil
+	}
+	var v uint32
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, false, err
+	}
+	return &v, true, nil
 }
 
 func unknownSettingID(name string) (uint16, bool) {
@@ -1072,6 +1113,15 @@ func extSet(p *profiles.Profile) string {
 	return strings.Join(ss, ",")
 }
 
+// effectiveFlow 给预设在线上实际写出的连接级 WINDOW_UPDATE 增量：nil 由引擎补
+// Chrome 默认 15663105，故对拍时归一，避免"nil vs 显式默认值"被误报为差异。
+func effectiveFlow(v *uint32) uint32 {
+	if v == nil {
+		return 15663105
+	}
+	return *v
+}
+
 func h2Summary(p *profiles.Profile) string {
 	if p.HTTP2 == nil {
 		return "(无 h2)"
@@ -1080,7 +1130,10 @@ func h2Summary(p *profiles.Profile) string {
 	for _, kv := range p.HTTP2.Settings {
 		fmt.Fprintf(&sb, "%d:%d,", kv[0], kv[1])
 	}
-	fmt.Fprintf(&sb, "|flow=%d", p.HTTP2.WindowUpdate)
+	fmt.Fprintf(&sb, "|flow=%d", effectiveFlow(p.HTTP2.WindowUpdate))
+	if id := p.HTTP2.FirstStreamID; id != 0 {
+		fmt.Fprintf(&sb, "|sid=%d", id)
+	}
 	// nil 在本库语义上等价于 fhttp 默认值（excl=true/weight=255 = Chrome 实测形状），
 	// 故对拍时统一归一成该形状，避免"nil vs 显式 Chrome 默认值"被误报为差异。
 	hp := p.HTTP2.HeadersPriority

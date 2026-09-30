@@ -20,6 +20,7 @@ package engine
 
 import (
 	"bufio"
+	"net"
 	"sync"
 	"time"
 
@@ -59,13 +60,20 @@ func newConnPool() *connPool {
 	}
 }
 
-// poolKey 计算池键：scheme+host:port+生效代理。
-func (s *Session) poolKey(req *Request, hostport string) string {
-	proxy := req.Proxy
-	if proxy == "" {
-		proxy = s.opts.Proxy
+// poolKey 计算池键：scheme+host:port+生效代理。代理解析与拨号侧同一个函数
+// （proxySpecFor），否则 NO_PROXY / 环境变量派生的代理会让池键与实际连接不一致。
+// 缺端口时按 scheme 缺省计（https 443 / http 80，G5）。scheme 必须进键：
+// 明文 H1 与 https H1 是两条完全不同的路径，绝不能互相复用。
+func (s *Session) poolKey(req *Request, scheme, hostport string) (string, error) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host, port = hostport, defaultPort(scheme)
 	}
-	return "https://" + hostport + "|proxy=" + proxy
+	proxy, err := s.proxySpecFor(req, scheme, host, port)
+	if err != nil {
+		return "", err
+	}
+	return scheme + "://" + hostport + "|proxy=" + proxy, nil
 }
 
 // --- H2 ---

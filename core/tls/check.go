@@ -4,6 +4,7 @@ package tlscore
 // 放在 tlscore 而非 ffi 包，保证纯 Go 可测（ffi 包需要 cgo）。
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -113,7 +114,33 @@ func profileFromInput(input string) (*profiles.Profile, []profiles.Warning, erro
 	if isJA3Shape(s) {
 		return profiles.FromJA3(s)
 	}
-	return nil, nil, fmt.Errorf("input is neither profile JSON, JA3, JA4R, nor JA4")
+	// 裸 hex：ClientHello record 的原始字节（pcap / 抓包工具 / 采集端直接可得的形态）。
+	// 这是"抓包 -> 装载"链路的入口：Wireshark/tshark/服务器端采集器给出的就是这段字节。
+	if isClientHelloHexShape(s) {
+		return profiles.FromClientHelloHex(s)
+	}
+	return nil, nil, fmt.Errorf("input is neither profile JSON, JA3, JA4, JA4R, nor clienthello hex")
+}
+
+// isClientHelloHexShape 判断裸串是否像 ClientHello record 的 hex（只做形状判断，
+// 真正解析交给 FromClientHelloHex，报错也是结构化的）：
+// 纯 hex 字符、长度 ≥ 32 字节、且开头是 TLS record 头（type=22，版本 0x03 0x0x）
+// + handshake type=0x01。宽松度与 isJA3Shape 相当。
+func isClientHelloHexShape(s string) bool {
+	if len(s) < 64 || len(s)%2 != 0 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return false
+	}
+	return len(b) >= 32 && b[0] == 22 && b[1] == 3 && b[2] <= 4 && b[5] == 1
 }
 
 // profileFromJA4Input 处理 "ja4" 字段与裸 JA4 串（语义见 tlscore.ResolveJA4Profile）。

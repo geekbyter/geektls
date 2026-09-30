@@ -29,24 +29,62 @@ import (
 
 // SessionOptions 是会话级配置。
 type SessionOptions struct {
-	Proxy              string `json:"proxy,omitempty"`                // http://user:pass@host:port / socks5://...
-	TimeoutMs          int    `json:"timeout_ms,omitempty"`           // 整体硬超时（dial+TLS+响应头），默认 30000
-	RedirectMax        int    `json:"redirect_max,omitempty"`         // 默认 10；<0 = 不跟随（Go RoundTripper 用）
-	CookieJar          *bool  `json:"cookie_jar,omitempty"`           // 默认 true
-	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"` // 跳过证书校验（测试/自签场景）
+	// Proxy 支持 http / https（CONNECT 隧道）、socks5、socks5h、socks4、socks4a。
+	// socks5 本地解析、socks5h 交代理解析；socks4 只承载 IPv4（详见 proxy.go）。
+	Proxy     string `json:"proxy,omitempty"`
+	TimeoutMs int    `json:"timeout_ms,omitempty"` // 整体硬超时（dial+TLS+响应头），默认 30000
+	// ProxyFromEnv 控制"未显式给 proxy 时是否读 HTTPS_PROXY / ALL_PROXY（并查
+	// NO_PROXY）"。nil/true = 读（requests 的 trust_env、curl 的默认行为）；
+	// false = 只在显式给 proxy 时经代理。指纹调试要可复计时可关掉。
+	ProxyFromEnv       *bool `json:"proxy_from_env,omitempty"`
+	RedirectMax        int   `json:"redirect_max,omitempty"`         // 默认 10；<0 = 不跟随（Go RoundTripper 用）
+	CookieJar          *bool `json:"cookie_jar,omitempty"`           // 默认 true
+	InsecureSkipVerify bool  `json:"insecure_skip_verify,omitempty"` // 跳过证书校验（测试/自签场景）
+	AutoDecompress     *bool `json:"auto_decompress,omitempty"`      // 响应透明解压，默认 true
+	// ReadTimeoutMs 是**每次读取响应 body** 的空闲超时（0 = 不设限）。
+	// TimeoutMs 只管到"dial+TLS+响应头"，body 慢速/挂死要靠它兜（A6）。
+	ReadTimeoutMs int `json:"read_timeout_ms,omitempty"`
+
+	// CaBundle：自持信任库（requests 的 verify=<path>）。PEM 文本、证书文件路径
+	// 或证书目录皆可；**替换**系统根证书池（与 requests 一致，不叠加）。
+	// 空 = 用系统信任库。与 InsecureSkipVerify 同时给出时后者优先（跳过校验）。
+	CaBundle string `json:"ca_bundle,omitempty"`
+	// ClientCert / ClientKey：mTLS 客户端证书（requests 的 cert=(crt,key) 或
+	// cert=<同文件>）。私钥可随 ClientCert 一起给（同文件形态），此时
+	// ClientKey 留空。带口令的加密私钥不支持。
+	ClientCert string `json:"client_cert,omitempty"`
+	ClientKey  string `json:"client_key,omitempty"`
+
+	// --- 目标地址控制（A9，详见 target.go 的生效范围表）---
+	// Resolve 把域名钉到固定 IP（curl 的 --resolve）：键是 "host" 或 "host:port"，
+	// 值必须是 IP 字面量。只改"连到哪"——SNI / Host / 伪头 / ClientHello 全部
+	// 沿用 URL 里的原域名，因此指纹字节不受影响。
+	Resolve map[string]string `json:"resolve,omitempty"`
+	// LocalAddress 绑定出网源地址（curl 的 --interface、httpx 的 local_address）。
+	// 只接受 IP 字面量（网卡名不支持），并隐含协议族。
+	LocalAddress string `json:"local_address,omitempty"`
+	// IPVersion 是 "4" / "6"（curl 的 --ipv4 / --ipv6）；空 = 不限。
+	// 与 local_address、resolve 的取值冲突时建会话即报错。
+	IPVersion string `json:"ip_version,omitempty"`
 }
 
 // Request 是一次请求（FFI 的 request_json 映射到它）。
 type Request struct {
-	Method     string      `json:"method"`
-	URL        string      `json:"url"`
-	Headers    [][2]string `json:"headers,omitempty"`
-	Body       []byte      `json:"-"` // FFI 层从 body_b64 解码
-	BodyB64    string      `json:"body_b64,omitempty"`
-	TimeoutMs  int         `json:"timeout_ms,omitempty"`  // 覆盖会话默认
-	Proxy      string      `json:"proxy,omitempty"`       // 覆盖会话默认
-	Stream     bool        `json:"stream,omitempty"`      // 预留；P3 响应恒流式
-	ForceHTTP3 bool        `json:"force_http3,omitempty"` // P4 生效
+	Method        string      `json:"method"`
+	URL           string      `json:"url"`
+	Headers       [][2]string `json:"headers,omitempty"`
+	Body          []byte      `json:"-"` // FFI 层从 body_b64 解码
+	BodyB64       string      `json:"body_b64,omitempty"`
+	TimeoutMs     int         `json:"timeout_ms,omitempty"`      // 覆盖会话默认
+	Proxy         string      `json:"proxy,omitempty"`           // 覆盖会话默认
+	ReadTimeoutMs int         `json:"read_timeout_ms,omitempty"` // 覆盖会话的 body 读取空闲超时
+	Stream        bool        `json:"stream,omitempty"`          // 预留；P3 响应恒流式
+	ForceHTTP3    bool        `json:"force_http3,omitempty"`     // P4 生效
+	// RedirectMax 覆盖会话级重定向上限（nil = 跟随会话；<0 = 不跟随）。
+	// requests 的 allow_redirects=False / max_redirects=N 映射到它。
+	RedirectMax *int `json:"redirect_max,omitempty"`
+	// AutoDecompress 覆盖会话级开关（nil = 跟随会话；会话默认 true）。
+	AutoDecompress *bool `json:"auto_decompress,omitempty"`
 }
 
 // SelfCheck 是"实际发出 vs 期望"的自校验结果（02 文档 §1）。
@@ -60,12 +98,12 @@ type SelfCheck struct {
 	JA4Match *bool  `json:"ja4_match,omitempty"` // 仅当来自 JA4R 入口时
 
 	// --- 深化字段（二期 T3；纯记录，不新增线上行为） ---
-	JA3FullString string             `json:"ja3_fullstring"` // 与 ja3 同值（显式名）
-	SNISent       bool               `json:"sni_sent"`       // SNI 实际上链与否（IP 字面量目标线上省略）
-	Extensions    []uint16           `json:"extensions"`     // 线上扩展序（剔 GREASE）
-	WireExts      []uint16           `json:"wire_extensions"` // 线上扩展序（含 GREASE 实际值）
+	JA3FullString string               `json:"ja3_fullstring"`  // 与 ja3 同值（显式名）
+	SNISent       bool                 `json:"sni_sent"`        // SNI 实际上链与否（IP 字面量目标线上省略）
+	Extensions    []uint16             `json:"extensions"`      // 线上扩展序（剔 GREASE）
+	WireExts      []uint16             `json:"wire_extensions"` // 线上扩展序（含 GREASE 实际值）
 	Grease        []tlscore.GreaseMark `json:"grease,omitempty"`
-	Negotiated    *NegotiatedInfo    `json:"negotiated,omitempty"` // 握手协商结果
+	Negotiated    *NegotiatedInfo      `json:"negotiated,omitempty"` // 握手协商结果
 }
 
 // NegotiatedInfo 是握手协商出的 cipher/版本/ALPN（uConn ConnectionState）。
@@ -85,6 +123,13 @@ type Response struct {
 	UsedProtocol string
 	SelfCheck    SelfCheck
 	Body         io.ReadCloser
+
+	// 解压语义（T-DECOMP）：ContentEncoding 是线上 Content-Encoding 原值
+	//（headers 不篡改）；Decoded=true 表示 Body 是解压后字节；Warnings 记
+	// 未知编码透传等告警。
+	ContentEncoding string   `json:"content_encoding"`
+	Decoded         bool     `json:"decoded"`
+	Warnings        []string `json:"warnings,omitempty"`
 
 	body []byte // Bytes() 读完后的缓存（Body 随之消费）
 }
@@ -107,6 +152,8 @@ func (r *Response) Header(name string) string {
 type Session struct {
 	profile      *profiles.Profile
 	opts         SessionOptions
+	certs        *certMaterial  // 自持信任库 / mTLS 客户端证书（nil = 系统默认）
+	netctl       *netControl    // 地址钉位 / 源绑定 / 族偏好（A9；nil = 全默认）
 	jar          *cookiejar.Jar // nil = 禁用 cookie
 	altSvcH3     sync.Map       // host:port → 已知广告 H3
 	sessionCache utls.ClientSessionCache
@@ -127,7 +174,25 @@ func NewSession(p *profiles.Profile, opts SessionOptions) (*Session, error) {
 	if opts.RedirectMax == 0 {
 		opts.RedirectMax = 10
 	}
-	s := &Session{profile: p, opts: opts}
+	// 代理配置错误在建会话时即失败（与证书材料同口径），不要等到第一次拨号。
+	if opts.Proxy != "" {
+		if _, _, err := parseProxySpec(opts.Proxy); err != nil {
+			return nil, err
+		}
+	}
+	// 地址控制三项同样在建会话时校验+归一化（A9）：非法取值到这里就挡住，
+	// 不等第一次拨号才报"连不上"——那看起来像目标挂了，其实是配置写错。
+	netctl, err := normalizeNetControl(&opts)
+	if err != nil {
+		return nil, err
+	}
+	opts.IPVersion = netctl.family
+	s := &Session{profile: p, opts: opts, netctl: netctl}
+	certs, err := loadCertMaterial(opts)
+	if err != nil {
+		return nil, err
+	}
+	s.certs = certs
 	jarEnabled := opts.CookieJar == nil || *opts.CookieJar
 	if jarEnabled {
 		jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
@@ -180,6 +245,12 @@ func (s *Session) Do(req *Request) (*Response, error) {
 		return nil, fmt.Errorf("engine: bad url: %w", err)
 	}
 
+	// 重定向上限：请求级覆盖会话级（allow_redirects=False / max_redirects=N）。
+	redirectMax := s.opts.RedirectMax
+	if req.RedirectMax != nil {
+		redirectMax = *req.RedirectMax
+	}
+
 	current := *req
 	for redirects := 0; ; redirects++ {
 		resp, err := s.doSingle(&current)
@@ -187,13 +258,13 @@ func (s *Session) Do(req *Request) (*Response, error) {
 			return nil, err
 		}
 		location, isRedirect := redirectTarget(resp)
-		if !isRedirect || s.opts.RedirectMax < 0 {
+		if !isRedirect || redirectMax < 0 {
 			return resp, nil
 		}
-		if redirects >= s.opts.RedirectMax {
+		if redirects >= redirectMax {
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
-			return nil, fmt.Errorf("engine: too many redirects (max %d)", s.opts.RedirectMax)
+			return nil, fmt.Errorf("engine: too many redirects (max %d)", redirectMax)
 		}
 		// 排空并关闭当前 body 后跟随重定向
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 16<<20))

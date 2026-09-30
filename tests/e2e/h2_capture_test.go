@@ -24,7 +24,12 @@ import (
 type h2Capture struct {
 	Settings     [][2]uint32
 	WindowUpdate uint32
-	PseudoOrder  []string
+	// ConnFlowSeen 表示前几帧里是否真的出现过**连接级**（stream 0）WINDOW_UPDATE。
+	// 预设写 &0（不发）时必须为 false；写 nil 时引擎补默认值，必须为 true。
+	ConnFlowSeen bool
+	// StreamID 是首个 HEADERS 帧的 stream id（预设未指定 first_stream_id 时为 1）。
+	StreamID    uint32
+	PseudoOrder []string
 }
 
 // readClientPreface 读取并校验 H2 client preface + 逐帧解析，
@@ -64,6 +69,7 @@ func readClientPreface(conn net.Conn) (*h2Capture, error) {
 		}
 		length := int(hdr[0])<<16 | int(hdr[1])<<8 | int(hdr[2])
 		ftype, flags := hdr[3], hdr[4]
+		streamID := binary.BigEndian.Uint32(hdr[5:]) & 0x7fffffff
 		payload := make([]byte, length)
 		if _, err := io.ReadFull(conn, payload); err != nil {
 			return nil, fmt.Errorf("read frame payload: %w", err)
@@ -81,8 +87,16 @@ func readClientPreface(conn net.Conn) (*h2Capture, error) {
 				})
 			}
 		case 0x8: // WINDOW_UPDATE
-			cap.WindowUpdate = binary.BigEndian.Uint32(payload) & 0x7fffffff
+			// 只记连接级（stream 0）的那一帧：流级 WINDOW_UPDATE 是读数据时的
+			// 补充额度，与预设的 window_update 不是一回事。
+			if streamID == 0 {
+				cap.WindowUpdate = binary.BigEndian.Uint32(payload) & 0x7fffffff
+				cap.ConnFlowSeen = true
+			}
 		case 0x1: // HEADERS
+			if cap.StreamID == 0 {
+				cap.StreamID = streamID
+			}
 			if flags&0x8 != 0 { // PADDED
 				padLen := int(payload[0])
 				payload = payload[1 : len(payload)-padLen]
@@ -103,10 +117,66 @@ func readClientPreface(conn net.Conn) (*h2Capture, error) {
 	}
 }
 
+// captureH2Frames 用 p 的 tls/http2 节在 loopback TLS 上建 H2 连接、发出第一个
+// 请求，并返回服务端裸读的帧序列。服务端不写响应，所以 Do 挂在后台 goroutine 里
+// ——帧已经发出并被采集，这正是本测试要的东西。
+func captureH2Frames(t *testing.T, p *profiles.Profile) *h2Capture {
+	t.Helper()
+
+	serverCfg := loopbackServerConfig(t)
+	tlsSpec, err := tlscore.CompileDetail(p.TLS.Detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	type result struct {
+		cap *h2Capture
+		err error
+	}
+	serverDone := make(chan result, 1)
+	go func() {
+		srv := tls.Server(serverConn, serverCfg)
+		if err := srv.Handshake(); err != nil {
+			serverDone <- result{err: err}
+			return
+		}
+		c, err := readClientPreface(srv)
+		serverDone <- result{c, err}
+		// 采集完成后继续排空，让客户端的后续帧不阻塞。
+		io.Copy(io.Discard, srv)
+	}()
+
+	uconn, err := tlscore.Handshake(clientConn, &utls.Config{
+		ServerName:         "example.com",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h2"},
+	}, tlsSpec)
+	if err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+
+	cc, err := h2core.NewClientConn(uconn, p.HTTP2)
+	if err != nil {
+		t.Fatalf("NewClientConn: %v", err)
+	}
+	go func() {
+		_, _ = h2core.Do(cc, "GET", "https://example.com/",
+			[][2]string{{"user-agent", "geektls-h2-capture"}}, nil)
+	}()
+
+	res := <-serverDone
+	if res.err != nil {
+		t.Fatalf("server side: %v", res.err)
+	}
+	return res.cap
+}
+
 // TestH2FrameCapture 全预设的 http2 节 → 线上帧断言。
 func TestH2FrameCapture(t *testing.T) {
-	serverCfg := loopbackServerConfig(t)
-
 	for _, name := range profiles.List() {
 		t.Run(name, func(t *testing.T) {
 			p, err := profiles.Get(name)
@@ -116,70 +186,21 @@ func TestH2FrameCapture(t *testing.T) {
 			if p.HTTP2 == nil {
 				t.Skip("preset has no http2 section")
 			}
-
-			tlsSpec, err := tlscore.CompileDetail(p.TLS.Detail)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			clientConn, serverConn := net.Pipe()
-			defer clientConn.Close()
-			defer serverConn.Close()
-
-			type result struct {
-				cap *h2Capture
-				err error
-			}
-			serverDone := make(chan result, 1)
-			go func() {
-				srv := tls.Server(serverConn, serverCfg)
-				if err := srv.Handshake(); err != nil {
-					serverDone <- result{err: err}
-					return
-				}
-				c, err := readClientPreface(srv)
-				serverDone <- result{c, err}
-				// 采集完成后继续排空，让客户端的后续帧不阻塞。
-				io.Copy(io.Discard, srv)
-			}()
-
-			uconn, err := tlscore.Handshake(clientConn, &utls.Config{
-				ServerName:         "example.com",
-				InsecureSkipVerify: true,
-				NextProtos:         []string{"h2"},
-			}, tlsSpec)
-			if err != nil {
-				t.Fatalf("handshake: %v", err)
-			}
-
-			cc, err := h2core.NewClientConn(uconn, p.HTTP2)
-			if err != nil {
-				t.Fatalf("NewClientConn: %v", err)
-			}
-			// 服务端不写合法响应帧，Do 会一直等响应——放后台，帧已发出即被采集。
-			go func() {
-				_, _ = h2core.Do(cc, "GET", "https://example.com/",
-					[][2]string{{"user-agent", "geektls-h2-capture"}}, nil)
-			}()
-
-			res := <-serverDone
-			if res.err != nil {
-				t.Fatalf("server side: %v", res.err)
-			}
-			cap := res.cap
+			cap := captureH2Frames(t, p)
 
 			// 断言 1：SETTINGS 值与顺序
-			wantSettings := make([][2]uint32, 0, len(p.HTTP2.Settings))
-			for _, kv := range p.HTTP2.Settings {
-				wantSettings = append(wantSettings, [2]uint32{kv[0], kv[1]})
-			}
+			wantSettings := settingsOf(p.HTTP2)
 			if fmt.Sprint(cap.Settings) != fmt.Sprint(wantSettings) {
 				t.Errorf("settings = %v, want %v", cap.Settings, wantSettings)
 			}
 
-			// 断言 2：WINDOW_UPDATE 增量
-			if cap.WindowUpdate != p.HTTP2.WindowUpdate {
-				t.Errorf("window_update = %d, want %d", cap.WindowUpdate, p.HTTP2.WindowUpdate)
+			// 断言 2：连接级 WINDOW_UPDATE 的三态（nil/&0/&N）在线上各是什么形态
+			if want := flowOnWire(p.HTTP2.WindowUpdate); want == 0 {
+				if cap.ConnFlowSeen {
+					t.Errorf("预设 window_update=0（不发），线上却出现连接级 WINDOW_UPDATE +%d", cap.WindowUpdate)
+				}
+			} else if !cap.ConnFlowSeen || cap.WindowUpdate != want {
+				t.Errorf("window_update 帧 = seen:%v inc:%d, want inc %d", cap.ConnFlowSeen, cap.WindowUpdate, want)
 			}
 
 			// 断言 3：伪头序
@@ -188,7 +209,80 @@ func TestH2FrameCapture(t *testing.T) {
 				t.Errorf("pseudo header order = %v, want %v", cap.PseudoOrder, wantPseudo)
 			}
 
-			t.Logf("%s settings=%v window=%d pseudo=%v", name, cap.Settings, cap.WindowUpdate, cap.PseudoOrder)
+			// 断言 4：首个请求的 stream id（预设未指定 ⇒ 1）
+			if wantID := firstStreamID(p.HTTP2); cap.StreamID != wantID {
+				t.Errorf("首个 HEADERS 的 stream_id = %d, want %d", cap.StreamID, wantID)
+			}
+
+			t.Logf("%s settings=%v window=%d stream=%d pseudo=%v", name, cap.Settings, cap.WindowUpdate, cap.StreamID, cap.PseudoOrder)
 		})
 	}
+}
+
+// firstStreamID 给预设在线上使用的第一个请求 stream id。
+func firstStreamID(p *profiles.HTTP2Profile) uint32 {
+	if p == nil || p.FirstStreamID == 0 {
+		return 1
+	}
+	return p.FirstStreamID
+}
+
+// TestH2FrameCaptureTriState 把 window_update 的三态与 first_stream_id 钉在线上：
+// 预设里写 &0 就真的不发连接级 WINDOW_UPDATE，写 first_stream_id=3 首个 HEADERS
+// 就真的是流 3。全库预设都不带这两档（都是 nil/0），所以这一段是**唯一**覆盖
+// 它们的线上断言，也是导入器将来产出这类预设时的守门。
+func TestH2FrameCaptureTriState(t *testing.T) {
+	base, err := profiles.Get("chrome_133")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.HTTP2 == nil {
+		t.Fatal("chrome_133 没有 http2 节")
+	}
+
+	for _, tc := range []struct {
+		name         string
+		window       *uint32
+		firstStream  uint32
+		wantSeen     bool
+		wantInc      uint32
+		wantStreamID uint32
+	}{
+		{"nil=引擎默认", nil, 0, true, 15663105, 1},
+		{"&0=不发", profiles.U32(0), 0, false, 0, 1},
+		{"&N=照抄", profiles.U32(33488897), 0, true, 33488897, 1},
+		{"first_stream_id=3", nil, 3, true, 15663105, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := *base
+			h2 := *base.HTTP2
+			h2.WindowUpdate = tc.window
+			h2.FirstStreamID = tc.firstStream
+			p.HTTP2 = &h2
+
+			cap := captureH2Frames(t, &p)
+			if cap.ConnFlowSeen != tc.wantSeen {
+				t.Errorf("连接级 WINDOW_UPDATE 帧 seen = %v, want %v", cap.ConnFlowSeen, tc.wantSeen)
+			}
+			if tc.wantSeen && cap.WindowUpdate != tc.wantInc {
+				t.Errorf("window_update 增量 = %d, want %d", cap.WindowUpdate, tc.wantInc)
+			}
+			if cap.StreamID != tc.wantStreamID {
+				t.Errorf("首个 HEADERS 的 stream_id = %d, want %d", cap.StreamID, tc.wantStreamID)
+			}
+			// SETTINGS 不该被这两个字段带着走（同一 profile 的其他部分不变）。
+			if fmt.Sprint(cap.Settings) != fmt.Sprint(settingsOf(base.HTTP2)) {
+				t.Errorf("settings = %v, want %v", cap.Settings, settingsOf(base.HTTP2))
+			}
+		})
+	}
+}
+
+// settingsOf 把预设的 [[id,value],...] 归一成捕获帧里的 [][2]uint32。
+func settingsOf(p *profiles.HTTP2Profile) [][2]uint32 {
+	out := make([][2]uint32, 0, len(p.Settings))
+	for _, kv := range p.Settings {
+		out = append(out, [2]uint32{kv[0], kv[1]})
+	}
+	return out
 }

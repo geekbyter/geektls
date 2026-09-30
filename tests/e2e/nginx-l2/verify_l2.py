@@ -11,16 +11,13 @@
 
 ========== 采集端口径（probe 实测确认，断言里的换算逻辑全部源于此） ==========
 
-1. 扩展可见性（2026-09 修复后）：ngf-openssl-clienthello-raw.patch 序列化
-   ClientHello bundle 时改为直接遍历 `sc->clienthello->extensions`（线上原始
-   扩展块），**全部扩展按线序保留**——17613 ALPS、65037 ECH GREASE、
-   34 delegated_credential、一切 GREASE 扩展（0x?a?a）都进
-   clienthello_raw_hex / extension_order_raw。比对：extension_order_raw 剔
-   GREASE 后与 selfcheck ja3 扩展序列**逐位全量相等**（chrome 洗牌下也成立）。
-   注意：ja3/ja4 变量来自 hirosumee 参考实现（走 OpenSSL pre_proc_exts，
-   不经过 NGFCH1 bundle），**仍看不到** OPENSSL_UNKNOWN_EXTS 里的扩展——
-   ja3/ja4 断言保留"剔除未知扩展后比对"的换算，这不是 bundle 的盲区，
-   而是参考实现自身的口径。
+1. 扩展可见性：ngf-openssl-clienthello-raw.patch 用 OpenSSL pre_proc_exts 重建
+   ClientHello，**OpenSSL 不认识的扩展整体消失**（raw_hex / extension_order_raw /
+   ja3 / ja4 全部看不到）。实测该 OpenSSL 构建不认识的扩展：
+   - 17613 ALPS（chrome 全族）、65037 ECH GREASE（chrome/firefox）、
+     34 delegated_credential（firefox）、一切 GREASE 扩展（0x?a?a）。
+   换算：nginx 扩展视图 == selfcheck ja3 扩展序列剔除 OPENSSL_UNKNOWN_EXTS，
+   相对顺序不变（chrome 洗牌下也逐位相等，已实测）。
 2. SNI：目标是 IP 字面量时 utls 不发 SNI（与 Chrome 行为一致），nginx ja4 为 i；
    selfcheck 已在拨号路径感知 IP 省略（engine 自算前剔除 spec 副本的 SNI 占位），
    两侧 d/i 一致。终审仍统一用 localhost 目标，SNI 上链，两侧均为 d。
@@ -58,8 +55,7 @@ TARGET = os.environ.get("GEEKTLS_NGINX_L2_URL", "https://localhost:8443/ngf-debu
 PRESETS = ["chrome_131", "chrome_133", "chrome_150",
            "firefox_120", "firefox_135", "safari_16", "safari_18"]
 
-# hirosumee 参考实现（ja3/ja4 变量，走 pre_proc_exts）不认识的扩展：见第 1 条。
-# clienthello_* 视图已修复为全量线序，不再受此集合影响。
+# 采集端（该 OpenSSL 构建）不认识的扩展：见模块docstring第 1 条。
 OPENSSL_UNKNOWN_EXTS = {34, 65037, 17613}
 # 引擎按既定行为不发送的扩展（selfcheck 同样不含）：41 空 pre_shared_key 占位、
 # 21 padding 条件省略（见第 6 条）。
@@ -193,13 +189,9 @@ def _nginx_ciphers(nginx):
 
 
 def _nginx_ja4_rebuild(nginx):
-    """按采集端口径从 nginx 自身字段重建 ja4（锁死口径模型，见 docstring 第 4 条）。
-
-    ja4 来自 hirosumee 参考实现（pre_proc_exts 视图），因此从全量
-    extension_order_raw 重建时要先剔参考实现看不见的未知扩展与 GREASE。"""
+    """按采集端口径从 nginx 自身字段重建 ja4（锁死口径模型，见 docstring 第 4 条）。"""
     ciphers = [c for c in _nginx_ciphers(nginx) if not _is_grease(c)]
-    exts = [e for e in _nginx_exts(nginx)
-            if e not in OPENSSL_UNKNOWN_EXTS and not _is_grease(e)]
+    exts = _nginx_exts(nginx)
     versions = [v for v in _dash_ints(nginx["clienthello_supported_versions"])
                 if not _is_grease(v)]
     a = "t%s%s%02d%02d" % ("13" if 772 in versions else "12",
@@ -285,9 +277,8 @@ def test_extension_order(matrix, name):
         # firefox/safari：无洗牌，精确顺序
         assert sent == [t for t in exp["ext_types"] if t not in dropped]
 
-    # 采集端 clienthello 视图已修复为全量线序（含未知扩展，见第 1 条）：
-    # 剔 GREASE 后与引擎发送记录逐位全量相等，不再做未知扩展裁剪
-    assert [e for e in seen if not _is_grease(e)] == sent
+    # 采集端只见 OpenSSL 认识的扩展，相对顺序不变（见第 1 条）——逐位相等
+    assert seen == [e for e in sent if e not in OPENSSL_UNKNOWN_EXTS]
 
 
 @pytest.mark.parametrize("name", PRESETS)

@@ -9,6 +9,7 @@ import "C"
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -70,6 +71,8 @@ func anyKey(m map[string]any, keys ...string) bool {
 }
 
 // lookup 取 handle 并校验种类；失败时写入 last error。
+// 成功时把 id 记在该线程的"当前 handle"上，让随后的错误同时可通过
+// gtls_error_of(id) 取到（跨线程错误回收，见 errors.go）。
 func lookup[T any](id uint64, kind string) (*T, bool) {
 	v, ok := handles.Get(id)
 	if !ok {
@@ -81,6 +84,7 @@ func lookup[T any](id uint64, kind string) (*T, bool) {
 		setLastError("invalid_handle", "handle %d is not a %s", id, kind)
 		return nil, false
 	}
+	threadHandle.Store(threadID(), id)
 	return typed, true
 }
 
@@ -90,6 +94,7 @@ func closeHandle(id uint64) C.int {
 		setLastError("invalid_handle", "%v", err)
 		return -1
 	}
+	handleErrors.Delete(id) // 错误槽跟着对象一起回收
 	return 0
 }
 
@@ -140,8 +145,8 @@ func gtls_version() (ret *C.char) {
 	b, err := json.Marshal(struct {
 		ABI  int    `json:"abi"`
 		Core string `json:"core"`
-		UTLS string `json:"utls"`
-	}{version.ABI, version.Core, version.UTLS})
+		UTLS string `json:"utls"` // 指纹栈版本（build info 推导，见 version.UTLSVersion）
+	}{version.ABI, version.Core, version.UTLSVersion()})
 	if err != nil {
 		setLastError("internal", "marshal version: %v", err)
 		return nil
@@ -168,6 +173,13 @@ func gtls_last_error() (ret *C.char) {
 	defer lockThread()()
 	defer guardCString(&ret) // 本函数自身 panic 时无处可记录，仅保证不越过 ABI
 	return C.CString(lastErrorJSON())
+}
+
+//export gtls_error_of
+func gtls_error_of(handle C.uint64_t) (ret *C.char) {
+	defer guardCString(&ret)
+	// 不清错误槽：本函数的职责就是把槽里的内容交给调用方。
+	return C.CString(handleErrorJSON(uint64(handle)))
 }
 
 //export gtls_free_string
@@ -345,7 +357,7 @@ func gtls_request(sessionH C.uint64_t, requestJSON *C.char) (ret C.uint64_t) {
 
 	resp, err := s.eng.Do(&req)
 	if err != nil {
-		setLastError("request_failed", "%v", err)
+		setLastErrorFor(uint64(sessionH), "request_failed", "%v", err)
 		return 0
 	}
 	return C.uint64_t(handles.Register(&response{resp: resp}))
@@ -362,10 +374,13 @@ func gtls_response_info(respH C.uint64_t) (ret *C.char) {
 		return nil
 	}
 	b, err := json.Marshal(map[string]any{
-		"status":        r.resp.Status,
-		"headers":       r.resp.Headers,
-		"used_protocol": r.resp.UsedProtocol,
-		"selfcheck":     r.resp.SelfCheck,
+		"status":           r.resp.Status,
+		"headers":          r.resp.Headers,
+		"used_protocol":    r.resp.UsedProtocol,
+		"selfcheck":        r.resp.SelfCheck,
+		"content_encoding": r.resp.ContentEncoding,
+		"decoded":          r.resp.Decoded,
+		"warnings":         r.resp.Warnings,
 	})
 	if err != nil {
 		setLastError("internal", "marshal response info: %v", err)
@@ -397,7 +412,11 @@ func gtls_response_read(respH C.uint64_t, buf *C.char, bufLen C.int64_t) (ret C.
 		return 0
 	}
 	if err != nil {
-		setLastError("read_failed", "%v", err)
+		if errors.Is(err, engine.ErrReadTimeout) {
+			setLastErrorFor(uint64(respH), "read_timeout", "%v", err)
+			return -1
+		}
+		setLastErrorFor(uint64(respH), "read_failed", "%v", err)
 		return -1
 	}
 	return 0
@@ -418,7 +437,6 @@ func gtls_response_close(respH C.uint64_t) (ret C.int) {
 }
 
 // --- 流式上传（二期 T2，ABI 追加） ---
-
 type upload struct{ up *engine.Upload }
 
 //export gtls_request_begin
@@ -441,7 +459,7 @@ func gtls_request_begin(sessionH C.uint64_t, requestJSON *C.char) (ret C.uint64_
 	}
 	up, err := s.eng.BeginUpload(&req)
 	if err != nil {
-		setLastError("request_failed", "%v", err)
+		setLastErrorFor(uint64(sessionH), "request_failed", "%v", err)
 		return 0
 	}
 	return C.uint64_t(handles.Register(&upload{up: up}))
@@ -467,7 +485,7 @@ func gtls_request_write(uploadH C.uint64_t, buf *C.char, bufLen C.int64_t) (ret 
 	}
 	n, err := u.up.Write(b)
 	if err != nil {
-		setLastError("write_failed", "%v", err)
+		setLastErrorFor(uint64(uploadH), "write_failed", "%v", err)
 		return -1
 	}
 	return C.int64_t(n)
@@ -490,10 +508,106 @@ func gtls_request_finish(uploadH C.uint64_t) (ret C.uint64_t) {
 		return 0
 	}
 	if err != nil {
-		setLastError("request_failed", "%v", err)
+		setLastErrorFor(uint64(uploadH), "request_failed", "%v", err)
 		return 0
 	}
 	return C.uint64_t(handles.Register(&response{resp: resp}))
+}
+
+// --- WebSocket（T-WS，ABI 追加；wss://，RFC 6455 + RFC 7692 permessage-deflate） ---
+//
+// url_json 新增键一律向后兼容（签名不动）：`compress` 为 true 时握手 offer
+// permessage-deflate。压缩对 C 侧透明——gtls_ws_send/gtls_ws_recv 收发的是明文。
+
+type wsconn struct{ wc *engine.WSConn }
+
+//export gtls_ws_connect
+func gtls_ws_connect(sessionH C.uint64_t, urlJSON *C.char) (ret C.uint64_t) {
+	defer lockThread()()
+	defer guardHandle(&ret)
+	clearLastError()
+
+	s, ok := lookup[session](uint64(sessionH), "session")
+	if !ok {
+		return 0
+	}
+	var wr engine.WSRequest
+	if !parseJSONArg(urlJSON, &wr) {
+		return 0
+	}
+	if wr.URL == "" {
+		setLastError("invalid_argument", "url_json must set url")
+		return 0
+	}
+	wc, err := s.eng.DialWS(&wr)
+	if err != nil {
+		setLastErrorFor(uint64(sessionH), "ws_connect_failed", "%v", err)
+		return 0
+	}
+	return C.uint64_t(handles.Register(&wsconn{wc: wc}))
+}
+
+//export gtls_ws_send
+func gtls_ws_send(wsH C.uint64_t, opcode C.int, buf *C.char, bufLen C.int64_t) (ret C.int) {
+	defer lockThread()()
+	defer guardInt(&ret)
+	clearLastError()
+
+	w, ok := lookup[wsconn](uint64(wsH), "ws")
+	if !ok {
+		return -1
+	}
+	var b []byte
+	if bufLen > 0 {
+		b = unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(bufLen))
+	}
+	if err := w.wc.Send(int(opcode), b); err != nil {
+		setLastErrorFor(uint64(wsH), "ws_send_failed", "%v", err)
+		return -1
+	}
+	return 0
+}
+
+//export gtls_ws_recv
+func gtls_ws_recv(wsH C.uint64_t, buf *C.char, bufLen C.int64_t, timeoutMs C.int, opcodeOut *C.int) (ret C.int64_t) {
+	defer lockThread()()
+	defer guardInt64(&ret)
+	clearLastError()
+
+	w, ok := lookup[wsconn](uint64(wsH), "ws")
+	if !ok {
+		return -1
+	}
+	op, payload, err := w.wc.Recv(int(timeoutMs))
+	if err != nil {
+		setLastErrorFor(uint64(wsH), "ws_recv_failed", "%v", err)
+		return -1
+	}
+	if opcodeOut != nil {
+		*opcodeOut = C.int(op)
+	}
+	if int64(len(payload)) > int64(bufLen) {
+		// 调用方缓冲过小：截断并在错误里明示（下读前应先按业务量分配）
+		setLastErrorFor(uint64(wsH), "ws_recv_failed", "buf too small: payload %d > buf %d（消息被截断）", len(payload), bufLen)
+		copy(unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(bufLen)), payload)
+		return C.int64_t(bufLen)
+	}
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(buf)), int(bufLen)), payload)
+	return C.int64_t(len(payload))
+}
+
+//export gtls_ws_close
+func gtls_ws_close(wsH C.uint64_t, code C.int) (ret C.int) {
+	defer lockThread()()
+	defer guardInt(&ret)
+	clearLastError()
+
+	w, ok := lookup[wsconn](uint64(wsH), "ws")
+	if !ok {
+		return -1
+	}
+	w.wc.Close(int(code))
+	return closeHandle(uint64(wsH))
 }
 
 // --- 预设与自校验（P0 stub） ---

@@ -5,7 +5,10 @@
 //
 // 默认不跑（build tag external）：本机/CI 网络可用时
 //   go test -tags external ./... -run TestExternalOracle -v
-// 结果只打印报告不硬断言（tls.peet.ws 的解析行为可能随版本变化）。
+// 默认只打印报告不硬断言（tls.peet.ws 的解析行为可能随版本变化，V-3 约定）；
+// GEEKTLS_ORACLE_ASSERT=1 时 JA4/JA3/Akamai 不一致即失败——nightly CI 用这个档，
+// 见 assertMode。子集用 GEEKTLS_ORACLE_PRESETS（不设=全量）：每条预设都要真打
+// 一次第三方 oracle，全量 364 条在 CI 里既慢又像是压测。
 
 package e2e
 
@@ -15,6 +18,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +31,43 @@ import (
 )
 
 const oracleHost = "tls.peet.ws"
+
+// oraclePresets 返回本轮 oracle 要跑的预设清单（GEEKTLS_ORACLE_PRESETS 子集，未设=全量）。
+// 名单里的模式一个都没匹配到 ⇒ 直接失败：拼错的预设名会让"oracle 全绿"变成"什么都没测"。
+func oraclePresets(t *testing.T) []string {
+	all := profiles.List()
+	spec := strings.TrimSpace(os.Getenv("GEEKTLS_ORACLE_PRESETS"))
+	if spec == "" {
+		return all
+	}
+	pats := []string{}
+	for _, p := range strings.Split(spec, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			pats = append(pats, p)
+		}
+	}
+	out := make([]string, 0, len(all))
+	matched := map[string]int{}
+	for _, name := range all {
+		for _, pat := range pats {
+			if ok, err := path.Match(pat, name); err == nil && ok {
+				matched[pat]++
+				out = append(out, name)
+				break
+			}
+		}
+	}
+	for _, pat := range pats {
+		if matched[pat] == 0 {
+			t.Errorf("GEEKTLS_ORACLE_PRESETS 里的模式 %q 没匹配到任何预设（拼错或已改名）", pat)
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("GEEKTLS_ORACLE_PRESETS=%q 一条预设都没选中", spec)
+	}
+	t.Logf("oracle 子集 %d/%d 条：%s", len(out), len(all), spec)
+	return out
+}
 
 type oracleResponse struct {
 	JA3     string `json:"ja3"`
@@ -47,7 +89,7 @@ func (r *oracleResponse) resolve() (ja3, ja3Hash, ja4 string) {
 }
 
 func TestExternalOracle(t *testing.T) {
-	for _, name := range profiles.List() {
+	for _, name := range oraclePresets(t) {
 		t.Run(name, func(t *testing.T) {
 			p, err := profiles.Get(name)
 			if err != nil {
@@ -84,9 +126,22 @@ func TestExternalOracle(t *testing.T) {
 			fmt.Printf("  ja4  self=%s\n       orac=%s  %s\n", wantJA4, gotJA4, mark(wantJA4 == gotJA4))
 			fmt.Printf("  ja3h self=%s\n       orac=%s  %s\n", tlscore.JA3Hash(wantJA3), gotJA3Hash, mark(tlscore.JA3Hash(wantJA3) == gotJA3Hash))
 			fmt.Printf("  ja3  self=%s\n       orac=%s\n", wantJA3, gotJA3)
+			if assertMode() {
+				if wantJA4 != gotJA4 {
+					t.Errorf("[%s] JA4 self=%s oracle=%s 不一致", name, wantJA4, gotJA4)
+				}
+				if h := tlscore.JA3Hash(wantJA3); h != gotJA3Hash {
+					t.Errorf("[%s] JA3 hash self=%s oracle=%s 不一致", name, h, gotJA3Hash)
+				}
+			}
 		})
 	}
 }
+
+// assertMode：oracle 对拍是否"不一致即失败"。默认关（V-3：外部 oracle 的解析口径
+// 可能自己变，日常手动跑只打印）；nightly CI 显式置 GEEKTLS_ORACLE_ASSERT=1，
+// 否则那轮跑只证明"握手打得通"，证明不了 MATCH 结论没过期。
+func assertMode() bool { return os.Getenv("GEEKTLS_ORACLE_ASSERT") != "" }
 
 func mark(ok bool) string {
 	if ok {

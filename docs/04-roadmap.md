@@ -37,7 +37,7 @@
 | 任务 | 验收 |
 |---|---|
 | ctypes 绑定全套 ABI（session/request/stream/error） | requests 风格 API；`iter_bytes` 流式；handle 无泄漏（压测 10 万请求 RSS 平稳） |
-| engine：cookie jar、重定向、代理（HTTP/SOCKS5）、超时 | 行为测试绿 |
+| engine：cookie jar、重定向、代理（HTTP CONNECT / SOCKS5(+h) / SOCKS4(A) + `HTTPS_PROXY`/`NO_PROXY`）、超时 | 行为测试绿 |
 | e2e harness 产品化（pytest 插件形态） | 一条命令跑"全部预设 × nginx 采集端"断言矩阵 |
 | **阶段验收** | Python 包 `pip install` 可用；e2e 矩阵全绿进 CI |
 

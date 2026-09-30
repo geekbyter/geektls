@@ -325,6 +325,46 @@ func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, 
 	return chProfile, dgramLens
 }
 
+// TestQUICInitialPacketSize 断言 profile.http3.initial_packet_size 真的决定首个
+// Initial datagram 的尺寸（= PADDING 填到多少）；**不设该字段时保持上游默认 1280**
+// （默认路径逐字节不变是硬要求：内置 364 条预设没有任何一条带这个键）。
+func TestQUICInitialPacketSize(t *testing.T) {
+	first := func(size int) int {
+		t.Helper()
+		p, err := profiles.Get("chrome_133")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.HTTP3 = &profiles.HTTP3Profile{Enabled: true, InitialPacketSize: size}
+		qcfg, err := h3core.QUICConfigFromProfile(p)
+		if err != nil {
+			t.Fatalf("initial_packet_size=%d: %v", size, err)
+		}
+		_, lens := sniffInnerClientHello(t, qcfg)
+		return lens[0]
+	}
+
+	if got := first(1350); got != 1350 {
+		t.Errorf("initial_packet_size=1350 时首 datagram = %d，want 1350", got)
+	}
+	if got := first(1200); got != 1200 {
+		t.Errorf("initial_packet_size=1200 时首 datagram = %d，want 1200", got)
+	}
+	if got := first(0); got != 1280 {
+		t.Errorf("未设字段时首 datagram = %d，want 1280（上游默认；默认路径不能被改动）", got)
+	}
+
+	// 越界值：在 QUICConfigFromProfile 就报错，而不是被上游静默夹到 1452
+	p, err := profiles.Get("chrome_133")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.HTTP3 = &profiles.HTTP3Profile{Enabled: true, InitialPacketSize: 1500}
+	if _, err := h3core.QUICConfigFromProfile(p); err == nil {
+		t.Error("initial_packet_size=1500 应当报错（不静默夹取）")
+	}
+}
+
 // TestQUICTransportParamsRaw T4-1 验收：transport_params_raw（blob 直通）的
 // 顺序、非标参数、GREASE 参数位置全部按 profile 原样上 wire。
 func TestQUICTransportParamsRaw(t *testing.T) {
@@ -336,15 +376,15 @@ func TestQUICTransportParamsRaw(t *testing.T) {
 	p.HTTP3 = &profiles.HTTP3Profile{
 		Enabled: true,
 		TransportParamsRaw: [][]any{
-			{8.0, 100.0},               // initial_max_streams_bidi（故意提前，验证顺序可控）
-			{4660.0, "hex:deadbeef"},   // 非标参数 0x1234
-			{1.0, 30000.0},             // max_idle_timeout
-			{4.0, 10485760.0},          // initial_max_data
-			{5.0, 6291456.0},           // initial_max_stream_data_bidi_local
-			{6.0, 6291456.0},           // initial_max_stream_data_bidi_remote
-			{7.0, 6291456.0},           // initial_max_stream_data_uni
-			{9.0, 103.0},               // initial_max_streams_uni
-			{"grease", 8.0},            // GREASE 参数放末尾（默认 quic-go 恒首位，此处验证位置可控）
+			{8.0, 100.0},             // initial_max_streams_bidi（故意提前，验证顺序可控）
+			{4660.0, "hex:deadbeef"}, // 非标参数 0x1234
+			{1.0, 30000.0},           // max_idle_timeout
+			{4.0, 10485760.0},        // initial_max_data
+			{5.0, 6291456.0},         // initial_max_stream_data_bidi_local
+			{6.0, 6291456.0},         // initial_max_stream_data_bidi_remote
+			{7.0, 6291456.0},         // initial_max_stream_data_uni
+			{9.0, 103.0},             // initial_max_streams_uni
+			{"grease", 8.0},          // GREASE 参数放末尾（默认 quic-go 恒首位，此处验证位置可控）
 		},
 	}
 	qcfg, err := h3core.QUICConfigFromProfile(p)

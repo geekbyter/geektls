@@ -54,7 +54,7 @@ func (s *Session) doH3(req *Request, headers [][2]string) (*Response, error) {
 	if shared {
 		tr, err = s.sharedH3Transport()
 	} else {
-		tr, err = h3core.NewTransport(s.profile, s.opts.InsecureSkipVerify)
+		tr, err = h3core.NewTransport(s.profile, s.h3TLSSettings())
 	}
 	if err != nil {
 		return nil, err
@@ -112,12 +112,22 @@ func (s *Session) sharedH3Transport() (*http3.Transport, error) {
 	if s.h3tr != nil {
 		return s.h3tr, nil
 	}
-	tr, err := h3core.NewTransport(s.profile, s.opts.InsecureSkipVerify)
+	tr, err := h3core.NewTransport(s.profile, s.h3TLSSettings())
 	if err != nil {
 		return nil, err
 	}
 	s.h3tr = tr
 	return tr, nil
+}
+
+// h3TLSSettings 把会话的证书材料映射到 H3 侧参数（QUIC 内层 TLS 用的是
+// bogdanfinn/utls 类型，与 TCP 侧同一份 PEM 解析结果）。
+func (s *Session) h3TLSSettings() h3core.TLSSettings {
+	return h3core.TLSSettings{
+		InsecureSkipVerify: s.opts.InsecureSkipVerify,
+		RootCAs:            s.certs.rootPool(),
+		Certificates:       s.certs.quicCerts(),
+	}
 }
 
 // raceH3H2 实现 Chrome 式 H2/H3 竞速：H3 先跑，h2_race_ms 内没拿到响应头

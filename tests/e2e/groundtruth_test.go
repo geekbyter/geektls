@@ -160,8 +160,8 @@ func TestChromiumGroundTruth(t *testing.T) {
 					t.Errorf("h2 settings[%d] = %v, want %v", i, kv, wantSettings[i])
 				}
 			}
-			if p.HTTP2.WindowUpdate != 15663105 {
-				t.Errorf("h2 window_update = %d, want 15663105", p.HTTP2.WindowUpdate)
+			if f := p.HTTP2.WindowUpdate; f == nil || *f != 15663105 {
+				t.Errorf("h2 window_update = %v, want 15663105", f)
 			}
 			if fmt.Sprint(p.HTTP2.PseudoHeaderOrder) != "[m a s p]" {
 				t.Errorf("h2 pseudo order = %v, want [m a s p]", p.HTTP2.PseudoHeaderOrder)

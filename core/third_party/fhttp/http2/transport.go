@@ -63,7 +63,11 @@ type Transport struct {
 	// plain-text "http" scheme. Note that this does not enable h2c support.
 	AllowHTTP       bool
 	InitialStreamID uint32
-	ConnectionFlow  uint32
+	// ConnectionFlow is the connection-level WINDOW_UPDATE increment sent
+	// right after SETTINGS. nil = transportDefaultConnFlow; pointer-to-0 =
+	// send no connection-level WINDOW_UPDATE at all (RFC 7540 §6.9.1 forbids
+	// an increment of 0, so 0 can only mean "don't send").
+	ConnectionFlow *uint32
 
 	// ConnPool optionally specifies an alternate connection pool to use.
 	// If nil, the default is used.
@@ -80,6 +84,11 @@ type Transport struct {
 	// If the returned net.Conn has a ConnectionState method like tls.Conn,
 	// it will be used to set http.Response.TLS.
 	DialTLS func(network, addr string, cfg *tls.Config) (net.Conn, error)
+
+	// geektls patch: SkipResponseDecompress 只关响应侧自动解压
+	//（不影响请求侧自动补 Accept-Encoding）——geektls engine 统一在
+	// 自己的解压层处理（多编码链/zstd/warning 语义一致）。
+	SkipResponseDecompress bool
 
 	// DisableCompression, if true, prevents the Transport from
 	// requesting compression with an "Accept-Encoding: gzip"
@@ -791,10 +800,14 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 		cc.streamFlow = v
 	}
 
-	// 2. Determine Connection Flow (default to ~15MB if not set)
+	// 2. Determine Connection Flow (default to ~15MB if not set). An explicit
+	// pointer-to-0 means "send no connection-level WINDOW_UPDATE": the frame
+	// write below is guarded on cc.connFlow > 0, inflow.add(0) leaves the
+	// connection on the RFC default window, and Read's refresh falls back to
+	// initialWindowSize so a long response cannot stall (see Read).
 	cc.connFlow = transportDefaultConnFlow
-	if t.ConnectionFlow != 0 {
-		cc.connFlow = t.ConnectionFlow
+	if t.ConnectionFlow != nil {
+		cc.connFlow = *t.ConnectionFlow
 	}
 
 	// ------------------------------------------------------------------
@@ -849,10 +862,6 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 		cc.nextStreamID = 3
 	}
 
-	if t.InitialStreamID != 0 {
-		cc.nextStreamID = t.InitialStreamID
-	}
-
 	if cs, ok := c.(connectionStater); ok {
 		state := cs.ConnectionState()
 		cc.tlsState = &state
@@ -878,9 +887,10 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 	cc.fr.WriteSettings(initialSettings...)
 
 	// ------------------------------------------------------------------
-	// CRITICAL FIX: Use the sanitized cc.connFlow.
-	// t.ConnectionFlow might be 0, which would send an illegal Window Update of 0.
-	// cc.connFlow is guaranteed to be non-zero (defaults to transportDefaultConnFlow).
+	// A WINDOW_UPDATE with increment 0 is a PROTOCOL_ERROR (RFC 7540 §6.9.1),
+	// so an explicit connFlow of 0 means "no connection-level WINDOW_UPDATE"
+	// and the frame is skipped entirely. cc.connFlow is transportDefaultConnFlow
+	// when the transport did not ask for anything.
 	// ------------------------------------------------------------------
 	if cc.connFlow > 0 {
 		cc.fr.WriteWindowUpdate(0, cc.connFlow)
@@ -889,6 +899,13 @@ func (t *Transport) newClientConn(c net.Conn, addr string, singleUse bool) (*Cli
 	for _, priority := range t.Priorities {
 		cc.fr.WritePriority(priority.StreamID, priority.PriorityParam)
 		cc.nextStreamID = priority.StreamID + 2
+	}
+
+	// InitialStreamID wins over the priority-derived bookkeeping above: the
+	// caller stated the first stream id explicitly, and PRIORITY frames do not
+	// consume a request stream id of their own.
+	if t.InitialStreamID != 0 {
+		cc.nextStreamID = t.InitialStreamID
 	}
 
 	// Use the dynamic connection flow value we calculated earlier
@@ -2384,7 +2401,7 @@ func (rl *clientConnReadLoop) handleResponse(cs *clientStream, f *MetaHeadersFra
 
 	// Make the behavior similar to http1. If DisableCompression is true,
 	// requestedGzip will be set to false
-	if !cs.cc.t.DisableCompression {
+	if !cs.cc.t.DisableCompression && !cs.cc.t.SkipResponseDecompress { // geektls patch
 		res.Body = http.DecompressBody(res)
 	}
 
@@ -2464,8 +2481,16 @@ func (b transportResponseBody) Read(p []byte) (n int, err error) {
 
 	// Check the conn-level first, before the stream-level.
 	// Use dynamic connFlow logic
-	if v := cc.inflow.available(); v < int32(cc.connFlow/2) {
-		connAdd = int32(cc.connFlow) - v
+	connIncr := cc.connFlow
+	if connIncr == 0 {
+		// connFlow == 0 means "no *initial* connection-level WINDOW_UPDATE", not
+		// "never credit the connection": without ongoing updates the peer runs out
+		// of window on any response larger than 65535 bytes and the stream stalls.
+		// Fall back to the protocol default, which is what net/http does.
+		connIncr = initialWindowSize
+	}
+	if v := cc.inflow.available(); v < int32(connIncr/2) {
+		connAdd = int32(connIncr) - v
 		cc.inflow.add(connAdd)
 	}
 

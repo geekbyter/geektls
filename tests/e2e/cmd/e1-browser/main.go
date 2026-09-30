@@ -70,9 +70,9 @@ type tlsRecord struct {
 }
 
 type h2Record struct {
-	Settings       [][2]uint32  `json:"settings"`
-	WindowUpdate   uint32       `json:"window_update"`
-	RegularHeaders [][2]string  `json:"regular_headers"`
+	Settings       [][2]uint32 `json:"settings"`
+	WindowUpdate   uint32      `json:"window_update"`
+	RegularHeaders [][2]string `json:"regular_headers"`
 }
 
 type computed struct {
@@ -464,8 +464,17 @@ func comparePreset(name string, c captured) []string {
 		if len(got) != len(want) || (len(got) > 0 && got[0] != want[0]) || !samePairs(got, want) {
 			diffs = append(diffs, fmt.Sprintf("H2 SETTINGS 不同（实浏览器 %v / 预设 %v）", got, want))
 		}
-		if c.h2Spec.ConnFlow != p.HTTP2.WindowUpdate {
-			diffs = append(diffs, fmt.Sprintf("H2 WINDOW_UPDATE 不同（实浏览器 %d / 预设 %d）", c.h2Spec.ConnFlow, p.HTTP2.WindowUpdate))
+		// 连接级 WINDOW_UPDATE：浏览器侧 0 表示抓包里根本没有该帧（增量 0 在 H2 是
+		// 协议错误，客户端不会发），故与预设的三态一一对应。
+		wf, gf := p.HTTP2.WindowUpdate, c.h2Spec.ConnFlow
+		switch {
+		case wf == nil && gf != 15663105:
+			diffs = append(diffs, fmt.Sprintf("预设未指定 window_update（线上补 15663105），实浏览器为 %d", gf))
+		case wf != nil && *wf != gf:
+			diffs = append(diffs, fmt.Sprintf("H2 WINDOW_UPDATE 不同（实浏览器 %d / 预设 %d）", gf, *wf))
+		}
+		if id := p.HTTP2.FirstStreamID; id != 0 && id != c.h2Spec.StreamID {
+			diffs = append(diffs, fmt.Sprintf("首个请求 stream_id 不同（实浏览器 %d / 预设 %d）", c.h2Spec.StreamID, id))
 		}
 	}
 	return diffs

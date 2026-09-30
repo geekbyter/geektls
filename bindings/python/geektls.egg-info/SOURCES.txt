@@ -3,7 +3,6 @@ pyproject.toml
 geektls/__init__.py
 geektls/_ffi.py
 geektls/errors.py
-geektls/libgeektls.so
 geektls.egg-info/PKG-INFO
 geektls.egg-info/SOURCES.txt
 geektls.egg-info/dependency_links.txt

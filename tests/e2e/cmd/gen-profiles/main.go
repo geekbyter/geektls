@@ -148,8 +148,10 @@ func build(it specimens.Item) (*profiles.Profile, error) {
 			settings = append(settings, []uint32{kv[0], kv[1]})
 		}
 		p.HTTP2 = &profiles.HTTP2Profile{
-			Settings:          settings,
-			WindowUpdate:      it.H2ConnFlow,
+			Settings: settings,
+			// 标本里的 0 = 抓包没记录该帧（H2 里增量 0 是协议错误，客户端不会发），
+			// 与"明确不发"不是同一件事 ⇒ 留 nil 由引擎补默认，不写进预设。
+			WindowUpdate:      flowOf(it.H2ConnFlow),
 			PseudoHeaderOrder: pseudoHeaderOrder(it.Family),
 			HeadersPriority:   headersPriority(it.Family),
 			HpackStrategy:     hpackStrategy(it.Family, it.Platform),
@@ -350,6 +352,14 @@ func headersPriority(family string) *profiles.H2HeadersPriority {
 		return &profiles.H2HeadersPriority{Exclusive: false, StreamDep: 0, Weight: 255}
 	}
 	return nil
+}
+
+// flowOf 把标本里的连接级 WINDOW_UPDATE 增量转成预设的三态字段。
+func flowOf(v uint32) *uint32 {
+	if v == 0 {
+		return nil
+	}
+	return profiles.U32(v)
 }
 
 // identityHeaders 按族/版本/平台合成缺省身份头。

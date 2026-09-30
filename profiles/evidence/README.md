@@ -43,7 +43,7 @@
   `grease_random`（两者都保留浏览器「每连接重随机化」行为）；`sig_algs` 的 GREASE 位
   由 compile 在编译期取值——uTLS 不做该处的握手期替换（见 07 文档 G12）。
 - `extension_permutation`：Chrome/Edge 置 true（逐连接洗牌），Firefox/Safari 不洗牌。
-- `hpack_strategy`（T-HPACK，2026-09-29 铺开，249/363 条）：按族/平台映射写入——
+- `hpack_strategy`（T-HPACK，2026-09-29 铺开，2026-09-29 补齐 Safari 9.1.3，250/364 条）：按族/平台映射写入——
   chrome/edge 与**栈归属明确**的 Chromium 系（opera/yabrowser）→ `chrome`；firefox → `firefox`；
   safari 与**所有 iOS 预设**（iOS 上任何浏览器都是 WebKit）→ `safari`。
   工具族（curl/okhttp/charles/fiddler/reqable/powershell/ie/postman）与无法确认栈归属的
@@ -107,7 +107,7 @@ UA-CH 的 GREASE 品牌名称/版本/位置随浏览器版本变化）。H3 记�
 
 | 文件 | 来源 | 状态 |
 |---|---|---|
-| `tls_config-0.0.2.json` | Python 包 `tls_config` 0.0.2（用户提供，339 条） | **已导入**：319 条 E3 预设（`source: "tls_config-0.0.2/..."`）；见 docs/07 §5.7 |
+| `tls_config-0.0.2.json` | Python 包 `tls_config` 0.0.2（用户提供，339 条） | **已导入**：320 条 E3 预设（`source: "tls_config-0.0.2/..."`）；见 docs/07 §5.7 |
 | `tls-client-master-profiles-*.go` | `bogdanfinn/tls-client@master` 的 `profiles/`（原始源码，2026-09-28 抓） | **未导入**：差集与所需改动见 docs/08 §E |
 
 ## 待补证据（与 P1-T8/P6-T3 同环境）

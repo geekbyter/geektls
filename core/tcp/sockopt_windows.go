@@ -10,17 +10,23 @@ import (
 const (
 	ipprotoIP = 0
 	ipTTL     = 4
+	// ipDontFragment Windows：IP_DONTFRAGMENT（winsock 常量，x/sys 未导出）。
+	ipDontFragment = 14
 )
 
 // applySockopts 在 connect 前应用 TTL/MSS。
 // Windows 实测：IP_TTL 可用；TCP_MAXSEG 返回 WSAENOPROTOOPT（不支持）——
 // MSS 在 Windows 降级为跳过+warning（见 platformWarnings）。
-func applySockopts(fd uintptr, cfg *profiles.TCPProfile) error {
+// DF：IP_DONTFRAGMENT best-effort（老系统 ENOPROTOOPT 不中止）。
+func applySockopts(fd uintptr, cfg *profiles.TCPProfile, network string) error {
 	h := windows.Handle(fd)
 	if cfg.TTL > 0 {
 		if err := windows.SetsockoptInt(h, ipprotoIP, ipTTL, cfg.TTL); err != nil {
 			return err
 		}
+	}
+	if cfg.DF {
+		windows.SetsockoptInt(h, ipprotoIP, ipDontFragment, 1) // best-effort
 	}
 	return nil
 }

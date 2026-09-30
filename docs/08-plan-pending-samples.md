@@ -19,6 +19,7 @@
 | **S9** | **Chrome 133 的真机采样** | 第三方集与我们的 `chrome_133` **cipher 序不同**（其 AES256 在前，我们为 Chrome 标准序）。我们的序与 149/154 实测一致，但也可能是我们这条早期预设抄错 | 同上 | 中 |
 | **S10** | **Chrome 147 与 150 的锚点**（任一平台） | 谱系显示 143→152 之间 `sig_algs`（加 ML-DSA `0x0904/0905/0906` + GREASE）与扩展集合（加 `51764`）变过，**边界未知** ⇒ 现为 `E2i-u`（3/21 字段未定界） | 采两个锚点 ⇒ 边界收敛，`chrome_144..151` 可升为 `E2i` | 中 |
 | **S11** | **Safari 19 / 20 / 22 / 24 的锚点**（任一 macOS） | Safari 18→26 之间 ciphers/扩展集合/versions/groups/key_shares 全变过 ⇒ 谱系**拒绝内插** 19–25（10 个版本缺口） | 采 2–3 个锚点即可把 19–25 切成可信区间 | 中 |
+| **S12** | **E3 预设 Accept-Encoding 与版本矛盾的真机判定** | 2026-09-29 T-DECOMP 连锁检查：33 条 E3 预设（chrome_61~122 / edge_92~122 各平台，全部 E3 导入）广告 `gzip, deflate, br, zstd`，但 **zstd 是 Chrome 123（2024-03）才加入** Accept-Encoding 的 ⇒ 这些预设的身份头反映的是采集工具（tls_config 当时的客户端）而非该版本真机。同理需核实 Firefox 126+ 的 zstd 广告起点（我们的 firefox_120/135 为 gzip,deflate,br，135 是否应带 zstd 待真机） | 真机各采一份 ⇒ 按 §C 流程修 E3 预设；**当前不修**（E3 数据保持与来源数据集一致，改动需 E1 依据）。引擎侧不受影响：四种编码解压已全部实现 | 中 |
 
 ## E. 从上游/网络补齐缺失族（2026-09-28 盘点，待开工）
 
@@ -32,13 +33,25 @@
 | 同族新版本 | chrome 若干、firefox 若干、**okhttp4_android_10/11/12/13**(4) | 我们 chrome/firefox 的覆盖率已经不低（部分新版本以 `_windows`/`_macos` 后缀落在别的名字上，需按指纹而非名字去重）；okhttp 目前只有 3.x（6 条） |
 | **不需要** | 上游 `*_PSK` 变体（`chrome_133_PSK`/`chrome_152_PSK`…） | 我们的 PSK 建模是"空占位 + 无票据时线上省略"（`TestPresetCarriesPskPlaceholder`），不需要单独的 PSK 预设 |
 
-**开工前要先解决的（本次刻意未做，避免与在改的代码冲突）**：
+**开工前要先解决的**（第 2 条已于 2026-09-30 修掉，其余仍未动——刻意不做是为了不与在改的代码冲突）：
 
 1. 导入器 `tests/e2e/cmd/import-tlsconfig` 只吃 `tls_config`（Python 包）导出的 JSON
    快照，**不吃上游 Go 源码**。⇒ 要么拿到新版 `tls_config` 包（用户侧提供），
    要么给导入器加一个 Go 源码解析入口（改代码 + 改 `dump.py` 对应流程）。
-2. `tests/e2e/cmd/import-tlsconfig/main.go:416` 把 `source` 写死为
-   `"tls_config-0.0.2/" + c.Const` ⇒ 换版本必须同步改（否则 provenance 的 source 说谎）。
+   **2026-09-30 复核：光有解析器还不够——手上的上游源码是残缺的。**
+   `profiles/evidence/thirdparty/` 只 dump 了 `profiles.go`(6.6 KB) 与
+   `internal/browser_profiles.go`(91 KB)；`Mesh*/Nike*/Zalando*/Confirmed*` 在
+   `profiles.go` 的映射表里**只是引用**，定义在不 dump 的文件里；
+   `Mms*`/`Cloudscraper` 两份 dump 里**一次都没出现**。真要整族补齐，第一步是
+   把上游 `profiles/` 目录整个抓下来入库，而不是先写 AST 解析。
+2. ~~`import-tlsconfig` 把 `source` 写死为 `"tls_config-0.0.2/" + c.Const`~~
+   **已修（2026-09-30，A13-a）**：`convert` 改收 `source` 参数，CLI 加 `-source`
+   （默认前缀与被替换掉的写死字面量逐字符相同 ⇒ 再次导入产生的 `source` 不变；
+   本次没有重写任何预设文件，`-source ""` 直接报错而非静默回落）。
+   配套把"说谎"变成可测：`core/profiles/provenance_test.go::TestE3SourceTraceable`
+   要求每条 E3 的 `<数据集>` 在 `profiles/evidence/thirdparty/` 有同名快照，且
+   `<常量名>` 必须是该快照里某条的 `_const`（320/320 通过；另带 6 条合成负例，
+   证明这道门不是恒真断言）。
 3. 新族 / 新平台 token 需要在导入器的映射表里补：`chromiumLike`、`measuredIdentity`、
    `platformTokens`、`defaultPlatform`、`sigAlgHex`、`h2SettingID`、`groupHex`。
 4. 新增预设后要补的回归与登记：`core/tls/presets_test.go` 的 JA4 钉
@@ -48,16 +61,20 @@
 **不需要等上游的另一条路**（本次已走通）：真机 / 公开 peet.ws 抓包 → 逐字段手写预设
 （`docs/08 §C-2`）⇒ 能进 E1/E1r 等级，而不是只能标 E3。代价是需要样本。
 
-**本次顺带发现的待修项**：`chrome_149_windows` 的 UA 是无头令牌
-（`HeadlessChrome/149.0.0.0`，来自 `profiles/evidence/browsers/chrome_windows.json`）。
-修法：改记录 UA（或让 `cmd/e1-browser` 不把 headless 令牌写进记录）后重跑生成器；
-生成器产物**禁止手改**（会被 CI 逐字节守门判红）。
+**本次顺带发现的待修项（已修，2026-09-29）**：`chrome_149_windows` / `edge_153_windows` 的 UA
+带无头令牌（`HeadlessChrome/149.0.0.0`，来自采集链路 `--headless=new` 写进
+`profiles/evidence/browsers/*.json` 的记录）。
+修法已落地：源头 `cmd/e1-browser` 的 `sanitizeHeaders` 抹掉令牌，预设重新生成，
+`core/profiles/builtin_identity_test.go` 三条身份门禁（无 headless 令牌 / UA 平台与
+`sec-ch-ua-platform` 一致 / UA 主版本与 `sec-ch-ua` 一致）全预扫描过、0 违反。
+生成器产物**禁止手改**（会被 CI 逐字节守门判红；注：那条守门目前只在
+`runner.os == 'Linux'` 的 job 上跑，见 `ci.yml` 的 `presets must equal generator output (Linux)`）。
 
 ## B. 受依赖栈限制，暂不做（记录理由，避免重复评估）
 
 | 编号 | 项 | 结论 | 依据 |
 |---|---|---|---|
-| L1 | TCP 侧 0-RTT（early_data） | **不可做**（≠「未接线」） | uTLS/Go 客户端无 early_data：上游注释 `0-RTT is not supported`，早数据代码仅在 `c.quic != nil` 分支；H3 侧可做（quic-go `allow0RTT`/`DialEarly`） |
+| L1 | 0-RTT（early_data）协议侧 | **不可做/不做**（≠「未接线」，A10 结案） | TCP：uTLS/Go 客户端无 early_data——上游注释 `0-RTT is not supported`，早数据代码仅在 `c.quic != nil` 分支。H3：原判"可做（quic-go `allow0RTT`/`DialEarly`）"改判**不做**——前提是 QUIC 会话缓存，而 spec 模式下 `StoreSession` 是 no-op 且无可补导出面（docs/06 P7-T2），首飞 Initial 布局又已结案为不可控（L3）。**声明侧可控**：预设 `{"type": 42}` 经透传上线并改变 JA3/JA4，边界实证在 `core/tls/early_data_test.go`（只带 42 不带 PSK ⇒ 标准服务端拒） |
 | L2 | TLS record 分片 / 大小序列 | **不可做** | 在 `crypto/tls` 内部、无钩子；可做的只有 CH 长度（padding 扩展，已有） |
 | L3 | QUIC Initial datagram 布局 | 维持结案（G6） | 行业共性：quic-go packer 无钩子 |
 | L4 | 生成预设的手工修改 | **禁止** | 会被 `gen-profiles` 守门判为不一致；要改就走生成器（改标本/规则）或另起预设名 |

@@ -282,7 +282,7 @@ func TestFPSecondOracle(t *testing.T) {
 				wantSettings = append(wantSettings, [2]uint32{kv[0], kv[1]})
 			}
 			assertEq(t, "H2 SETTINGS id:value 有序", wantSettings, gotSettings)
-			assertEq(t, "H2 WINDOW_UPDATE 增量", p.HTTP2.WindowUpdate, cap.h2.ConnFlow)
+			assertEq(t, "H2 WINDOW_UPDATE 增量", flowOnWire(p.HTTP2.WindowUpdate), cap.h2.ConnFlow)
 
 			// ---- G11：HEADERS 帧**内嵌** priority（线上 flags 0x20）----
 			// 实测（2026-09-24，tls.peet.ws；peet 报的 weight = 线上值 +1）：
@@ -341,6 +341,15 @@ func TestFPSecondOracle(t *testing.T) {
 			}
 		})
 	}
+}
+
+// flowOnWire 把预设的三态 window_update 归一成线上实际写出的连接级
+// WINDOW_UPDATE 增量：nil 由引擎补 Chrome 默认 15663105，显式 0 表示不发。
+func flowOnWire(v *uint32) uint32 {
+	if v == nil {
+		return 15663105
+	}
+	return *v
 }
 
 func assertEq[T any](t *testing.T, what string, want, got T) {

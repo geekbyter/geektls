@@ -66,12 +66,13 @@ func TestTransportSlowReaderLargeResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	connFlow := uint32(15663105)
 	tr := &Transport{
 		Settings: map[SettingID]uint32{
 			SettingInitialWindowSize: 6291456,
 		},
 		SettingsOrder:     []SettingID{SettingInitialWindowSize},
-		ConnectionFlow:    15663105,
+		ConnectionFlow:    &connFlow,
 		PseudoHeaderOrder: []string{":method", ":authority", ":scheme", ":path"},
 	}
 	cc, err := tr.NewClientConn(conn)

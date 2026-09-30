@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -22,7 +23,7 @@ import (
 	"github.com/geektls/core/profiles"
 )
 
-func startH3EchoServer(t *testing.T) string {
+func h3TestCert(t *testing.T) ([]byte, *rsa.PrivateKey) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -41,15 +42,12 @@ func startH3EchoServer(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return der, key
+}
 
-	mux := fhttp.NewServeMux()
-	mux.HandleFunc("/echo", func(w fhttp.ResponseWriter, r *fhttp.Request) {
-		io.Copy(io.Discard, r.Body)
-		json.NewEncoder(w).Encode(map[string]any{
-			"method": r.Method, "path": r.URL.Path, "proto": r.Proto,
-		})
-	})
-
+func h3TestServer(t *testing.T, mux *fhttp.ServeMux) string {
+	t.Helper()
+	der, key := h3TestCert(t)
 	udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +62,18 @@ func startH3EchoServer(t *testing.T) string {
 	go srv.Serve(udp)
 	t.Cleanup(func() { srv.Close(); udp.Close() })
 	return fmt.Sprintf("127.0.0.1:%d", udp.LocalAddr().(*net.UDPAddr).Port)
+}
+
+func startH3EchoServer(t *testing.T) string {
+	t.Helper()
+	mux := fhttp.NewServeMux()
+	mux.HandleFunc("/echo", func(w fhttp.ResponseWriter, r *fhttp.Request) {
+		io.Copy(io.Discard, r.Body)
+		json.NewEncoder(w).Encode(map[string]any{
+			"method": r.Method, "path": r.URL.Path, "proto": r.Proto,
+		})
+	})
+	return h3TestServer(t, mux)
 }
 
 func h3Session(t *testing.T, raceMs int) *Session {
@@ -145,5 +155,53 @@ func TestEngineH3Fallback(t *testing.T) {
 	_, err := s.Do(&Request{URL: "https://127.0.0.1:1/echo", ForceHTTP3: true, TimeoutMs: 2000})
 	if err == nil {
 		t.Fatal("force_http3 to dead port should fail")
+	}
+}
+
+// TestReadTimeoutH3：A6 的 QUIC 侧——body 挂死必须按 read_timeout_ms 断开，
+// 且取消要真的传到线上（服务端 handler 的 r.Context() 被取消）。
+func TestReadTimeoutH3(t *testing.T) {
+	handlerDone := make(chan struct{}, 1)
+	mux := fhttp.NewServeMux()
+	mux.HandleFunc("/stall", func(w fhttp.ResponseWriter, r *fhttp.Request) {
+		defer func() { handlerDone <- struct{}{} }()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(200)
+		fmt.Fprint(w, "x")
+		if fl, ok := w.(fhttp.Flusher); ok {
+			fl.Flush()
+		}
+		select {
+		case <-r.Context().Done():
+		case <-time.After(30 * time.Second):
+		}
+	})
+	addr := h3TestServer(t, mux)
+
+	s := h3Session(t, 0)
+	resp, err := s.Do(&Request{
+		URL: "https://" + addr + "/stall", ForceHTTP3: true, ReadTimeoutMs: 300,
+	})
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if resp.UsedProtocol != "h3" {
+		t.Fatalf("protocol = %q, want h3", resp.UsedProtocol)
+	}
+	buf := make([]byte, 16)
+	if n, err := resp.Body.Read(buf); err != nil || n != 1 || buf[0] != 'x' {
+		t.Fatalf("首字节 = (%d, %v), want 1 'x'", n, err)
+	}
+	start := time.Now()
+	if _, err := resp.Body.Read(buf); !errors.Is(err, ErrReadTimeout) {
+		t.Fatalf("超时读 err = %v, want ErrReadTimeout", err)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("超时耗时 %v：取消被底层 Close 挂住", d)
+	}
+	select {
+	case <-handlerDone:
+	case <-time.After(5 * time.Second):
+		t.Error("服务端 handler 未被放掉：H3 超时没有把取消传到线上")
 	}
 }

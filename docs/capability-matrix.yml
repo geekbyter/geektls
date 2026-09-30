@@ -4,7 +4,7 @@
 # status: implemented | partial | missing | not_controlled
 # evidence: E1 | E2 | E3 | E4 | local | unverified
 version: 1
-as_of: "2026-09-24"
+as_of: "2026-09-30"
 generated_from: docs/01-fingerprint-dimensions.md
 plan: docs/plans/2026-09-24-geektls-hardening-and-h3-plan.md
 
@@ -82,9 +82,10 @@ layers:
       note: "G2a 结案（2026-09-24）：引擎默认开启、每次拨号重新编译 spec、复用失败丢票回退；真机 tls.peet.ws 与本地 std 服务端实测 resumed=true（DidResume 硬断言）；core/tls/resumption_test.go + core/engine/resumption_test.go"
     - id: tls.session_resumption_0rtt
       target: C
-      status: not_controlled
+      status: partial
       evidence: local
-      blocking: "G2b：TCP 侧**不可做**（uTLS/Go 客户端无 early_data 支持，上游注释 '0-RTT is not supported'，早数据代码仅在 c.quic!=nil 分支）；H3/QUIC 侧可做（quic-go allow0RTT/DialEarly + 会话缓存），按需开"
+      blocking: null
+      note: "A10 结案（2026-09-30）：**声明侧已可控，协议侧明确不做**。预设写 {\"type\": 42} 即经未识别类型透传（GenericExtension）上线，实测钉在 core/tls/early_data_test.go——JA3 扩展段多 42、JA4 扩展计数 17→18、hex 解析原样读回零告警。但\"只带 42 不带 PSK\"必被标准服务端拒（Go: client sent unexpected early data / 客户端看到 unsupported extension），真首飞还要求 ext 0 排在最前且 binder 绑会话 ⇒ 不可转录/回放（docs/12 拒绝项同口径）。协议侧：TCP 无钩子（G2b、docs/08 L1 取证），H3 的前提 QUIC 会话缓存在 spec 模式下是 no-op 且无可补导出面（docs/06 P7-T2）⇒ 不做，登记为已知边界，不再悬空"
     - id: tls.third_party_cross_check
       target: A
       status: implemented
@@ -138,6 +139,12 @@ layers:
       target: A
       status: implemented
       evidence: E2
+      note: "三态（A11，2026-09-29）：省略=补 15663105 / 0=不发该帧 / N=发 N。fork 的 Transport.ConnectionFlow 改 *uint32，不发时读路径退回协议默认窗口（长响应不卡死）。线上断言 tests/e2e/h2_capture_test.go 的 TestH2FrameCaptureTriState"
+    - id: h2.first_stream_id
+      target: A
+      status: implemented
+      evidence: E2
+      note: "A11 新增：首个请求的 stream id（省略=1，须为奇数）。fork 的 Transport.InitialStreamID 在 Priorities 之后生效，core/h2 建连接前校验奇数且 <2^31。Akamai 四段不覆盖此维度，靠 TestH2FrameCaptureTriState 的 first_stream_id=3 用例钉线上形态"
     - id: h2.priority_frames
       target: A
       status: implemented
@@ -185,11 +192,18 @@ layers:
       evidence: local
       blocking: null
       note: "T4-1：任意 id + hex 值；GREASE 参数位置可控（H3-4 一并解决）"
+    - id: h3.initial_packet_size
+      target: B
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "2026-09-30：profile.http3.initial_packet_size（1200–1452，0 = 上游默认 1280）经上游 quic.Config.InitialPacketSize 决定**首个 Initial datagram 尺寸 = PADDING 填到多少**，无需 fork patch；越界在建 transport 时报错（不静默夹取）。线上验证 tests/e2e/quic_sniff_test.go TestQUICInitialPacketSize（1350→[1350 1350]、1200→[1200 1200]、不设→[1280 1280]，默认路径逐字节不变）"
     - id: h3.initial_datagram_layout
       target: A
-      status: missing
-      evidence: null
-      blocking: "D5：行业共性（packer 无钩子），结案不投入（T4-6）"
+      status: partial
+      evidence: local
+      blocking: "coalesce 阈值（MinCoalescedPacketSize 是常量）与 CRYPTO 分片表（crypto_stream.go 内置 clienthello scrambling，规则固定）仍要动 vendor packer 层 = SC-3"
+      note: "2026-09-30 修订：尺寸/PADDING 量这一半已可控（见 h3.initial_packet_size）；PADDING 在包内的位置、分片策略、coalesce 仍由 packer 决定（docs/p4-h3-capability.md 同步）"
     - id: h3.quic_grease_frames
       target: A
       status: implemented
@@ -223,29 +237,38 @@ layers:
     - id: tcp.ttl
       target: B
       status: implemented
-      evidence: local
+      evidence: E2
+      note: "2026-09-29：双栈同设（IP_TTL + IPV6_UNICAST_HOPS），WSL 读回断言"
     - id: tcp.mss
       target: B
       status: partial
       evidence: local
-      blocking: "Windows 不支持（WSAENOPROTOOPT），上游限制"
+      blocking: "Windows 不支持（WSAENOPROTOOPT），上游限制；netstack 档 Linux 全可控（MaxSegOption）"
     - id: tcp.window_size
       target: B
-      status: partial
-      evidence: unverified
-      blocking: "仅 Linux 探测模式；探测不影响真实连接；阶段 5 降级承诺（T5-1）"
+      status: implemented
+      evidence: E2
+      blocking: null
+      note: "2026-09-29：setsockopt 夹击法（SO_RCVBUF×4+TCP_WINDOW_CLAMP，rmem_max 钳制告警）+ netstack 精确档（P6-T3 nginx 采集 29184 MATCH）"
     - id: tcp.window_scale_options_order
       target: B
-      status: partial
-      evidence: unverified
-      blocking: "同 tcp.window_size"
+      status: implemented
+      evidence: E2
+      blocking: null
+      note: "2026-09-29：wscale netstack 精确（FindWndScale 反解，P6-T3 ws=8 MATCH）；options_order 仅取舍——gVisor makeSynOptions 硬编码 Linux 族序，任意排列不可得（如实记录）"
     - id: tcp.ip_flags
       target: B
-      status: missing
-      evidence: null
-      blocking: "不做"
+      status: implemented
+      evidence: E2
+      note: "2026-09-29：DF 三平台 best-effort 落地（Linux IP_MTU_DISCOVER=DO 读回验证 / macOS IP_DONTFRAG / Windows IP_DONTFRAGMENT）；IP ID 不可控如实记录"
 
   http1:
+    - id: http1.plaintext_h1
+      target: B
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "2026-09-30 G5：http:// 走 TCP-only 明文档（不握手、SelfCheck 恒零值、协议恒 http/1.1、池键含 scheme ⇒ 明文与 TLS 连接不复用）；身份头注入/头序/大小写策略与 https 同源（同一 profile.http1）；经 HTTP 代理走 CONNECT 隧道（不做 absolute-form），h2c 不做；force_http3 + http:// 报错。测试 core/engine/plaintext_test.go + tests/e2e/python/test_requests_parity.py"
     - id: http1.header_order_case
       target: A
       status: implemented
@@ -266,6 +289,23 @@ layers:
       status: partial
       evidence: null
       blocking: "仅 delay 钩子，不做精确时钟"
+
+  websocket:
+    - id: ws.rfc6455
+      target: B
+      status: implemented
+      evidence: E2
+      note: "2026-09-29 T-WS：wss:// 握手走 geektls 指纹链路（connectALPN 强制 http/1.1 + detail ALPN 扩展收窄），Upgrade 头序 Chrome 式默认 + profile.http1.header_order 可覆盖；帧层自实现（masking/分片重组/控制帧 125 限制/ping 自动 pong）；ABI gtls_ws_connect/send/recv/close；服务端 echo 断言客户端帧 masked。2026-09-30 G5 补：ws://（明文）走 TCP-only，与 wss 共用同一套帧实现（core/engine/ws_test.go 的明文模式用例）"
+    - id: ws.permessage_deflate
+      target: B
+      status: implemented
+      evidence: E2
+      note: "2026-09-29 A7：RFC 7692 帧层（core/engine/wsdeflate.go）——RSV1 只在消息首帧、控制帧永不压、分片整条重组后解压；context takeover 用 stdlib flate 的 dict 入口模拟（decompressor.Reset 会清历史，故把最近 ≤32KB 明文当预置字典喂回去）；发送侧剥 `00 00 ff ff` 空块、接收侧补回。offer 默认不发：WSRequest.compress / 绑定层 compress=true 才发裸 `permessage-deflate`（不带 client_max_window_bits——stdlib 压缩窗固定 15 bit，不承诺做不到的事），且该头固定排在 sec-websocket-key 之后（Chrome 形态），profile.http1.header_order 可覆盖。协商严格按 RFC：对端回声我方没请求的参数、认不出的扩展、把窗口限到 <15 bit 一律失败；没协商却收到 RSV1/RSV2/RSV3 也失败，绝不静默返回错数据。测试 core/engine/ws_deflate_test.go 用 stdlib flate 写的独立对端（真 TLS 监听）双向验证：发方向的压缩块拼接后由普通 flate.NewReader 整体解开（证明是合法连续 DEFLATE 流，不是自家私有格式）"
+    - id: ws.rfc8441_h2
+      target: C
+      status: missing
+      evidence: null
+      blocking: "不做：H2 上的 WS（RFC 8441 Extended CONNECT）——Chrome 实际仍以 H1 Upgrade 为主"
 
 evidence_baselines:
   e1_real_browser:
@@ -341,7 +381,7 @@ evidence_baselines:
   preset_coverage:
     source: "自测（E1/E1r/E2）+ 第三方导入 tls_config-0.0.2（E3）"
     grade_rule: "预设的 grade 留空 = 本项目自测；\"E3\" = 第三方配置集导入，未经我们实测。所有 E1 级断言（fp oracle / GT / TLS1.2 回退）一律跳过 E3"
-    counts: "自测 29 + 谱系内插 14 + 第三方 E3 319 = 362"
+    counts: "自测 30 + 谱系内插 14（E2i 6 + E2i-u 8）+ 第三方 E3 320 = 364"
     lineage:
       tool: "tests/e2e/cmd/gen-profiles -lineage（代码 lineage.go，测试 lineage_test.go）"
       anchors: "chrome 137,141,142,143,152 / edge 141 / firefox 140,144 / safari 18,26（我们自己的真机抓包）"
@@ -354,7 +394,8 @@ evidence_baselines:
     pipeline: "tests/e2e/cmd/import-tlsconfig/{dump.py,main.go}（可复现：快照入库 → 转换 → 落盘 → 清理陈旧 E3）"
     guard: "core/profiles/provenance_test.go"
     crosscheck: "第三方与实测对拍：chrome_131_windows / chrome_141_macos / edge_141_macos / safari_17_3_macos 全部一致 ✓；chrome_133_windows（cipher 序）与 firefox_135_windows（缺 18/27）有差异 ⇒ 登记为待重测（docs/08 S8/S9）"
-    unsupported: ["无法表达\"不发连接级 WINDOW_UPDATE\"（window_update=0 与未设置同义）", "无法表达\"首个请求用 stream_id=3\"（Firefox 实测如此，本库固定 1）"]
+    resolved: ["A11（2026-09-29）：window_update 改三态 ⇒ 能表达\"不发连接级 WINDOW_UPDATE\"；新增 first_stream_id ⇒ 能表达\"首个请求用 stream_id=3\"。重跑导入管线：+safari_9_1_3_macos（E3，不再跳过）、firefox_145_windows 加 first_stream_id=3，其余 E3 逐字节不变"]
+    unsupported: []
   h3_e1:
     tool: tests/e2e/e1_h3_test.go
     records: profiles/evidence/browsers/chrome_windows_h3.json
@@ -376,11 +417,11 @@ evidence_baselines:
 verification:
   baseline_ok: true
   baseline_cmd: "cd core && go build ./... && go test ./..."
-  baseline_date: "2026-09-24"
+  baseline_date: "2026-09-30"
   notes:
     - "core 7 包 go build/test 全绿（Windows/go1.27.0）"
     - "c-shared 构建需 gcc（本机暂缺），不影响纯 Go 开发"
-    - "external oracle 测试为 //go:build external、只打印不断言（V-3，阶段 1 修）"
+    - "external oracle 测试为 //go:build external；默认只打印不断言（V-3），但 GEEKTLS_ORACLE_ASSERT=1 时 JA4/JA3/Akamai 不一致即失败——nightly CI（.github/workflows/oracle-nightly.yml）用的就是这一档，否则那轮只证明“握手打得通”"
     - "2026-09-24 追加：tests/e2e 全套绿，含 fp 第二 oracle（17 预设 TLS+H2 逐字段）、G1 TLS1.2 回退（17 预设）、corpus 语料重放；core 7 包全绿"
     - "2026-09-24 第三轮：G11 收口（HEADERS 内嵌 priority 分族 + oracle 断言，Safari 未实测已登记）；spec 复用契约与 PSK 占位守门（core/tls/spec_reuse_test.go、TestPresetCarriesPskPlaceholder）；会话复用结案 G2a（resumed=true 真机+本地；engine 丢票回退）；e2e/core 全绿"
     - "2026-09-28 第四轮：第三方互证（curl_cffi 该 profile 实为 Edge 形状，JA4 与我们逐字符同）；0-RTT 取证（TCP 侧依赖栈不可做、H3 侧可做）；macOS Chrome 154 实测→新增 chrome_154_macos（JA4 与 152 相同）+ CH 归一化（normalizeECHGrease，10 预设）+ UA-CH 断言放宽（三样本三顺序）；core/e2e 全绿"
@@ -391,3 +432,9 @@ verification:
     - "2026-09-28 第九轮：selfcheck 语义修正——IP 字面量目标（含 IPv6）线上省略 SNI（uTLS 与真 Chrome 一致），engine 自算 JA3/JA4 前从 spec 副本剔除 SNI 占位，JA4 d/i 与扩展计数（及 JA3 扩展段）现反映线上实情；chrome_131/133/150 预设补 headers_priority（excl=1/w=255，= G11 实测形状 = 引擎原默认行为，仅数据补齐）；core/e2e/python/node 全绿"
     - "2026-09-28 第十轮（二期阶段 5）：per-origin 连接池默认开启（H2 单连接多路复用 / H1 keep-alive 池 / H3 共享 transport；behavior.connection_pool=false 可关；CONTRACT-FREEZE #5 附理由解除）；Session 并发安全（100 goroutine × 100 请求 -race 零报告）；吞吐复测 Python 9.4k/Node 9.1k/Go 每 worker 12.7k req/s（≥10k 达成，benchmarks.md 前后对照）；http1.header_case 三档落地；流式上传 ABI 追加（gtls_request_begin/write/finish，h/ctypes/koffi 三处同步，H1 chunked 线上字节断言）；selfcheck 深化字段（ja3_fullstring/extensions/wire_extensions/grease/negotiated/sni_sent）；core/e2e race/pytest/node 全绿"
     - "2026-09-28 第十一轮：T-HPACK——vendor fork fhttp（hpack 编码器 SetIndexPolicy/SetHuffmanMode 钩子 + Transport.HpackStrategy），hpack_strategy 四档落地（chrome=QUICHE 源码级/firefox=抓包字节级/safari=保守近似待 E1/generic=对照），h2 采集器下沉到 HPACK 表示形式级断言；D-7 许可证全量复核（LICENSES.md 重写：发布面 13 模块逐仓核对、零 GPL/LGPL、fhttp 无显式 LICENSE 登记为风险项、本项目自身许可证待定）；Go 版本线统一（发布面 1.26 / 测试面 1.27，versioning.md 成文）"
+    - "2026-09-29 第十二轮：T-DECOMP——engine 响应透明解压层（gzip/deflate 含 raw-flate 容错/br/zstd，多编码链逆序，懒初始化流式生效，headers 保留线上原值 + info 加 content_encoding/decoded/warnings；auto_decompress 会话/请求两级开关，默认开）；fhttp fork 补 SkipResponseDecompress（避免 H2 双层解压）；Accept-Encoding 连锁检查：139 预设广告压缩（113 含 zstd 全部可解），33 条 E3 预设 zstd 与版本矛盾登记 docs/08 S12（不修数据）；core/e2e/pytest/node/L2 全绿"
+    - "2026-09-29 第十三轮：T-WS（wss:// RFC 6455：握手走指纹链路 + ALPN 收窄 http/1.1 + Upgrade 头序受控，帧层自实现含 masking/分片重组/ping 自动 pong；ABI +4（gtls_ws_connect/send/recv/close）四处声明同步；ws.rfc8441_h2 登记不做）+ Python asyncio 包装层（AsyncSession，to_thread 线程池异步，诚实标注）；core/e2e/pytest/node/L2 全绿"
+    - "2026-09-29 第十四轮：TCP 指纹做穿——setsockopt 档四增强（window 夹击法 rmem_max 告警/DF 三平台/双栈 TTL；WSL 读回断言）+ netstack 档（gVisor over TUN，SYN TTL/DF/MSS/window/wscale 全可控；AF_PACKET+iptables 方案实测在 WSL2 lo 不成立，TUN 拓扑天然无 RST 问题）；P6-T3 结案（ja4tcp 五分量逐项 MATCH）；gVisor 钉 tailscale 在用版（上游模块 zip 坏，#11531）；core/e2e race、pytest、node、L2 全绿"
+    - "2026-09-29~30 第十五轮（审计 gap plan A2~A15 差集）：A2 version.UTLS 走 build info（vendor fork 显示 => ./third_party/*）；A5 verify 非 bool 报错 + 绑定层会话/请求选项白名单；A4 ca_bundle/client_cert/client_key 三字段进 SessionOptions（ABI 签名未动）；A6 读超时 newTimeoutReader + gtls_error_of（线程局部错误槽改按对象回收）；A11 window_update 三态 + first_stream_id（fork 补丁，顺带修 0 窗口永久挂起）；A8 socks4/4a + 代理环境变量 + NO_PROXY + 有代理即禁 H3；A9 resolve/local_address/ip_version（钉位保留 SNI+Host+JA4 全等）；A7 WS permessage-deflate 帧层（RFC 7692，独立 stdlib 对端逐字节验证）+ 握手扩展头位置修正；A10 0-RTT 结案（声明侧可控、协议侧不做，core/tls/early_data_test.go）；A3/A12 实测闭环与新鲜度进 CI（oracle-nightly.yml + preset-freshness.yml + GEEKTLS_ORACLE_PRESETS/ASSERT）；构件未重建（本机无 cgo）⇒ 绑定层新键的 FFI 用例仍是 skip 态"
+    - "第十五轮全量复核（2026-09-30，Windows/go1.27.0）：core 9 包（6 包含测试）build/test 全绿；tests/e2e build/vet/test 绿且 go vet -tags external 绿；bindings/golang 绿；pytest 20 passed/7 skipped；node:test 18 pass/0 fail（修好 npm test 的目录参数缺陷后才成立）；三语言 JA4 逐字符一致；oracle 断言档 6 预设子集 TLS+H2 双套件 PASS；preset_freshness.py 实测 exit 1（firefox 内置 156 vs 官方 157）"
+    - "2026-09-30 第十六轮（本轮）：G5 明文 http:// 与 ws:// 落地（拨号决策抽 planDial 供 TLS/明文共用；池键含 scheme；缺省端口按 scheme；代理环境变量按 scheme 取 HTTPS_PROXY/HTTP_PROXY）——http1.plaintext_h1 登记 implemented；G6 CLI 落地（core/cmd/geektls：version/presets/describe/check-profile/request，make cli，退出码 0/1/2，与绑定同批构造入口）；G7 及 requests 同族缺口（Cookies jar / Session.cookies / Response.cookies / 请求级 cookies / timeout=(connect,read) 元组 / auth Basic / 请求级 allow_redirects·max_redirects·proxies 按 scheme 选 / data=list[tuple] 走表单 / HTTPError·Timeout / asyncio 透传补齐）；gtls_error_of 改按对象归因（新增 setLastErrorFor：读 body 记 response、写/收尾记 upload、收发记 ws、请求/建流/握手记 session；未知 handle 仍返回 {}）；h3.initial_packet_size 落地（首 datagram 尺寸=PADDING 量，1200–1452，默认逐字节不变，嗅探实测 1350/1200/1280 三档）⇒ h3.initial_datagram_layout 改 partial；引擎 Cookie 合并改按名（显式头优先，不再整段让位而丢掉重定向中间跳的 cookie）；修 node a9 用例 `e is not defined` 与 tests/smoke 缺 gvisor go.sum；版本四处 → 0.1.6；门禁：core 全量 8 包绿、e2e 全绿（27s）、pytest 35 passed/2 skipped、node:test 18/18、make smoke 三语言 OK"

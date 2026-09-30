@@ -53,7 +53,7 @@ func TestParseValidProfile(t *testing.T) {
 	if len(p.TLS.Detail.Extensions) != 8 {
 		t.Errorf("extensions = %d, want 8", len(p.TLS.Detail.Extensions))
 	}
-	if p.HTTP2.WindowUpdate != 15663105 || p.TCP.TTL != 128 || p.Behavior.RedirectMax != 10 {
+	if p.HTTP2.WindowUpdate == nil || *p.HTTP2.WindowUpdate != 15663105 || p.TCP.TTL != 128 || p.Behavior.RedirectMax != 10 {
 		t.Errorf("later-phase sections not preserved: %+v", p)
 	}
 }

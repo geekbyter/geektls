@@ -3,6 +3,7 @@ Name: geektls
 Version: 0.1.5
 Summary: TLS/HTTP fingerprint impersonation with evidence-graded browser presets (Python binding)
 Author: geekbyte
+License-Expression: MIT
 Project-URL: Homepage, https://github.com/geekbyter/geektls
 Project-URL: Repository, https://github.com/geekbyter/geektls
 Project-URL: Documentation, https://github.com/geekbyter/geektls/tree/main/docs
@@ -474,6 +475,15 @@ wsl -d Ubuntu -- bash scripts/wsl-test.sh   # Linux 侧验证（WSL，Go 自动�
 
 - **发布**：`docs/versioning.md`（语义化 + ABI 规则 + 三处版本同步）；PyPI 流水线 `.github/workflows/release-pypi.yml`（五平台 wheel）、CI `.github/workflows/ci.yml`（含"预设必须等于生成器产物"逐字节守门）。
 - **预设维护**：`docs/maintenance.md`（Chrome 2 周 SLA、入库五步、oracle 周检、fork rebase）。
+
+## 许可证
+
+本项目自身按 **MIT** 授权（见 [LICENSE](LICENSE)，2026-09-29 定）。
+
+发布物（wheel / npm 包 / Go module / 编译进动态库的依赖）内含第三方代码，各依赖的许可证与
+归属声明登记在 [LICENSES.md](LICENSES.md) 并随 wheel 一起分发：全量闭包审计**无 GPL/LGPL**；
+两个如实登记的注意项是**上游 `fhttp` 无显式 LICENSE**（仅"无授权使用"风险，行业生态同此依赖）
+与 **JA4+ 的许可证/商标边界**（我们只依赖 JA4 本体，见上文对比表）。
 
 ## 文档索引
 

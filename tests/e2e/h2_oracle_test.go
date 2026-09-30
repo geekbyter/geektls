@@ -37,7 +37,8 @@ func expectedAkamai(p *profiles.Profile) string {
 		}
 		pseudo += c
 	}
-	return fmt.Sprintf("%s|%d|0|%s", s, p.HTTP2.WindowUpdate, pseudo)
+	// 第二段是连接级 WINDOW_UPDATE 的增量（不发则为 0），故按线上实际形态归一。
+	return fmt.Sprintf("%s|%d|0|%s", s, flowOnWire(p.HTTP2.WindowUpdate), pseudo)
 }
 
 type h2OracleResponse struct {
@@ -50,7 +51,8 @@ type h2OracleResponse struct {
 }
 
 func TestExternalOracleH2(t *testing.T) {
-	for _, name := range profiles.List() {
+	// 子集口径与 TestExternalOracle 一致（GEEKTLS_ORACLE_PRESETS，见 external_oracle_test.go）
+	for _, name := range oraclePresets(t) {
 		t.Run(name, func(t *testing.T) {
 			p, err := profiles.Get(name)
 			if err != nil {
@@ -100,6 +102,9 @@ func TestExternalOracleH2(t *testing.T) {
 			fmt.Printf("== %s ==\n", name)
 			fmt.Printf("  akamai self=%s\n         orac=%s  %s\n",
 				want, got.HTTP2.AkamaiFingerprint, mark(want == got.HTTP2.AkamaiFingerprint))
+			if assertMode() && want != got.HTTP2.AkamaiFingerprint {
+				t.Errorf("[%s] Akamai self=%s oracle=%s 不一致", name, want, got.HTTP2.AkamaiFingerprint)
+			}
 			frames := ""
 			for _, f := range got.HTTP2.SentFrames {
 				frames += f.FrameType + " "

@@ -29,7 +29,12 @@ func NewClientConn(conn net.Conn, p *profiles.HTTP2Profile) (*http2.ClientConn, 
 
 // TransportFromProfile 把 profile.http2 节编译为 fhttp http2.Transport。
 func TransportFromProfile(p *profiles.HTTP2Profile) (*http2.Transport, error) {
-	tr := &http2.Transport{}
+	tr := &http2.Transport{
+		// 响应解压统一由 engine 的解压层做（多编码链/zstd/warning），
+		// 关掉 fhttp 内置的单层解压（SkipResponseDecompress 是 geektls patch，
+		// 不影响请求侧自动补 Accept-Encoding 的线上形态）。
+		SkipResponseDecompress: true,
+	}
 	if p == nil {
 		return tr, nil
 	}
@@ -46,8 +51,18 @@ func TransportFromProfile(p *profiles.HTTP2Profile) (*http2.Transport, error) {
 			tr.SettingsOrder = append(tr.SettingsOrder, id)
 		}
 	}
-	// 连接级 WINDOW_UPDATE 增量（Chrome 15663105 等）
+	// 连接级 WINDOW_UPDATE 增量（Chrome 15663105 等）。nil = 让 fhttp 补默认；
+	// 指向 0 = 不发这一帧（Safari 9.1.3 实测形态），见 profiles.HTTP2Profile 注释。
 	tr.ConnectionFlow = p.WindowUpdate
+
+	// 首个请求的 stream id（真 Firefox 用 3；0 = 默认 1）。客户端流 id 必须是
+	// 正奇数且低于 2^31（RFC 7540 §5.1.1），否则服务端直接 PROTOCOL_ERROR。
+	if id := p.FirstStreamID; id != 0 {
+		if id%2 == 0 || id >= 1<<31 {
+			return nil, fmt.Errorf("h2: first_stream_id must be a positive odd client stream id below 2^31, got %d", id)
+		}
+		tr.InitialStreamID = id
+	}
 
 	order, err := PseudoHeaderOrder(p.PseudoHeaderOrder)
 	if err != nil {

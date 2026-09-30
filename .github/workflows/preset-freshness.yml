@@ -1,0 +1,91 @@
+name: preset-freshness
+
+# 预设新鲜度（审计 A12）：docs/maintenance.md 定的是"Chrome 2 周人工 SLA"，但
+# 没有机制能发现"上游已发新版而 builtin 最高还是 154"。这个 job 每周一跑一次
+# scripts/preset_freshness.py，落后即开 issue（附待采清单入口）。
+#
+# 覆盖面 = 有稳定 JSON feed 且无需 key 的两族（Chrome / Firefox）。Edge 跟着
+# Chrome 的列车看；Safari / Opera / 国产浏览器没有机器可读 stable feed，
+# 仍走人工 SLA —— 脚本会把这些族列进 unscored_families，别让"绿"被误读成
+# "全族都新鲜"。
+
+on:
+  schedule:
+    # 周一 02:07 北京时间（避开整点排队）
+    - cron: '7 18 * * 0'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  freshness:
+    name: upstream stable vs builtin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # 落后 → 退出码 1；取不到 feed → 退出码 2（"取不到"不等于"没落后"，
+      # 静默绿比红更糟）。两个都让它红，好让 issue 自动创建路径真的被走到。
+      - name: Check freshness
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+          python scripts/preset_freshness.py --json freshness.json | tee freshness.txt
+          rc=${PIPESTATUS[0]}
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preset-freshness
+          path: |
+            freshness.json
+            freshness.txt
+          if-no-files-found: ignore
+
+      # 只在"体检本身跑完了且判红"时开 issue：checkout/setup 之类的基建失败
+      # 不该产出一条"预设落后"的 issue（那会把噪音算成信号）。
+      - name: Create or comment issue
+        if: ${{ always() && steps.check.outputs.rc != '' && steps.check.outputs.rc != '0' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RC: ${{ steps.check.outputs.rc }}
+        run: |
+          set -uo pipefail
+          gh label create preset-staleness --color 7AA2C9 \
+            --description "上游已发新版，builtin 落后（或 feed 取不到）" >/dev/null 2>&1 || true
+          {
+            echo "## 预设新鲜度"
+            echo
+            echo '```'
+            cat freshness.txt 2>/dev/null || echo "(无表格输出)"
+            echo '```'
+            echo
+            if [ "$RC" = "2" ]; then
+              echo "**本轮没能取到上游 feed**（退出码 2）——这不代表没落后，请人工确认或等下一轮。"
+            else
+              echo "落后项的补法见 docs/08 §C（判定族与版本 → 转录/生成预设 → 对拍 → 钉回归 → 登记）；"
+              echo "人工 SLA 与采集流程见 docs/maintenance.md。"
+            fi
+            echo
+            echo "- 运行：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > body.md
+          existing=$(gh issue list --label preset-staleness --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file body.md
+            echo "已评论到既有 issue #$existing"
+          else
+            gh issue create --label preset-staleness \
+              --title "预设落后于上游 stable（$(date -u +%F)）" --body-file body.md
+          fi

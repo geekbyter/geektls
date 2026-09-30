@@ -22,6 +22,13 @@ Firefox=真实抓包字节级、Safari=保守近似待 E1）。
 
 ## 改动清单
 
+0. **`http2/transport.go`（T-DECOMP，2026-09-29）**：`Transport` 新增
+   `SkipResponseDecompress bool`——只关**响应侧**自动解压
+   （`roundTrip` 里 `http.DecompressBody` 调用点加守卫），请求侧自动补
+   `Accept-Encoding` 的行为不变（线上形态不动）。动机：geektls engine 统一
+   在自己的解压层处理（多编码链逆序、zstd、未知编码透传+warning），
+   fhttp 内置的单层解压会双重解压。
+
 1. **`http2/hpack/encode.go`**：
    - `Encoder` 新增字段 `indexPolicy func(name string, pseudo bool) bool` 与
      `huffmanMode int`，及对应 setter `SetIndexPolicy` / `SetHuffmanMode`

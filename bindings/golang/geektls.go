@@ -28,15 +28,42 @@ func Version() string {
 		ABI  int    `json:"abi"`
 		Core string `json:"core"`
 		UTLS string `json:"utls"`
-	}{ABI, Core, version.UTLS})
+	}{ABI, Core, version.UTLSVersion()}) // utls 字段：指纹栈版本（build info 推导）
 	return string(b)
 }
 
 // Options 是 Session/RoundTripper 的配置。
 type Options struct {
-	Proxy              string // http://user:pass@host:port / socks5://...
-	TimeoutMs          int
+	// Proxy 支持 http/https（CONNECT 隧道）、socks5、socks5h、socks4、socks4a。
+	// socks5 在本地解析域名，socks5h 交代理解析；socks4 只承载 IPv4。
+	Proxy     string // http://user:pass@host:port / socks5://...
+	TimeoutMs int
+	// ReadTimeoutMs 是每次读响应 body 的空闲超时（0 = 不设限）。TimeoutMs 只管到
+	// dial+TLS+响应头，body 慢速/挂死要靠它兜；触发时 Read 返回 engine.ErrReadTimeout。
+	ReadTimeoutMs      int
 	InsecureSkipVerify bool
+	// CABundle 是自持信任库：CA 文件路径、含 .pem/.crt/.cer 的目录、或内联 PEM
+	// 文本。空 = 用系统信任库。给了它就等于**替换**系统根（与 requests 的
+	// verify=<path> 语义一致），配错的 CA 会在建会话时报错而不是静默忽略。
+	CABundle string
+	// ClientCert / ClientKey 用于 mTLS。ClientCert 可以是"证书+私钥同文件"的
+	// PEM（此时 ClientKey 留空）。
+	ClientCert string
+	ClientKey  string
+	// ProxyFromEnv 控制"没显式给 Proxy 时是否读 HTTPS_PROXY / ALL_PROXY（并查
+	// NO_PROXY）"。nil = 读；指向 false = 只认 Proxy。指纹调试要可复计时可关掉。
+	ProxyFromEnv *bool
+	// Resolve 把域名钉到固定 IP（curl --resolve 的形状：键是 "host" 或
+	// "host:port"，值必须是 IP 字面量）。只改"连到哪"，SNI / Host / 指纹字节
+	// 仍是原域名。键不做通配——钉 example.com 不会连带钉 cdn.example.com。
+	Resolve map[string]string
+	// LocalAddress 是出网 socket 的源 IP（curl --interface 的 IP 形态；网卡名
+	// 不支持）。代理场景它绑的是到代理那一条。
+	LocalAddress string
+	// IPVersion 收窄协议族："4" / "6"（也接受 v4/ipv4 写法），空 = 不限。
+	// 与 Proxy 同用时应选 socks5/socks4 这类本地解析档，socks5h/socks4a/CONNECT
+	// 由代理解析、这一项不参与。
+	IPVersion string
 	// RoundTripper 模式下重定向与 cookie 由 net/http.Client 管理，自动关闭 engine 侧。
 }
 
@@ -68,7 +95,15 @@ func engineOpts(o *Options, forRoundTripper bool) engine.SessionOptions {
 	if o != nil {
 		out.Proxy = o.Proxy
 		out.TimeoutMs = o.TimeoutMs
+		out.ReadTimeoutMs = o.ReadTimeoutMs
 		out.InsecureSkipVerify = o.InsecureSkipVerify
+		out.CaBundle = o.CABundle
+		out.ClientCert = o.ClientCert
+		out.ClientKey = o.ClientKey
+		out.ProxyFromEnv = o.ProxyFromEnv
+		out.Resolve = o.Resolve
+		out.LocalAddress = o.LocalAddress
+		out.IPVersion = o.IPVersion
 	}
 	if forRoundTripper {
 		out.RedirectMax = -1 // 重定向交给 http.Client
@@ -88,6 +123,35 @@ func (s *Session) Do(req *engine.Request) (*Response, error) { return s.eng.Do(r
 func (s *Session) Get(url string) (*Response, error) {
 	return s.eng.Do(&engine.Request{Method: "GET", URL: url})
 }
+
+// WSRequest / WSConn 直接 re-export engine 的类型：绑定层不再包一层，
+// 因为 engine 的形状就是 FFI url_json 的形状，多一层只会与 core 漂移。
+type (
+	WSRequest = engine.WSRequest
+	WSConn    = engine.WSConn
+)
+
+// WebSocket opcode（RFC 6455 §5.2）。
+const (
+	WSOpContinuation = engine.WSOpContinuation
+	WSOpText         = engine.WSOpText
+	WSOpBinary       = engine.WSOpBinary
+	WSOpClose        = engine.WSOpClose
+	WSOpPing         = engine.WSOpPing
+	WSOpPong         = engine.WSOpPong
+)
+
+// DialWS 建立 wss:// 连接：握手走本会话的拨号 + TLS 指纹链路（ALPN 收窄
+// http/1.1，Upgrade 头序受控）。帧层拉模型：Send / Recv / Close。
+// WSRequest.Compress=true 时握手 offer permessage-deflate（RFC 7692），只有
+// 真的协商成功才压缩，Send/Recv 收发的仍是明文。
+func (s *Session) DialWS(wr *WSRequest) (*WSConn, error) {
+	return s.eng.DialWS(wr)
+}
+
+// Close 释放会话（连接池与 H3 transport）。薄封装必须给：eng 字段是非导出的，
+// 没有它调用方就没办法回收长期运行的进程里的这些连接。
+func (s *Session) Close() { s.eng.Close() }
 
 // roundTripper 适配 http.RoundTripper。
 type roundTripper struct {

@@ -4,19 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geektls"
-version = "0.1.5"
+version = "0.1.6"
 description = "TLS/HTTP fingerprint impersonation with evidence-graded browser presets (Python binding)"
 readme = "README.md"
 requires-python = ">=3.9"
 keywords = ["tls", "fingerprint", "ja3", "ja4", "http2", "http3", "impersonate", "scraping", "utls"]
 authors = [{ name = "geekbyte" }]
 # 本项目自身许可证：MIT（2026-09-29 定，见仓库根 LICENSE；依赖许可登记见根 LICENSES.md）。
-# 用**字符串**形式而不是 `{ file = "LICENSE" }` 表格形式：新版 setuptools 走 PEP 639 的
-# SPDX 表达式，旧版按自由文本写进 License 字段，两种都能用、不绑 setuptools 版本。
+# 用 **SPDX 表达式（字符串）** 而非 `{ file = "LICENSE" }` 表格形式：新版 setuptools 按
+# PEP 639 写 License-Expression，旧版按自由文本写 License 字段，两种都能用、不绑版本。
+# ⚠️ 设了 license 表达式后**绝对不能**再写 `License :: OSI Approved :: ...` classifier：
+#    新版 setuptools 会直接 InvalidConfigError（PEP 639 明确二者互斥）。
+#    0.1.5 第一次云编译 5 个平台全红就是这么来的（license + classifier 双写）——
+#    报错发生在 get_requires_for_build_wheel 阶段，与平台/Go 无关，别往构建环境上找。
 # LICENSE / LICENSES.md 由 setuptools 的默认 license-files 通配（LICEN[CS]E*）随 wheel 分发。
 license = "MIT"
 classifiers = [
-  "License :: OSI Approved :: MIT License",
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",

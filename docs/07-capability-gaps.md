@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 底层协议栈 | Go：uTLS + fhttp + uquic/quic-go | **BoringSSL 真栈**（libcurl 补丁链） | Go：自研 chttp | Go：uTLS + fhttp + 自家 fork 的 quic-go |
 | TLS 可控粒度 | **预设级** | 预设级 + `ja3=`/`akamai=`/`extra_fp=` 少量字段 | 预设级 + 部分逐字段（扩展清单） | **逐字段 + 整体 hex 回放** |
-| H2 | SETTINGS / 伪头序 | 预设级 Akamai | SETTINGS 序 / 伪头 / priority | **有序 SETTINGS / WINDOW_UPDATE / PRIORITY / 伪头序**；HPACK 索引 ✗ |
+| H2 | SETTINGS / 伪头序 | 预设级 Akamai | SETTINGS 序 / 伪头 / priority | **有序 SETTINGS / WINDOW_UPDATE / PRIORITY / 伪头序 + HPACK 索引策略四档（T-HPACK，2026-09-28）** |
 | H3 / QUIC | 有（uquic） | 预设级（v0.15+ 支持 H3 指纹） | ✗ | **H3 帧全控 + transport params 有序可控（T4-1）** |
 | TCP / JA4TCP | 未声明 | ✗（栈层拿不到） | ✗ | TTL 三平台 + MSS（Linux/macOS）；window/WS 仅探测 |
 | 身份一致性（UA/UA-CH） | 有 | 部分 | 有 | **identity 节（T2-1，三路径统一注入）** |
@@ -39,11 +39,11 @@
 |---|---|---|---|---|---|
 | G1 | **TLS 1.2 回退指纹** | ✅ **实测无缺口（2026-09-24 结案）**：服务端强制降级时 CH 逐字段不变；仅"客户端自身上限=1.2"的被裁剪形态未覆盖 | 原「高」**已证伪**：ClientHello 在得知服务端版本偏好之前就已发出，服务端降级不改变 CH → 我们与真 Chrome 的 JA3/JA4 同步不变（`tests/e2e/tls12_fallback_test.go` 17 预设实测证实） | 低（若确需伪装 1.2-only 老客户端，需要的是"一整套 era 预设"，属版本覆盖而非回退问题） | **结案**；"1.2-era 老浏览器预设"另列为按需项 |
 | G2a | **会话复用（TLS1.3 PSK）** | ✅ **已实现并实测（2026-09-24 结案）**：引擎默认开启（`engine.go`）、每次拨号重新编译 spec、复用失败**丢票回退**全新握手 | 原「与 Chrome 在复用场景下分叉」**已消除**：真机实测 `resumed=true`（tls.peet.ws）与本地 std 服务端 `resumed=true`；`resumed` 由 `DidResume` 硬断言 | — | **结案**：`core/tls/resumption_test.go`（DidResume）+ `core/engine/resumption_test.go`（回退） |
-| G2b | **0-RTT / early data** | ⚠️ **TCP 侧不可做（依赖栈硬限制，已取证）**：uTLS/Go 客户端不支持 early_data——上游注释写明 "0-RTT is not supported"（`handshake_server_tls13.go:1015`），且客户端早数据代码只出现在 `c.quic != nil` 分支；**H3/QUIC 侧可做**（`quic-go` 有 `allow0RTT` / `DialEarly` + 会话缓存） | 中：真 Chrome 的 0-RTT 主要发生在 QUIC；TCP 侧无法对齐属依赖栈限制，**不是我们漏做** | H3 侧中（会话缓存 + 0-RTT 接线 + 本地 QUIC 回环验证）；TCP 侧需 fork crypto/tls（不建议） | H3 侧按需开；TCP 侧**记为不可做** |
+| G2b | **0-RTT / early data** | ⚠️ **TCP 侧不可做（依赖栈硬限制，已取证）**：uTLS/Go 客户端不支持 early_data——上游注释写明 "0-RTT is not supported"（`handshake_server_tls13.go:1015`），且客户端早数据代码只出现在 `c.quic != nil` 分支；**H3/QUIC 侧原判"可做"现改判"不做"**：前提是 QUIC 会话缓存，而 spec 模式下 `StoreSession` 是 no-op 且无可补导出面（docs/06 P7-T2 取证），且 0-RTT 首飞的 Initial datagram 布局本身已结案为不可控（G6） | 中：真 Chrome 的 0-RTT 主要发生在 QUIC；TCP 侧无法对齐属依赖栈限制，**不是我们漏做** | — | **A10 结案（2026-09-30）**：协议侧不做；**指纹侧已可控**——预设 `{"type": 42}` 经透传上线，JA3 扩展段多一枚 42、JA4 扩展计数 +1（`core/tls/early_data_test.go` 实测，含"只带 42 不带 PSK 必被标准服务端拒"的边界证明） |
 | G3 | **TLS record 层行为** | ⚠️ 部分：CH 长度由 padding 扩展控制（已有，可做）；**record 分片/大小序列在 crypto/tls 内部，无钩子** | 低-中：少数检测看 record 分片与首飞 record 数 | 高（需 fork crypto/tls，与 G2b/TCP 同一障碍） | 维持现状；不为它 fork |
 | G4 | **session ticket 生命周期行为** | ⚠️ 复用链路已实测可用（G2a）；票据年龄字段由依赖栈按 RFC 8446 处理（**其取值我们未单独验证**）；"复用次数/换票节奏"**无实测依据，故不建模** | 低：需要长时观察才成特征；无依据地编一个"换票节奏"反而更假 | — | 维持现状：有实测证据再建模 |
-| G5 | HPACK 索引细节 | ✗ 已评估暂缓（`T3-1`：无钩子 + 首连接无动态表历史，价值低） | 低 | 高（fork fhttp） | 维持暂缓；连接池落地后重估 |
-| G6 | QUIC Initial datagram 布局 | ✗ 行业共性未解决（packer 无钩子） | 低-中 | 极高 | 维持结案 |
+| G5 | HPACK 索引细节 | ✅ **已落地（T-HPACK，2026-09-28）**：原评估"无钩子"是当时的实态——现由 vendor fork `core/third_party/fhttp` 提供钩子（`SetIndexPolicy`/`SetHuffmanMode`），`profile.http2.hpack_strategy` 四档 | 低（首连接无动态表历史这条仍成立，所以 safari 档只能是保守近似） | 已付（fork fhttp 的维护成本，见 LICENSES.md 风险项） | **结案**：`tests/e2e/h2_hpack_strategy_test.go` 逐字节断言；`docs/p2-h2-capability.md` 记证据与四档语义 |
+| G6 | QUIC Initial datagram 布局 | ⚠️ **部分关闭（2026-09-30）**：首 datagram 尺寸 / PADDING 量已可控（`http3.initial_packet_size`，1200–1452，上游 `Config.InitialPacketSize`，无需 fork patch；嗅探实测 1350→[1350 1350]、1200→[1200 1200]、不设→[1280 1280]）；**coalesce 阈值与 CRYPTO 分片表仍不可控**（要动 `packet_packer.go` / `crypto_stream.go` = SC-3） | 低-中 | 高（packer 层，且要按 perspective 分支） | 保留后半：SC-3 时随内化一起做 |
 | G7 | TCP 完整档（window/WS/options 真实生效） | ⚠️ 仅 Linux 探测模式 | 中（JA4TCP 场景） | 高（gVisor 级） | 维持降级承诺（T5-1） |
 | G8 | 证书压缩 / ALPS / ECH / 后量子 key_share | ✅ 已有 | — | — | 保持 |
 | G9 | H3/H2 racing + Alt-Svc | ✅ 已有 | — | — | 保持 |
@@ -63,11 +63,11 @@
 | TLS1.2 回退场景一致（服务端降级） | ✅ **实测一致**（G1 结案，`tests/e2e/tls12_fallback_test.go`） |
 | 1.2-only 客户端形态（客户端自身上限） | ⚠️ **已由第三方集覆盖（E3 级，非我们实测）**：chrome_43/80/101…、firefox_105/126、safari_7…26、curl_7.x…8.x、ie 等（见 §5.7）；我们自测的预设仍无 1.2-only 形态 |
 | 会话复用场景一致（TLS1.3 PSK） | ✅ **实测一致**（G2a 结案：`resumed=true` 真机 + 本地互证） |
-| 0-RTT early data 首飞 | ❌ 未接线（G2b） |
+| 0-RTT early data 首飞 | ⚠️ **协议侧不做、声明侧可控**（G2b/A10 结案：预设里 42 能上线并改变 JA3/JA4，但真早数据无钩子） |
 | TCP 层一致 | ⚠️ 仅 TTL/MSS |
 
 **判断**：TLS1.2 回退（G1）与 TLS1.3 会话复用（G2a）均经实测结案，不构成缺口；
-剩余为 0-RTT（G2b）、record 层（G3）、ticket 生命周期（G4）。
+剩余为 0-RTT（G2b，**A10 已结案为"协议侧不做"**）、record 层（G3）、ticket 生命周期（G4）。
 优先级排序 **G2b ≈ G3/G4 > 其余**；G12 已按第二轮实测修正（扩展 type 非缺口，真缺口只在 sig_algs）；
 "1.2-era 老客户端预设"按需另议。
 
@@ -416,11 +416,24 @@ vivo 3 / gold 2 / uc 2 / …`——**顺带把 G1 的"1.2-era 老客户端形态
   硬加会让 ClientHello 结构非法（实测：Go 服务端报 `error decoding message`）；
 - `force_http1`：忠于第三方标记（老客户端只提供 `http/1.1`，不发 ALPS）。
 
-#### 转换期发现的两处 schema/引擎限制（已登记）
+#### 转换期发现的两处 schema/引擎限制（A11 已解除，2026-09-29）
 
-1. **无法表达"不发连接级 WINDOW_UPDATE"**：`window_update: 0` 与"未设置"同义（fhttp 会补默认
-   15663105）⇒ Safari 9.1.3 这类条目只能跳过（1 个）；
-2. **无法表达"首个请求用 stream_id=3"**（Firefox 实测如此）：本库固定 1 ⇒ 未建模。
+1. ~~**无法表达"不发连接级 WINDOW_UPDATE"**~~ ⇒ `http2.window_update` 改为**三态**
+   （省略 = 补 15663105 / `0` = 不发该帧 / `N` = 发 N），`core/h2` + vendor fork
+   全链路生效，线上形态由 `tests/e2e/h2_capture_test.go` 的三态用例钉住；
+2. ~~**无法表达"首个请求用 stream_id=3"**~~ ⇒ 新增 `http2.first_stream_id`
+   （奇数校验），fork 的 `Transport.InitialStreamID` 落地，同一测试的
+   `first_stream_id=3` 用例钉住线上首个 HEADERS 的流号。
+
+**重新执行导入管线后的实际变化（`diff -r` 全量对拍，只有两处）**：预设总数
+**363 → 364**——新增 `safari_9_1_3_macos`（E3，不再被跳过）；`firefox_145_windows`
+多一个 `first_stream_id: 3`（照抄第三方 `headers_id`）。其余 322 个 E3 文件逐字节
+不变，非 E3 预设一律保留原样（同名走对拍）。
+
+Safari 9.1.3 那条**没有**按"flow=0 ⇒ 不发"入库：第三方给的是 `null`（不是 0），
+而 null 既可能是"不发"也可能是"未采集"。我们没有该版本的 H2 实测，所以按**未指定**
+处理（线上补 15663105）并在导入器报告里逐条登记——来源的空白不读成一种线上行为。
+`docs/08` 的 S 项：拿到 Safari 9 真机抓包后才能判定这一档到底该写 0 还是 15663105。
 
 #### 证据分级与晋升路径（2026-09-28 起）
 

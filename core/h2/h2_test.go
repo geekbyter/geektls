@@ -89,7 +89,7 @@ func pipePair(t *testing.T, handler http.Handler) net.Conn {
 func chromeH2() *profiles.HTTP2Profile {
 	return &profiles.HTTP2Profile{
 		Settings:          [][]uint32{{1, 65536}, {2, 0}, {4, 6291456}, {6, 262144}},
-		WindowUpdate:      15663105,
+		WindowUpdate:      profiles.U32(15663105),
 		PseudoHeaderOrder: []string{"m", "a", "s", "p"},
 	}
 }

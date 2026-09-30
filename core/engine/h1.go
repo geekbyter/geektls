@@ -119,6 +119,13 @@ func (b *h1Body) Close() error {
 	return err
 }
 
+// abort 是读超时的取消入口：直接作废连接，不走 stdlib 那份"为复用连接而排空
+// 剩余 body"的 Close（chunked 流的排空会一直读到服务端写完）。
+func (b *h1Body) abort() error {
+	b.release(false)
+	return nil
+}
+
 func (b *h1Body) release(cleanEOF bool) {
 	if !b.done.CompareAndSwap(false, true) {
 		return

@@ -29,7 +29,7 @@
 | 14 | record_size_limit / delegated_credentials | A | ✅ | E2 | requests-go 清单 |
 | 15 | padding 扩展长度策略 | A | ✅ | E2 | 决定 ClientHello 总长落点 |
 | 16 | ECH（含 GREASE ECH） | A | ✅ | E2（cloudflare-ech.com 实测） | P7 实现 |
-| 17 | session resumption / 0-RTT 首飞 | C | ⚠️ 部分 | 未验证 | 1-RTT PSK resumption 有（`session_resumption` 开关）；**0-RTT 未接线**（依赖 QUIC 会话缓存，P4-T5/阶段 4 T4-5） |
+| 17 | session resumption / 0-RTT 首飞 | C | ⚠️ 声明侧可控、协议侧不做 | E2（本地 std 服务端实测） | 1-RTT PSK resumption 有（`session_resumption` 开关）；`early_data`(42) 能在预设里声明并改变 JA3 扩展段与 JA4 计数（`core/tls/early_data_test.go`），但"只带 42 不带 PSK"必被标准服务端拒 ⇒ 不当开关用；A10 结案见矩阵 `tls.session_resumption_0rtt` |
 | 18 | **整体 hex 回放** | A | ✅ | E2 | 输入 Wireshark ClientHello hex 原样发出（tlsmask/requests-go 已验证此形态） |
 
 **输入格式三选一**（详见 03 文档）：JA3 fullstring、JA4R 串、完整 JSON / hex。注意 JA3 不可逆（丢失扩展顺序与 GREASE 位置），JA4R 与 JSON 可逆，hex 无损——profile 体系内部一律以 JSON 为规范形式，JA3/JA4R 仅作兼容入口。
@@ -44,11 +44,12 @@
 | # | 维度 | 目标 | 现状 | 验证 | 阻塞/说明 |
 |---|---|---|---|---|---|
 | 1 | SETTINGS 各 id:value **及发送顺序**（含 GREASE settings 如 0x0a0a） | A | ✅ | E2 | 指纹第 1 段；注意"缺失项"也是信号（Chrome 必有 HEADER_TABLE_SIZE）——**缺失项断言待阶段 3**（H2-2） |
-| 2 | WINDOW_UPDATE 初始增量（如 Chrome 15663105） | A | ✅ | E2 | 第 2 段 |
+| 2 | WINDOW_UPDATE 初始增量（如 Chrome 15663105） | A | ✅ **三态** | E2 | 第 2 段；省略=补 15663105 / `0`=**不发该帧** / `N`=发 N（A11，2026-09-29）。不发时读路径退回协议默认窗口，长响应不卡死 |
 | 3 | PRIORITY 帧序列（stream:exclusive:dep:weight） | A | ✅ | E2 | 第 3 段；按资源类型的优先级表（httpcloak 维度）待阶段 3（H2-3） |
 | 4 | 伪头顺序（m,s,a,p 等） | A | ✅ | E2 | 第 4 段 |
-| 5 | HPACK 编码细节（索引表使用、编码顺序） | A | ❌ **未实现** | — | **fhttp 无钩子**（`HpackStrategy` 仅解析不用，P2-T3 降级，见 `docs/p2-h2-capability.md`）；阶段 3 spike 后决策（H2-1） |
+| 5 | HPACK 编码细节（索引表使用、编码顺序） | A | ✅ **四档** | E2 | **T-HPACK 已落地（2026-09-28）**：vendor fork `core/third_party/fhttp` 加编码器钩子（`hpack.Encoder.SetIndexPolicy` + `SetHuffmanMode` ← `Transport.HpackStrategy` ← `profile.http2.hpack_strategy`）；chrome=QUICHE 源码级、firefox=抓包字节级、safari=保守近似（待 E1）、generic=上游默认对照。线上 HPACK block 逐字节断言 `tests/e2e/h2_hpack_strategy_test.go`，证据与限制见 `docs/p2-h2-capability.md` |
 | 6 | connection preface 时序（SETTINGS 与首 HEADERS 的分帧） | A | ✅ | E2 | 单段 Flush 与 Chrome 一致（oracle `sent_frames` 实测）；硬断言化随阶段 1 |
+| 7 | 首个请求的 stream id | A | ✅ | E2 | **四段之外**的可观测形态（A11）：`http2.first_stream_id`，省略=1，须为奇数；第三方对 Firefox 135/145 记 3 ⇒ 已入 E3 预设 |
 
 ## 3. HTTP/3 + QUIC 层
 
@@ -63,7 +64,7 @@
 | 5 | QUIC GREASE 帧 | A | ✅（`SendGreaseFrames`） | 未验证 | 实现已接线，E2 验证待阶段 4（H3-3） |
 | 6 | H3 SETTINGS 帧各 id:value 及顺序 | A | ✅（`AdditionalSettings`+`Order`） | E4（预设值），本地嗅探 | `$http3_fingerprint_settings`；4 预设 H3 为空（H3-2） |
 | 7 | H3 伪头顺序 | A | ✅（`PseudoHeaderOrder`） | E4 | `$http3_fingerprint_pseudo_headers`；强于 lexiforest（其 nghttp3.patch 无此项） |
-| 8 | 0-RTT / 会话恢复 | C | ❌ 未接线 | — | 依赖 QUIC 会话缓存（当前 no-op，T4-5） |
+| 8 | 0-RTT / 会话恢复 | C | ❌ 协议侧不做（A10 结案） | — | 前提是 QUIC 会话缓存，spec 模式下 StoreSession 为 no-op 且无可补导出面（docs/06 P7-T2）；指纹侧的 early_data(42) 声明已可控，见 TLS 维度表 17 与 `core/tls/early_data_test.go` |
 | 9 | H2/H3 protocol racing（Chrome 300ms 偏好 H2） | C | ✅（`raceH3H2`+`h2_race_ms`） | 本地实测 | |
 | 10 | Alt-Svc 升级缓存行为 | C | ✅（会话级缓存） | pytest 实测 | |
 

@@ -1,42 +1,63 @@
-# TCP 指纹平台矩阵（P6-T4）
+# TCP 指纹平台矩阵（P6-T4，2026-09-29 重写：两档三平台终态）
 
-> 承 docs/01-fingerprint-dimensions.md §4 的"两档"设计，逐字段落地现状。
-> 结论先行：**setsockopt 档三平台可用（Windows 缺 MSS）；raw socket 档本期
-> 只做 Linux 探测模式，完整连接接管不做**（理由见下）。
+> 承 docs/01-fingerprint-dimensions.md §4 的两档设计。结论先行：
+> **setsockopt 档三平台可用（Windows 缺 MSS）；netstack 档（gVisor 用户态栈）
+> 在 Linux root 全量落地并通过 P6-T3 验收（nginx 采集端 ja4tcp 五分量逐项
+> MATCH）**；raw_linux.go 的探测模式保留为调试工具。
 
-## 字段 × 平台矩阵
+## 字段 × 平台 × 档位终态表
 
-| 字段 | Windows | Linux | macOS | 档位 |
+| 字段 | Windows | Linux | macOS | 档位/实现 |
 |---|---|---|---|---|
-| `ttl` | ✅ setsockopt（IP_TTL，实测读回一致） | ✅ setsockopt | ✅ setsockopt | setsockopt |
-| `mss` | ❌ **不支持**（TCP_MAXSEG 实测 WSAENOPROTOOPT；跳过 + `tcp_mss_unsupported` warning） | ✅ setsockopt（读回为协商值，可能被 MTU 钳制） | ✅ setsockopt | setsockopt |
-| `window_size` | ❌ | ⚠️ 仅探测模式（`ProbeSYN`，需 root） | ❌ 本期不做 | raw |
-| `window_scale` | ❌ | ⚠️ 仅探测模式 | ❌ 本期不做 | raw |
-| `options_order`（mss/sack/ts/nop/ws 顺序） | ❌ | ⚠️ 仅探测模式 | ❌ 本期不做 | raw |
+| `ttl` | ✅ setsockopt（读回一致） | ✅ setsockopt（双栈：IP_TTL + IPV6_UNICAST_HOPS 同设） | ✅ setsockopt | setsockopt |
+| `mss` | ❌ 不支持（WSAENOPROTOOPT，跳过+warning） | ✅ setsockopt / netstack 均可 | ✅ setsockopt | setsockopt |
+| `window_size` | ❌ | ✅ **两档**：setsockopt 夹击法（SO_RCVBUF=win×4 + TCP_WINDOW_CLAMP=win，尽力逼近，超 rmem_max 告警）/ netstack 精确（SYN window 公式见下） | ❌ | setsockopt ≈ / netstack = |
+| `df` | ⚠️ best-effort（IP_DONTFRAGMENT=14，ENOPROTOOPT 不中止） | ✅（IP_MTU_DISCOVER=DO；netstack 档走 PMTUDiscoveryDo） | ⚠️ best-effort（IP_DONTFRAG=28） | setsockopt / netstack |
+| `window_scale` | ❌ | ✅ netstack 精确（FindWndScale 反解：TCPReceiveBufferSizeRange.Max=65535<<ws） | ❌ | netstack |
+| `options_order` | ❌ | ⚠️ **仅取舍，任意排列不可得**（gVisor `makeSynOptions` 硬编码 Linux 族序 `mss,sok,ts,nop,ws`；SACK 可关） | ❌ | netstack（受限） |
+| IP ID / TSval | ❌ | ⚠️ netstack 栈内计数器/时钟生成，不可控 | ❌ | — |
 
-## raw socket 档的最终形态与理由（P6-T2 结论）
+## netstack 档（Linux root，`mode:"netstack"`）
 
-**形态：定制 SYN 探测模式**（`core/tcp/raw_linux.go`：IP_HDRINCL 构造
-IP+TCP 头——自定义 TTL/window/WS/options 顺序——发送并采集 SYN-ACK）。
+**架构**：gVisor netstack 实例挂 **TUN 设备**（/dev/net/tun，IFF_TUN|IFF_NO_PI，
+非持久——fd 关闭即消失无残留）；内核侧 10.99.0.1/24、netstack 侧 10.99.0.2/24；
+netstack 写出的包进内核 RX → 本地投递到监听 0.0.0.0 的服务端；应答经 tun0
+路由回 netstack。产出的 `net.Conn` 直接交 `tlscore.Handshake`。
 
-**为什么不做完整连接接管**：raw socket 发出的 SYN 与内核 TCP 栈是两条
-平行世界——SYN-ACK 到达时内核会因"不认识的连接"**抢发 RST**（需要
-iptables 旁路规则压制），后续序列号/重传/拥塞控制都要在用户态自管，
-这是 gVisor 级工程量。把它做成本期需求 = 用一个子系统换一个指纹维度，
-投入产出不成立。探测模式保留了字节级构造与验证能力，供 nginx 采集端
-（P1-T8 环境）做 JA4TCP 维度销项。
+**RST 抑制：TUN 拓扑下天然不需要**。任务书原方案（AF_PACKET + iptables 丢
+OUTPUT 链 RST）实测在 WSL2 的 lo 上不成立：AF_PACKET 注入帧到不了内核 L3
+（tcpdump 取证：帧在 tap 可见、内核 TCP 无 SYN-RECV；iptables/accept_local/
+协议号/假以太头四个嫌疑逐一排除）。iptables 装规则路径曾实现后移除——TUN
+拓扑里内核从不收到目的为 netstack 地址的包，无 RST 可压。
 
-## 边界声明（如实）
+**SYN window 公式**（gVisor endpoint.go initialReceiveWindow，实测对齐）：
+```
+SYN.window = min(rcvbuf>>1, 65535, 10×MSS×2)  再按 wscale 向下对齐
+```
+（rcvAdvWndScale=1 ⇒ 公告缓冲的一半；rcvbuf 由 `window_size`×2 设置。）
+调用方须选满足公式的值；P6-T3 验收用 mss=1460/window=29184/wscale=8。
 
-- **代理/NAT 下 TCP 指纹对目标站不可见**：经 HTTP CONNECT 时指纹暴露给
-  代理而非目标（engine 把选项落在到代理的连接上，这是正确语义）；
-  NAT 会改写 TTL/window_scale 的观测值。
+**边界**：仅 IPv4 字面量目标；与代理不兼容（结构化报错）；TS 恒开、SACK
+可关；IP ID/TSval 不可控；非 Linux 报 linux-only 结构化错误。
+
+**实例复用与回收**：全局单例 + 引用计数（每连接 acquire/close 释放），归零
+时 stack.Close + 关 TUN fd；engine Session.Close 不额外持有。
+
+## setsockopt 档（默认，三平台）
+
+- TTL/MSS 必须在 connect 前设置（`net.Dialer.Control` 钩子），事后补设无效。
+- window 夹击法借鉴 httpcloak（MIT）；超内核 rmem_max 时告警
+  `tcp_window_clamped`（钳制不中止）。
+- DF 三平台 best-effort；双栈 TTL 同设，单边失败无害。
+- 读回验证（WSL/Linux，`core/tcp/sockopt_linux_test.go`）：clamp=65535 设定
+  读回 65535、DF 读回 IP_MTU_DISCOVER=2、IPv6 hops 读回 42。
+
+## 边界声明（如实，承前版）
+
+- **代理/NAT 下 TCP 指纹对目标站不可见**：经 HTTP CONNECT 时指纹暴露给代理
+  （engine 把选项落在到代理的连接上，这是正确语义）；netstack 档与代理互斥。
 - **H3/QUIC 流量没有 TCP 指纹**（UDP）。
-- Windows 无 raw socket 档属设计边界（00 文档 §8 已声明），不算失败。
-- TTL/MSS 必须在 connect 前设置才影响 SYN——本实现挂在
-  `net.Dialer.Control` 钩子上，事后补设无效。
-- 本机（Windows）验证到"setsockopt 成功 + getsockopt 读回一致"；线上
-  pcap 验证与 JA4TCP 销项随 nginx 采集端环境（P1-T8 同源阻塞）。
+- Windows 无 netstack 档属设计边界（00 文档 §8 已声明），不算失败。
 
 ## 预设取值口径
 

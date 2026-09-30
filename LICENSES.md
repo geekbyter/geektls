@@ -19,8 +19,9 @@
 | github.com/quic-go/qpack | v0.6.0 | MIT | H3 的 QPACK（quic-go-utls 传递） | 否 |
 | github.com/cloudflare/circl | v1.6.2 | BSD-3-Clause | ML-KEM 等后量子算法（uTLS 传递） | 否 |
 | github.com/andybalholm/brotli | v1.2.0 | MIT | 证书压缩 brotli（uTLS 传递） | 否 |
-| github.com/klauspost/compress | v1.18.2 | Apache-2.0 | fhttp gzip/br 解码（传递） | 否 |
+| github.com/klauspost/compress | v1.18.2 | Apache-2.0 | 解压层 zstd（直接，T-DECOMP 起）+ fhttp 传递 | 否 |
 | golang.org/x/net | v0.59.0 | BSD-3-Clause | h2 server（测试）/hpack/publicsuffix/SOCKS5 | 否 |
+| gvisor.dev/gvisor | v0.0.0-20260224225140-573d5e7127a8（tailscale 钉版；上游 2025-03 后多个快照的模块 zip 缺生成文件/包名错误，google/gvisor#11531） | **Apache-2.0**（LICENSE 原文核对；非任务书预估的 BSD-3） | netstack 档用户态 TCP 栈（仅 linux 构建标签编入；Windows/macOS DLL 不含） | 否（直接依赖；版本钉死） |
 | golang.org/x/crypto | v0.57.0 | BSD-3-Clause | uTLS 传递 | 否 |
 | golang.org/x/sys | v0.48.0 | BSD-3-Clause | setsockopt 等 | 否 |
 | golang.org/x/text | v0.42.0 | BSD-3-Clause | 响应编码兜底（GB18030） | 否 |
@@ -65,8 +66,10 @@ copyleft，不污染发布物）。
 2. ~~**本项目自身许可证未定**~~ → ✅ **已关闭（2026-09-29）：定为 MIT**（根目录 `LICENSE`）。
    理由：发布面 13 个依赖全为宽松许可（BSD-3-Clause / MIT / Apache-2.0），无 copyleft 冲突，
    MIT 与之一致；同类项目（curl_cffi 等）也走 MIT。三处元数据已同步：
-   `bindings/python/pyproject.toml`（`license = "MIT"` + `License :: OSI Approved :: MIT License`
-   classifier）、`bindings/nodejs/package.json`（`"license": "MIT"`）、根 `LICENSE`。
+   `bindings/python/pyproject.toml`（`license = "MIT"` 的 SPDX 表达式）、
+   `bindings/nodejs/package.json`（`"license": "MIT"`）、根 `LICENSE`。
+   ⚠️ 按 PEP 639，设了 license 表达式后**不能再加** `License :: OSI Approved :: ...`
+   classifier（新版 setuptools 直接报 InvalidConfigError）；PyPI 会从表达式显示 MIT。
    `LICENSE` 与 `LICENSES.md` 随 wheel 分发（setuptools 的 `LICEN[CS]E*` 默认通配 ⇒ BSD-3 类
    依赖"保留声明"的要求由此满足）；npm 侧需在打包前把两者拷进包目录（见 package.json 的 comment）。
 

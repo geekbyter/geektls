@@ -35,7 +35,7 @@ type lineageAnchor struct {
 
 // lineageField 是参与演化分析的一个字段。
 type lineageField struct {
-	key   string                       // 字段名
+	key   string                         // 字段名
 	value func(*profiles.Profile) string // 取值（已做 GREASE/随机归一）
 }
 
@@ -60,7 +60,8 @@ var lineageFields = []lineageField{
 	{"ext_65037_ech", func(p *profiles.Profile) string { return fieldData(p, 65037, "ech") }},
 	{"ext_51764_unknown_grease", func(p *profiles.Profile) string { return fieldData(p, 51764, "data") }},
 	{"h2_settings", func(p *profiles.Profile) string { return h2SettingsOf(p) }},
-	{"h2_window_update", func(p *profiles.Profile) string { return strconv.FormatUint(uint64(h2FlowOf(p)), 10) }},
+	{"h2_window_update", func(p *profiles.Profile) string { return h2FlowOf(p) }},
+	{"h2_first_stream_id", func(p *profiles.Profile) string { return firstStreamOf(p) }},
 	{"h2_headers_priority", func(p *profiles.Profile) string {
 		if p.HTTP2 == nil || p.HTTP2.HeadersPriority == nil {
 			return "(nil=Chrome 默认 excl:true,w:255)"
@@ -159,7 +160,7 @@ var ErrRefused = errors.New("refused")
 //	标注：grade=E2i / E2i-u + source=lineage:…；逐字段来源写进报告
 //
 // 拒绝（返回 ErrRefused）的两种情形：**窗口外**（不外推）、**区间内密码套件变过**
-//（骨架取值不知道落哪一侧，内插等于凭空造栈）。strict 为 true 时，任何字段在区间内
+// （骨架取值不知道落哪一侧，内插等于凭空造栈）。strict 为 true 时，任何字段在区间内
 // 变化且边界未知也拒绝。
 func generateAt(fam string, anchors []lineageAnchor, version string, strict bool) (*profiles.Profile, []fieldProvenance, error) {
 	base, next := anchorBounding(anchors, version)
@@ -353,11 +354,24 @@ func h2SettingsOf(p *profiles.Profile) string {
 	return strings.Join(out, ",")
 }
 
-func h2FlowOf(p *profiles.Profile) uint32 {
-	if p.HTTP2 == nil {
-		return 0
+// h2FlowOf 报告连接级 WINDOW_UPDATE。三态：nil = 预设不指定（引擎补 Chrome 默认
+// 15663105）；显式 0 = 不发该帧；其余 = 照抄。
+func h2FlowOf(p *profiles.Profile) string {
+	if p.HTTP2 == nil || p.HTTP2.WindowUpdate == nil {
+		return "(nil=fhttp 默认 15663105)"
 	}
-	return p.HTTP2.WindowUpdate
+	if *p.HTTP2.WindowUpdate == 0 {
+		return "0(不发连接级 WINDOW_UPDATE)"
+	}
+	return strconv.FormatUint(uint64(*p.HTTP2.WindowUpdate), 10)
+}
+
+// firstStreamOf 报告首个请求的 stream id（0 = 未指定 ⇒ 线上用 1）。
+func firstStreamOf(p *profiles.Profile) string {
+	if p.HTTP2 == nil || p.HTTP2.FirstStreamID == 0 {
+		return "(默认 1)"
+	}
+	return strconv.FormatUint(uint64(p.HTTP2.FirstStreamID), 10)
 }
 
 func truncate(s string, n int) string {

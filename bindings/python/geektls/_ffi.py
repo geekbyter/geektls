@@ -65,6 +65,15 @@ lib.gtls_init.argtypes = [ctypes.c_char_p]
 lib.gtls_last_error.restype = ctypes.c_void_p
 lib.gtls_last_error.argtypes = []
 
+# gtls_error_of 是 ABI 追加的符号（见 docs/02-ffi-abi.md）：库版本比绑定旧时
+# 该符号不存在，声明必须降级而不是让 import 直接炸——错误回收退化为只走线程
+# 局部的 gtls_last_error，行为与该库版本原本的样子一致。
+try:
+    lib.gtls_error_of.restype = ctypes.c_void_p
+    lib.gtls_error_of.argtypes = [ctypes.c_uint64]
+except (AttributeError, OSError):
+    lib.gtls_error_of = None
+
 lib.gtls_free_string.restype = None
 lib.gtls_free_string.argtypes = [ctypes.c_void_p]
 
@@ -101,6 +110,19 @@ lib.gtls_request_write.argtypes = [ctypes.c_uint64, ctypes.c_void_p, ctypes.c_in
 lib.gtls_request_finish.restype = ctypes.c_uint64
 lib.gtls_request_finish.argtypes = [ctypes.c_uint64]
 
+lib.gtls_ws_connect.restype = ctypes.c_uint64
+lib.gtls_ws_connect.argtypes = [ctypes.c_uint64, ctypes.c_char_p]
+
+lib.gtls_ws_send.restype = ctypes.c_int
+lib.gtls_ws_send.argtypes = [ctypes.c_uint64, ctypes.c_int, ctypes.c_void_p, ctypes.c_int64]
+
+lib.gtls_ws_recv.restype = ctypes.c_int64
+lib.gtls_ws_recv.argtypes = [ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int64,
+                             ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+
+lib.gtls_ws_close.restype = ctypes.c_int
+lib.gtls_ws_close.argtypes = [ctypes.c_uint64, ctypes.c_int]
+
 lib.gtls_list_presets.restype = ctypes.c_void_p
 lib.gtls_list_presets.argtypes = []
 
@@ -130,3 +152,16 @@ def take_json(ptr):
 def last_error() -> dict:
     """当前线程最近错误；无错误返回 {}。"""
     return take_json(lib.gtls_last_error()) or {}
+
+
+def error_of(handle: int) -> dict:
+    """某个 handle 最近一次失败的错误；无错误返回 {}。
+
+    线程无关：把阻塞调用放到别的线程上执行（自建 executor）时，
+    ``last_error()`` 查的是当前线程的槽，这里是空的——按 handle 查才拿得到。
+    本绑定自身的错误检查都紧跟在同一条线程上，所以走 last_error()。
+    比绑定旧的动态库没有这个符号（``lib.gtls_error_of is None``），返回 {}。
+    """
+    if lib.gtls_error_of is None:
+        return {}
+    return take_json(lib.gtls_error_of(handle)) or {}

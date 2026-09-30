@@ -3,6 +3,7 @@ module github.com/geektls/tests/e2e
 go 1.27.0
 
 require (
+	github.com/andybalholm/brotli v1.2.4
 	github.com/bogdanfinn/fhttp v0.6.9
 	github.com/bogdanfinn/quic-go-utls v1.0.10-utls
 	github.com/bogdanfinn/utls v1.7.8-barnius
@@ -11,6 +12,7 @@ require (
 	github.com/gospider007/fp v0.0.0-20260922022940-11a30e1428c9
 	github.com/gospider007/gtls v0.0.0-20260922022900-37560707587c
 	github.com/gospider007/ja3 v0.0.0-20260922022812-54ae551bd740
+	github.com/klauspost/compress v1.20.0
 	github.com/refraction-networking/utls v1.8.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
@@ -18,7 +20,6 @@ require (
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
-	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.4 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
@@ -38,6 +39,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/google/btree v1.1.2 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20260906184651-6331bc6350fe // indirect
 	github.com/gospider007/conf v0.0.0-20260922022748-a9c513b9dffe // indirect
@@ -46,7 +48,6 @@ require (
 	github.com/gospider007/tools v0.0.0-20260922022651-0a9e58d5bc65 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/leodido/go-urn v1.5.0 // indirect
 	github.com/libdns/libdns v1.1.1 // indirect
@@ -77,8 +78,10 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.50.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
+	gvisor.dev/gvisor v0.0.0-20260224225140-573d5e7127a8 // indirect
 )
 
 // replace 不随依赖传递，必须在本模块声明。

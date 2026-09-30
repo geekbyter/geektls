@@ -37,7 +37,7 @@ else
 ABSLIB := $(abspath $(LIBPATH))
 endif
 
-.PHONY: all build smoke clean
+.PHONY: all build cli smoke clean
 
 all: build
 
@@ -45,6 +45,13 @@ all: build
 build:
 	mkdir -p $(BUILD)
 	cd $(CORE) && $(GO) build -buildmode=c-shared -trimpath -ldflags "-s -w" -o ../$(LIBPATH) ./ffi
+
+# cli：命令行入口（presets / describe / check-profile / request，见 core/cmd/geektls）。
+# 与动态库不同，它是普通 Go 二进制（cgo 不参与），任何平台直接 go build 即可。
+cli:
+	mkdir -p $(BUILD)
+	cd $(CORE) && $(GO) build -trimpath -ldflags "-s -w" -o ../$(BUILD)/geektls ./cmd/geektls
+	@echo "构建完成：$(BUILD)/geektls（用法：$(BUILD)/geektls -h）"
 
 # wheel：本地出一份"当前平台"的 wheel（发布用；CI 见 .github/workflows/release-pypi.yml）
 # 用法：make wheel PLAT=manylinux_2_28_x86_64|macosx_11_0_arm64|win_amd64|...

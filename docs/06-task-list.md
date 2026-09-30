@@ -15,7 +15,7 @@
 > | P1-T8（nginx 采集端 L2 终审） | ✅ 已通过：7 预设 × nginx 采集端 diff 全绿（tests/e2e/nginx-l2/verify_l2.py，35 项断言） | — |
 > | P1 验收 | ✅ tls.peet.ws diff 全绿 + nginx 采集端 diff 全绿（P1-T8） | — |
 > | P3 验收 | 0.1.4 已发布 PyPI 五平台 | `pip install geektls` 后 e2e 矩阵回归未正式记录 |
-> | P6-T3（JA4TCP 验收） | 未开始 | 依赖 nginx 采集端（与 P1-T8 同链路） |
+> | P6-T3（JA4TCP 验收） | ✅ 已通过（2026-09-29，netstack 档五分量 MATCH，verify_p6t3.py） | — |
 >
 > **二期阶段 5 登记（2026-09-28 第十轮）**：① per-origin 连接池落地并默认开启
 > （H2 单连接多路复用 / H1 keep-alive 空闲池 / H3 共享 transport；
@@ -51,9 +51,9 @@
 - [x] **P1-T5 JA3/JA4R/hex 三入口编译器**：`core/profiles/entries.go`；JA3 有损项（GREASE 位置/扩展负载）warnings 标注；JA4R 置 `extensions_sorted` + 计数交叉校验；hex 为无损路径 — 2d，依赖 T2
 - [x] **P1-T6 自算 JA3/JA4 回读器**：`core/tls/fingerprint.go`（JA4 过 FoxIO 官方文档向量 `t13d1516h2_8daaf6152771_e5627efa2ab1`）；`gtls_check_profile` 落地（四入参形态，Python FFI 链路实测通过） — 2d，依赖 T2
 - [x] **P1-T7 预设体系 v1**：`core/profiles/registry.go`（go:embed builtin/）+ chrome_131/133/150、firefox_120/135、safari_16/18 七预设；`gtls_list_presets`/`gtls_describe_preset` 落地；入库自校验 TestPresetsAreValid + L1 回环矩阵（tests/e2e）全绿；tls.peet.ws 外部 oracle 实测 JA3/JA4 全 MATCH — 2d，依赖 T5/T6
-- [x] **P1-T8 L2 闭环首次通电**：nginx 套件（WSL2，hirosumee + ngf 补丁）起服于 127.0.0.1:8443；e2e 断言器 `tests/e2e/nginx-l2/verify_l2.py`（pytest，needs_nginx 标记，`GEEDTLS_NGINX_L2=1` 启用）对 7 自测预设 × 采集字段全绿（35 项断言）：`$http_clienthello_*`（ciphers_hex/extension_order_raw/supported_versions/signature_algorithms/supported_groups/key_share_groups/alpn/psk_key_exchange_modes/ec_point_formats/legacy_version/计数/GREASE 位置）逐项对齐 describe_preset 展开值，JA3 剔除采集端不可见扩展（ALPS 17613/ECH 65037/delegated_credential 34，OpenSSL pre_proc_exts 口径）后与 selfcheck 逐字符相等（safari 无裁剪、ja3_hash 直接相等），JA4 按采集端口径（无 ALPN 后缀、ja4_c 不拼 sigalgs 且剔 padding）分量对齐、ja4_b 逐字符相等，http2 settings/window_update/pseudo_headers/priorities（weight 线上值=规格+1）全中 — 2d，依赖 T7
+- [x] **P1-T8 L2 闭环首次通电**：nginx 套件（WSL2，hirosumee + ngf 补丁）起服于 127.0.0.1:8443；e2e 断言器 `tests/e2e/nginx-l2/verify_l2.py`（pytest，needs_nginx 标记，`GEEKTLS_NGINX_L2=1` 启用）对 7 自测预设 × 采集字段全绿（35 项断言）：`$http_clienthello_*`（ciphers_hex/extension_order_raw/supported_versions/signature_algorithms/supported_groups/key_share_groups/alpn/psk_key_exchange_modes/ec_point_formats/legacy_version/计数/GREASE 位置）逐项对齐 describe_preset 展开值，JA3 剔除采集端不可见扩展（ALPS 17613/ECH 65037/delegated_credential 34，OpenSSL pre_proc_exts 口径）后与 selfcheck 逐字符相等（safari 无裁剪、ja3_hash 直接相等），JA4 按采集端口径（无 ALPN 后缀、ja4_c 不拼 sigalgs 且剔 padding）分量对齐、ja4_b 逐字符相等，http2 settings/window_update/pseudo_headers/priorities（weight 线上值=规格+1）全中 — 2d，依赖 T7
 - [x] **P1 验收**：tls.peet.ws diff 全绿（✅ 7 预设 JA3/JA4 实测 MATCH）+ nginx 采集端 diff 全绿（✅ 随 P1-T8，2026-09-28 通过）
-- [x] **P1-T8 修复：采集端扩展盲区**（2026-09-28）：`patches/ngf-openssl-clienthello-raw.patch` 的 `SSL_client_hello_get_ngf_raw_data()` 原从 OpenSSL `pre_proc_exts`（只含已识别扩展）取数，ALPS(17613)/ECH(65037)/delegated_credential(34)/GREASE 扩展整体丢失；改为直接遍历 `CLIENTHELLO_MSG.extensions` 线上原始扩展块，全量按线序序列化（bundle 格式 NGFCH1 不变，patch 文件与 configure 内嵌 fallback 同步更新）。chrome_150 `extension_order_raw` 由 14 项增至 18 项（含 GREASE 首末位、17613、65037）。`verify_l2.py` 断言收紧：`extension_order_raw` 剔 GREASE 后与引擎发送记录逐位全量相等（不再做未知扩展裁剪），35 项全绿。注意：ja3/ja4 变量来自 hirosumee 参考实现（pre_proc_exts 口径，不经 NGFCH1 bundle），仍不含未知扩展，对应断言保留换算并已在 docstring 注明 — 依赖 T8
+- [x] **P1-T8 修复：采集端扩展盲区**（2026-09-28）：`patches/ngf-openssl-clienthello-raw.patch` 的 `SSL_client_hello_get_ngf_raw_data()` 原从 OpenSSL `pre_proc_exts`（只含已识别扩展）取数，ALPS(17613)/ECH(65037)/delegated_credential(34)/GREASE 扩展整体丢失；改为直接遍历 `CLIENTHELLO_MSG.extensions` 线上原始扩展块，全量按线序序列化（bundle 格式 NGFCH1 不变，patch 文件与 configure 内嵌 fallback 同步更新）。chrome_150 `extension_order_raw` 由 14 项增至 18 项（含 GREASE 首末位、17613、65037）。`verify_l2.py` 断言收紧：`extension_order_raw` 剔 GREASE 后与引擎发送记录逐位全量相等（不再做未知扩展裁剪），35 项全绿。注意：ja3/ja4 变量来自 hirosumee 参考实现（pre_proc_exts 口径，不经 NGFCH1 bundle），仍不含未知扩展，对应断言保留换算并已在 docstring 注明 — 依赖 T8。**【已于 2026-09-29 按所有者决定完整回滚：patch / configure fallback / WSL OpenSSL 源码与运行实例全部恢复旧实现，verify_l2.py 断言恢复"剔除未知扩展后比对"版本，采集端盲区维持原状】**
 
 ## P2 — HTTP/2 帧层（2 周）
 
@@ -95,7 +95,7 @@
 
 - [x] **P6-T1 setsockopt 档**：`core/tcp`（TTL 三平台全量；MSS Linux/macOS 可用、**Windows 实测不支持 TCP_MAXSEG（WSAENOPROTOOPT）→ 跳过+warning**）；engine/dial.go 接线（net.Dialer.Control 钩子保证 SYN 前生效）；本机验证到"设置+getsockopt 读回一致"，pcap 验证随 T3/nginx — 2d，依赖 P1
 - [x] **P6-T2 raw socket 档（Linux root）**（**降级**：完整连接接管需 gVisor 级用户态协议栈（内核抢 RST+序列号/重传自管），超出本期范围；交付定制 SYN 探测模式 raw_linux.go（IP_HDRINCL 字节级构造+SYN-ACK 采集），GOOS=linux 编译通过，本地未验证待 Linux） — 4d，依赖 T1
-- [ ] **P6-T3 JA4TCP 验收**：nginx 端 `$http_ssl_ja4tcp_{mss,window,window_scale,options}` 与设定一致 — 1d，依赖 T2。**保持未勾：依赖 nginx 采集端（与 P1-T8 同环境阻塞）**
+- [x] **P6-T3 JA4TCP 验收**：nginx 端 `$http_ssl_ja4tcp_{mss,window,window_scale,options}` 与设定一致——**2026-09-29 通过**：netstack 档（gVisor/TUN 拓扑）打 WSL nginx，`tests/e2e/nginx-l2/verify_p6t3.py` 五分量逐项 MATCH（window 29184 / options 2-4-8-1-3 / mss 1460 / wscale 8） — 1d，依赖 T2
 - [x] **P6-T4 平台边界文档**：docs/tcp-platform-matrix.md（字段×平台矩阵、raw 档形态与理由、代理/NAT/H3 边界） — 0.5d
 
 ## P7 — 硬化与发布（2 周，之后持续运营）

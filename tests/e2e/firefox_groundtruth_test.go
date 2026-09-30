@@ -29,8 +29,8 @@ var (
 	}
 	ffGT156Exts = []uint16{0, 5, 10, 11, 13, 16, 18, 23, 27, 28, 34, 35, 43, 45, 51, 65037, 65281}
 	// groups 含 **P-521(25)**——这是 Firefox 与 Chromium 的稳定差异（Chrome 只到 P-384）。
-	ffGT156Groups  = []uint16{4588, 29, 23, 24, 25}
-	ffGT156SigAlgs = []uint16{0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201}
+	ffGT156Groups    = []uint16{4588, 29, 23, 24, 25}
+	ffGT156SigAlgs   = []uint16{0x0403, 0x0503, 0x0603, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0203, 0x0201}
 	ffGT156DCSigAlgs = []uint16{0x0403, 0x0503, 0x0603, 0x0203}
 
 	// Firefox 导航头顺序（实测）：**无 UA-CH**，收尾是 `te: trailers`（Chromium 没有）。
@@ -115,8 +115,10 @@ func TestFirefoxGroundTruth(t *testing.T) {
 					*p.HTTP2.HeadersPriority)
 			}
 			assertEq(t, "伪头顺序", []string{"m", "p", "a", "s"}, p.HTTP2.PseudoHeaderOrder)
-			if p.HTTP2.WindowUpdate != 12517377 {
-				t.Errorf("H2 WINDOW_UPDATE = %d, want 12517377（Firefox 实测）", p.HTTP2.WindowUpdate)
+			if p.HTTP2.WindowUpdate == nil {
+				t.Error("H2 WINDOW_UPDATE 缺失，want 12517377（Firefox 实测）")
+			} else {
+				assertEq(t, "H2 WINDOW_UPDATE", uint32(12517377), *p.HTTP2.WindowUpdate)
 			}
 
 			// --- 156 预设：严格全等实测 ---

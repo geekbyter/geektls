@@ -73,7 +73,7 @@ func Configure(base *net.Dialer, cfg *profiles.TCPProfile) []profiles.Warning {
 func (d *Dialer) control(network, address string, c syscall.RawConn) error {
 	var sockErr error
 	err := c.Control(func(fd uintptr) {
-		sockErr = applySockopts(fd, d.cfg)
+		sockErr = applySockopts(fd, d.cfg, network)
 	})
 	if err != nil {
 		return err

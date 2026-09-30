@@ -1,0 +1,269 @@
+name: oracle-nightly
+
+# 目的：把 README 里"✅ 实测 MATCH"那批证据变成**可复现**的（审计 A3）。
+# 平时的 ci.yml 只跑离线 `go test ./...`——所有打外网/打动态库/打真浏览器的用例
+# 在那儿一律 t.Skip，于是 fork 默认值变化、依赖升级、oracle 改版都可能让
+# "已实测"过期而无人知。这个 workflow 专跑那几档，失败自动开 issue。
+#
+# 分档（哪个红意味着什么）：
+#   oracle        —— 外部 oracle 硬断言：tls.peet.ws 回读的 JA3/JA4、H2 Akamai 串
+#                    必须与预设声明值一致；ECH/0-RTT 真握手。红 = 指纹侧真漂移。
+#   crosslang     —— Python/Node/Go 三绑定对同一本地 echo 的 JA4 必须全等，
+#                    外加两语言绑定层的 pytest / node:test 全绿（要动态库）。
+#   h3-browser-e1 —— 与真 Chrome/Edge 的 H3 抓包对拍。只有配了仓库变量才跑
+#                    （Runner 上没有"与采集机同一版本"的浏览器时结论无意义）。
+#   nginx-l2      —— 打自建 nginx 指纹采集端（需 patched nginx，不在仓库里）。
+#                    同样只有配了变量才跑。
+#
+# 仓库变量（Settings → Secrets and variables → Actions → Variables，不配则整 job skip）：
+#   GEEKTLS_E1_H3_BROWSER   浏览器可执行文件绝对路径（ubuntu runner 上是 /usr/bin/google-chrome-stable）
+#   GEEKTLS_E1_H3_NAME      对应预设名（如 chrome_149_windows）
+#   GEEKTLS_NGINX_L2_URL    采集端地址（如 https://10.99.0.1:8444/ngf-debug，通常要自建 runner/VPN）
+
+on:
+  schedule:
+    # 03:17 北京时间。刻意避开整点，公共 runner 排队更短。
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+    inputs:
+      oracle_presets:
+        description: 'GEEKTLS_ORACLE_PRESETS（留空=下面的默认子集；填 * 跑全量 364 条）'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: oracle-nightly
+  cancel-in-progress: false
+
+env:
+  # 子集口径：每个族一条、覆盖 Windows/macOS 两个平台形态。全量 364 条相当于
+  # 对第三方 oracle 压测，只在手动排查时用（workflow_dispatch 里填 *）。
+  GEEKTLS_ORACLE_PRESETS: ${{ github.event.inputs.oracle_presets || 'chrome_154_windows,chrome_154_macos,chrome_150,edge_153_windows,firefox_156_windows,safari_18_macos,opera_122_windows' }}
+
+jobs:
+  # ── 外部 oracle：硬断言，不需要动态库（纯 Go 栈） ──────────────────────────
+  oracle:
+    name: external oracle (tls.peet.ws / ECH)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: |
+            core/go.sum
+            tests/e2e/go.sum
+            bindings/golang/go.sum
+            tests/smoke/go.sum
+
+      # TestExternalOracle（TLS 面）+ TestExternalOracleH2（Akamai 帧串）。
+      # 这两条是 -tags external 的"回读对拍"，也是 README 里 MATCH 列的出处。
+      # ASSERT=1：MATCH/DIFF 平时只打印（V-3），nightly 里 DIFF 必须判红——
+      # 否则这一轮只证明"握手打得通"，证明不了实测结论没过期。
+      - name: TLS + H2 oracle
+        working-directory: tests/e2e
+        env:
+          GEEKTLS_ORACLE_ASSERT: '1'
+        run: |
+          set -eu
+          go test -tags external . -v -timeout 30m \
+            -run 'TestExternalOracle$|TestExternalOracleH2'
+
+      # 真 ECH（cloudflare-ech.com）+ DNS-over-UDP 取 HTTPS 记录。
+      # 服务端不发 ECH 配置时测试自己 skip（策略变了不算我们红）。
+      - name: real ECH handshake
+        working-directory: tests/e2e
+        run: |
+          set -eu
+          go test -tags external . -v -timeout 10m -run TestRealECHLive
+
+      # 会话复用探针：V-3 约定下它只打印不断言 ⇒ 这里额外 grep 它的日志，
+      # 把"第二次握手没 resumed"变成真失败（否则 nightly 这条 job 只是"打得通"）。
+      - name: live resumption probe
+        working-directory: core/tls
+        run: |
+          set -euo pipefail
+          GEEKTLS_LIVE=1 go test -tags external -v -timeout 10m \
+            -run TestLiveResumptionProbe | tee live.log
+          # 探针按 host 逐个打印 "成功: resumed=…"（dial/握手失败只打印不断言）。
+          ok=$(grep -c '成功: resumed=' live.log || true)
+          if [ "$ok" = "0" ]; then
+            echo "::error::复用探针一个 host 都没打通（外网不可达或端点已换）——这一轮什么都没测"
+            exit 1
+          fi
+          if ! grep -q 'resumed=true' live.log; then
+            echo "::error::打通 $ok 次握手却无一次 resumed=true：PSK/会话复用回归"
+            grep -n '成功: resumed' live.log | head -20 || true
+            exit 1
+          fi
+          echo "会话复用：$ok 次成功握手，其中 resumed=true 已观察到"
+
+  # ── 跨语言 + 绑定层测试：都要动态库，所以带完整工具链 ─────────────────────
+  crosslang:
+    name: cross-language (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: |
+            core/go.sum
+            tests/e2e/go.sum
+            bindings/golang/go.sum
+            tests/smoke/go.sum
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # c-shared 在 Windows 上需要 gcc + make（与 ci.yml 的 smoke job 同一套）。
+      - name: Install toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y --no-progress make mingw
+          Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
+          Update-SessionEnvironment
+          Add-Content $env:GITHUB_PATH (Split-Path (Get-Command gcc).Source)
+
+      - name: Build core (c-shared)
+        run: make build
+
+      # crosslang / bench 都要 build/echo-server 这个**二进制**产物（没有它就 t.Skip）。
+      - name: Build echo-server
+        working-directory: tests/e2e
+        shell: bash
+        run: go build -o "../../build/echo-server$(go env GOEXE)" ./cmd/echo-server
+
+      - name: Install pytest
+        run: python -m pip install --quiet pytest
+
+      # 三绑定对同一 echo 的 JA4 全等（chrome_133 只比 JA4，firefox_120 连 JA3 一起）。
+      - name: Cross-language JA4 consistency
+        working-directory: tests/e2e
+        shell: bash
+        run: go test . -v -timeout 20m -run TestCrossLangConsistency
+
+      - name: Python binding tests (pytest)
+        shell: bash
+        run: |
+          set -eu
+          python -m pytest tests/e2e/python -q
+
+      - name: Node binding tests (node:test)
+        working-directory: bindings/nodejs
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
+  # ── 可选项：需要自建采集端 / 真浏览器，未配仓库变量就整 job skip ────────────
+  h3-browser-e1:
+    name: E1 real-browser H3 (chrome_149_windows)
+    if: ${{ vars.GEEKTLS_E1_H3_BROWSER != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: |
+            core/go.sum
+            tests/e2e/go.sum
+      - name: H3 capture vs real browser
+        working-directory: tests/e2e
+        env:
+          GEEKTLS_E1_H3_BROWSER: ${{ vars.GEEKTLS_E1_H3_BROWSER }}
+          GEEKTLS_E1_H3_NAME: ${{ vars.GEEKTLS_E1_H3_NAME }}
+        run: go test . -v -timeout 20m -run TestE1RealBrowserH3
+
+  nginx-l2:
+    name: nginx L2 collector
+    if: ${{ vars.GEEKTLS_NGINX_L2_URL != '' }}
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: core/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install pytest
+        run: python -m pip install --quiet pytest
+      - name: Build core (c-shared)
+        run: make build
+      - name: L2 verify (35 项 × 采集端)
+        env:
+          GEEKTLS_NGINX_L2: '1'
+          GEEKTLS_NGINX_L2_URL: ${{ vars.GEEKTLS_NGINX_L2_URL }}
+          GEEDTLS_LIB: ${{ github.workspace }}/build/libgeektls.so
+        run: python -m pytest tests/e2e/nginx-l2/verify_l2.py -q
+
+  # ── 失败即开 issue（同一轮只维护一条开放 issue，重复失败改为评论）────────────
+  # 只对 schedule 触发开 issue：手动 dispatch 多半是在排查，再开一条 issue 是噪音。
+  # 用 failure() 就不会因为 h3-browser-e1 / nginx-l2 被 skip 而连带 skip。
+  report:
+    name: open issue on failure
+    needs: [oracle, crosslang, h3-browser-e1, nginx-l2]
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect failing logs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## 失败摘要"
+            echo
+            echo "- 运行：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- 触发：\`${{ github.event_name }}\`（branch \`${GITHUB_REF_NAME}\`）"
+            echo "- oracle 子集：\`${GEEKTLS_ORACLE_PRESETS}\`"
+            echo
+            echo '```'
+            gh run view "$GITHUB_RUN_ID" --log-failed 2>/dev/null \
+              | grep -vE '^(go: downloading|### )' | tail -n 160 || echo "(取不到失败日志)"
+            echo '```'
+          } > body.md
+          cat body.md
+
+      - name: Create or comment issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          gh label create nightly-oracle --color B60205 \
+            --description "oracle-nightly 失败：实测结论漂移" >/dev/null 2>&1 || true
+          title="nightly 实测闭环失败（$(date -u +%F)）"
+          existing=$(gh issue list --label nightly-oracle --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file body.md
+            echo "已评论到既有 issue #$existing"
+          else
+            gh issue create --label nightly-oracle --title "$title" --body-file body.md
+          fi

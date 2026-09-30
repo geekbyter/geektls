@@ -9,6 +9,7 @@ package h3
 
 import (
 	"crypto/rand"
+	"crypto/x509"
 	"fmt"
 	"time"
 
@@ -95,6 +96,15 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 		}
 		qcfg.Versions = []quic.Version{quic.Version(v)}
 	}
+	// 首个 Initial datagram 的尺寸（= PADDING 填到多少）。上游 quic-go 的
+	// Config.InitialPacketSize 本来就把值夹到 1200..1452，但那会**静默改值**；
+	// 越界在这里直接报错，免得"设了 1500 却发出 1452"这种事查半天。
+	if h3p.InitialPacketSize != 0 {
+		if h3p.InitialPacketSize < 1200 || h3p.InitialPacketSize > 1452 {
+			return nil, fmt.Errorf("h3: initial_packet_size %d 越界（want 1200..1452，0 = 上游默认 1280）", h3p.InitialPacketSize)
+		}
+		qcfg.InitialPacketSize = uint16(h3p.InitialPacketSize) // 上文已限 1200..1452
+	}
 	if len(h3p.TransportParamsRaw) > 0 {
 		// T4-1 blob 直通：有序/非标/GREASE 全控（vendor patch #7），
 		// 同时把已知流控键值映射回 quic.Config 保证行为一致。
@@ -111,9 +121,18 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 }
 
 // NewTransport 按 profile 构建 H3 Transport（实现 fhttp RoundTripper）。
-func NewTransport(p *profiles.Profile, insecureSkipVerify bool) (*http3.Transport, error) {
+// TLSSettings 是 H3 握手的 TLS 侧参数（与 TCP 侧 dial.go 的 utls.Config 同源）。
+type TLSSettings struct {
+	InsecureSkipVerify bool
+	RootCAs            *x509.CertPool      // nil = 系统信任库
+	Certificates       []utlsb.Certificate // mTLS 客户端证书
+}
+
+func NewTransport(p *profiles.Profile, tlsOpts TLSSettings) (*http3.Transport, error) {
 	tlsCfg := &utlsb.Config{
-		InsecureSkipVerify: insecureSkipVerify,
+		InsecureSkipVerify: tlsOpts.InsecureSkipVerify,
+		RootCAs:            tlsOpts.RootCAs,
+		Certificates:       tlsOpts.Certificates,
 		NextProtos:         []string{"h3"},
 		OmitEmptyPsk:       true, // 无票据时线上省略空 PSK 扩展（预设带 41 占位）
 	}
@@ -358,9 +377,9 @@ func echGreasePayload() []byte {
 	rand.Read(payload)
 
 	out := []byte{
-		0x00,        // outer: client hello
-		0x00, 0x01,  // kdf_id: HKDF-SHA256
-		0x00, 0x01,  // aead_id: AES-128-GCM
+		0x00,       // outer: client hello
+		0x00, 0x01, // kdf_id: HKDF-SHA256
+		0x00, 0x01, // aead_id: AES-128-GCM
 		configID[0], // config_id（GREASE 随机）
 		0x00, 0x20,  // enc_len = 32
 	}

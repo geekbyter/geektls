@@ -68,7 +68,7 @@ c-shared 模式的关键约束与对策：
 - **内存归属铁律**：谁分配谁释放。core 返回的字符串/缓冲由 core 提供 `gtls_free_string`/`gtls_free_response` 显式释放；绑定层在析构器/`finalizer` 里兜底。详见 `02-ffi-abi.md`。
 - **并发模型**：goroutine 在 core 内部自由使用；跨 ABI 不传回调（c-shared 回调进 Python/Node 是事故温床），异步一律用"提交请求 → 拿 handle → poll/read"模型。流式响应用 `gtls_response_read(handle, buf, len)` 拉模式。
 - **线程安全**：Go runtime 自己管线程；绑定层保证同一 handle 不并发调用（Python GIL + Node 单线程天然满足；文档明写约束）。
-- **错误模型**：函数返回 int 状态码，线程局部 `gtls_last_error()` 取详情 JSON。
+- **错误模型**：函数返回 int 状态码，线程局部 `gtls_last_error()` 取详情 JSON；把阻塞调用放到自己线程上的绑定按对象取 `gtls_error_of(handle)`（worker 线程写槽、主线程读自己的槽必然为空，Node/koffi 实测踩过）。
 - **DLL 体积/冷启动**：c-shared 产物约 15–25MB，冷启动毫秒级（noble-tls 实测级别），可接受。
 
 ## 6. 三语言 API 形态（目标态）

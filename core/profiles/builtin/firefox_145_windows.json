@@ -161,6 +161,7 @@
       "a",
       "s"
     ],
+    "first_stream_id": 3,
     "headers_priority": {
       "exclusive": false,
       "weight": 41

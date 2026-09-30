@@ -92,6 +92,32 @@ func main() {
 			}
 		}
 	})
+	registerCompressEndpoints(mux)
+	mux.HandleFunc("/ws", wsEchoHandler)
+
+	// /stall：先给一个字节，然后挂 5s 再收尾——A6 读超时的靶子（不设
+	// read_timeout 的客户端会整段等到 5s，设了的必须在毫秒级拿回结构化错误）。
+	mux.HandleFunc("/stall", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(200)
+		if _, err := w.Write([]byte("x")); err != nil {
+			return
+		}
+		if fl, ok := w.(http.Flusher); ok {
+			fl.Flush()
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+		chunk := make([]byte, 16384)
+		for i := 0; i < 64; i++ {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	})
 
 	// H3 侧：fhttp mux（quic-go-utls http3.Server 吃 fhttp.Handler），同逻辑。
 	fmux := fhttp.NewServeMux()

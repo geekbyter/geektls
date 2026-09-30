@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	utls "github.com/refraction-networking/utls"
 
@@ -24,23 +25,55 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("engine: bad url: %w", err)
 	}
-	if u.Scheme != "https" {
-		return nil, fmt.Errorf("engine: only https is supported in P3 (got %q)", u.Scheme)
+	switch u.Scheme {
+	case "https", "http":
+	default:
+		return nil, fmt.Errorf("engine: unsupported scheme %q (want https/http)", u.Scheme)
+	}
+	// 明文档（G5）：只走 H1（h2c 不在承诺面内），不握手、不发 ClientHello
+	// ⇒ SelfCheck 恒为零值、UsedProtocol 恒为 http/1.1。H3 只在 TLS 之上，
+	// 所以明文一律不走 H3（下面 h3ok=false 就落到 doTCPLegacy）。
+	plain := u.Scheme == "http"
+	if plain && req.ForceHTTP3 {
+		return nil, fmt.Errorf("engine: force_http3 需要 https（明文 http:// 没有 QUIC 承载）")
 	}
 
 	// 身份注入（T2-1）：profile.identity 的缺省头补齐用户未提供的头部，
 	// 再注入 Cookie（请求头里显式给的 Cookie 优先）
 	headers := s.appendCookieHeader(u, s.applyIdentity(req.Headers))
 
+	// 生效代理（请求级 > 会话级 > 环境变量 + NO_PROXY）。这里先算一次只为
+	// 判定 H3 可用性：QUIC 过代理需要 CONNECT-UDP（RFC 9298），本库未实现，
+	// 而"以为走了代理、其实 UDP 直发"是最坏的一种泄漏，所以有代理时一律不走
+	// H3；显式 force_http3 则直接报错（A8）。拨号与池键各自再取一次同值
+	// （proxySpecFor 只做字符串匹配、不发 DNS 查询，重复调用是幂等的）。
+	proxySpec, err := s.proxySpecFor(req, u.Scheme, u.Hostname(), portOrDefault(u))
+	if err != nil {
+		return nil, err
+	}
+	h3ok := proxySpec == "" && !plain
+	if blocked, field := s.h3NetBlocked(); blocked {
+		if req.ForceHTTP3 {
+			// 地址控制（resolve / local_address / ip_version）没有接进 QUIC 拨号，
+			// H3 走的是另一套解析路径。让 force_http3 报错而不是偷偷绕过用户点名的
+			// 那一项（与代理同口径，A8/A9）。
+			return nil, fmt.Errorf("engine: force_http3 与 %s 不兼容（QUIC 拨号不认地址控制项；要该行为请走 H2/H1）", field)
+		}
+		h3ok = false // profile 开着 H3 也只是"优先尝试"，这里静默让位给 H2 是安全的
+	}
+
 	var resp *Response
 	switch {
 	case req.ForceHTTP3:
+		if !h3ok {
+			return nil, fmt.Errorf("engine: force_http3 与代理不兼容（QUIC 过代理需 CONNECT-UDP/RFC 9298，未实现；要经代理请用 H2/H1，或去掉 proxy）")
+		}
 		// 强制 H3：失败不回落（调用方明确要 H3）
 		resp, err = s.doH3(req, headers)
-	case s.profile.HTTP3 != nil && s.profile.HTTP3.Enabled && s.profile.HTTP3.H2RaceMs > 0:
+	case s.profile.HTTP3 != nil && s.profile.HTTP3.Enabled && s.profile.HTTP3.H2RaceMs > 0 && h3ok:
 		// 竞速模式：H3 先跑，超时并发 H2
 		resp, err = s.raceH3H2(req, u, headers)
-	case s.h3Eligible(req, u.Host):
+	case h3ok && s.h3Eligible(req, u.Host):
 		// Alt-Svc 已知 H3 能力：H3 优先，失败负缓存该主机并落 H2
 		resp, err = s.doH3(req, headers)
 		if err != nil {
@@ -54,12 +87,28 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 		return nil, err
 	}
 
+	// 读超时先包住协议层 body（这样才认得出它的 abort 入口），再叠透明解压。
+	resp.Body = newTimeoutReader(resp.Body, s.readTimeout(req))
+	// 透明解压（T-DECOMP）：按 Content-Encoding 包装 body；headers 不动。
+	s.applyDecompression(req, resp)
 	s.absorbResponseMeta(u, resp)
 	return resp, nil
 }
 
+// readTimeout 取本次请求的 body 读取超时（请求级覆盖会话级；都没设则 0 = 不限）。
+func (s *Session) readTimeout(req *Request) time.Duration {
+	ms := s.opts.ReadTimeoutMs
+	if req != nil && req.ReadTimeoutMs > 0 {
+		ms = req.ReadTimeoutMs
+	}
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 // absorbResponseMeta 收取响应的 Set-Cookie 进 jar、从响应头学习 Alt-Svc
-//（普通请求与流式上传共用）。
+// （普通请求与流式上传共用）。
 func (s *Session) absorbResponseMeta(u *url.URL, resp *Response) {
 	if s.jar != nil {
 		var setCookies []string
@@ -83,7 +132,10 @@ func (s *Session) absorbResponseMeta(u *url.URL, resp *Response) {
 // 连接池（默认开）：先试同键的共享 h2 连接 / 空闲 h1 连接，失败落新拨号
 // 重试一次（请求体在内存中可重放；静默死连接上的写对端未处理，重试安全）。
 func (s *Session) doTCPLegacy(req *Request, u *url.URL, headers [][2]string) (*Response, error) {
-	key := s.poolKey(req, u.Host)
+	key, err := s.poolKey(req, u.Scheme, u.Host)
+	if err != nil {
+		return nil, err
+	}
 	if s.poolOn() {
 		if e := s.pool.getH2(key); e != nil {
 			if e.cc.CanTakeNewRequest() {
@@ -156,25 +208,47 @@ func (s *Session) appendCookieHeader(u *url.URL, headers [][2]string) [][2]strin
 	if s.jar == nil {
 		return headers
 	}
+	// 显式 Cookie 头里的名字优先；引擎 jar 只补它没有的名字（**合并**而不是
+	// 整段让位）。让位会把"重定向中间跳设置的 cookie"静默丢掉（最终响应里
+	// 看不到它们，Python 绑定的会话级 jar 也就补不上），合并既不会双份同名，
+	// 也保住了 jar 的补全。
+	have := make(map[string]bool)
 	for _, kv := range headers {
-		if equalFoldASCII(kv[0], "cookie") {
-			return headers
+		if !equalFoldASCII(kv[0], "cookie") {
+			continue
+		}
+		for _, pair := range strings.Split(kv[1], ";") {
+			name, _, _ := strings.Cut(strings.TrimSpace(pair), "=")
+			if name != "" {
+				have[strings.ToLower(name)] = true
+			}
 		}
 	}
-	cookies := s.jar.Cookies(u)
-	if len(cookies) == 0 {
+	var parts []string
+	for _, c := range s.jar.Cookies(u) {
+		if have[strings.ToLower(c.Name)] {
+			continue
+		}
+		parts = append(parts, c.Name+"="+c.Value)
+	}
+	if len(parts) == 0 {
 		return headers
 	}
-	val := ""
-	for i, c := range cookies {
-		if i > 0 {
-			val += "; "
-		}
-		val += c.Name + "=" + c.Value
-	}
+	val := strings.Join(parts, "; ")
 	out := make([][2]string, 0, len(headers)+1)
-	out = append(out, headers...)
-	return append(out, [2]string{"cookie", val})
+	merged := false
+	for _, kv := range headers {
+		if equalFoldASCII(kv[0], "cookie") && !merged {
+			out = append(out, [2]string{kv[0], kv[1] + "; " + val})
+			merged = true
+			continue
+		}
+		out = append(out, kv)
+	}
+	if !merged {
+		out = append(out, [2]string{"cookie", val})
+	}
+	return out
 }
 
 // newH2Entry 在新握手的连接上建 h2 ClientConn 并尝试登记为池内共享连接
@@ -233,6 +307,21 @@ func (r *connClosingReader) Close() error {
 		r.onClose()
 	}
 	return err
+}
+
+// abort 是读超时的取消入口：内层若支持作废就用它，然后照样把连接关掉。
+func (r *connClosingReader) abort() error {
+	if ab, ok := r.ReadCloser.(interface{ abort() error }); ok {
+		if err := ab.abort(); err != nil {
+			return err
+		}
+	} else if err := r.ReadCloser.Close(); err != nil {
+		return err
+	}
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return nil
 }
 
 // selfCheck 用本次握手实际发出的 spec 自算 JA3/JA4；profile 来自 JA3/JA4R

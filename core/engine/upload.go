@@ -22,8 +22,9 @@ import (
 // Upload 是一次进行中的流式上传。Write 可多次调用；Finish 结束 body 并
 // 阻塞到响应头到达。不再使用时必须 Finish（否则连接随会话关闭才释放）。
 type Upload struct {
-	s *Session
-	u *url.URL
+	s   *Session
+	u   *url.URL
+	req *Request
 
 	// H1：连接与写目标（headers 已在 Begin 时发出）
 	h1e *poolEntry
@@ -54,15 +55,20 @@ func (s *Session) BeginUpload(req *Request) (*Upload, error) {
 	if err != nil {
 		return nil, fmt.Errorf("engine: bad url: %w", err)
 	}
-	if u.Scheme != "https" {
-		return nil, fmt.Errorf("engine: only https is supported (got %q)", u.Scheme)
+	switch u.Scheme {
+	case "https", "http":
+	default:
+		return nil, fmt.Errorf("engine: unsupported scheme %q (want https/http)", u.Scheme)
 	}
 	if req.ForceHTTP3 {
 		return nil, fmt.Errorf("engine: streaming upload over h3 is not supported")
 	}
 
 	headers := s.appendCookieHeader(u, s.applyIdentity(req.Headers))
-	key := s.poolKey(req, u.Host)
+	key, err := s.poolKey(req, u.Scheme, u.Host)
+	if err != nil {
+		return nil, err
+	}
 
 	// 池内 h2 共享连接优先
 	if s.poolOn() {
@@ -93,7 +99,7 @@ func (s *Session) BeginUpload(req *Request) (*Upload, error) {
 // beginH2Upload：fhttp RoundTrip 吃 PipeReader，goroutine 里等响应头。
 func (s *Session) beginH2Upload(e *poolEntry, req *Request, u *url.URL, headers [][2]string) *Upload {
 	pr, pw := io.Pipe()
-	up := &Upload{s: s, u: u, pw: pw, resCh: make(chan uploadResult, 1)}
+	up := &Upload{s: s, u: u, req: req, pw: pw, resCh: make(chan uploadResult, 1)}
 	go func() {
 		resp, err := h2core.Do(e.cc, req.Method, req.URL, headers, pr)
 		if err != nil {
@@ -142,7 +148,7 @@ func (s *Session) beginH1Upload(e *poolEntry, req *Request, u *url.URL, headers 
 		e.tc.uconn.Close()
 		return nil, fmt.Errorf("engine: h1 upload write headers: %w", err)
 	}
-	return &Upload{s: s, u: u, h1e: e}, nil
+	return &Upload{s: s, u: u, req: req, h1e: e}, nil
 }
 
 // Write 写一块 body：H1 是一个 chunk 帧（%x\r\n<data>\r\n），H2 喂给 DATA
@@ -186,6 +192,8 @@ func (u *Upload) Finish() (*Response, error) {
 		if r.err != nil {
 			return nil, r.err
 		}
+		r.resp.Body = newTimeoutReader(r.resp.Body, u.s.readTimeout(u.req))
+		u.s.applyDecompression(u.req, r.resp)
 		u.s.absorbResponseMeta(u.u, r.resp)
 		return r.resp, nil
 	}
@@ -220,6 +228,8 @@ func (u *Upload) Finish() (*Response, error) {
 	} else {
 		out.Body = &h1Body{ReadCloser: resp.Body, entry: e, pool: u.s.pool, reuse: reuse}
 	}
+	u.s.applyDecompression(u.req, out)
 	u.s.absorbResponseMeta(u.u, out)
+	out.Body = newTimeoutReader(out.Body, u.s.readTimeout(u.req))
 	return out, nil
 }

@@ -6,7 +6,7 @@ import sys
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "needs_nginx: 需要 WSL2 nginx 指纹采集端（默认 skip，GEEDTLS_NGINX_L2=1 启用）",
+        "needs_nginx: 需要 WSL2 nginx 指纹采集端（默认 skip，GEEKTLS_NGINX_L2=1 启用）",
     )
 
 

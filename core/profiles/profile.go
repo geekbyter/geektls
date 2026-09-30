@@ -128,11 +128,23 @@ type ECHConfig struct {
 
 // HTTP2Profile（P2）。
 type HTTP2Profile struct {
-	Settings          [][]uint32   `json:"settings,omitempty"` // [[id, value],...] 有序；id 可为 GREASE 值
-	SettingsGrease    bool         `json:"settings_grease,omitempty"`
-	WindowUpdate      uint32       `json:"window_update,omitempty"`       // 连接级 WINDOW_UPDATE 增量
-	PseudoHeaderOrder []string     `json:"pseudo_header_order,omitempty"` // 短码 m/a/s/p
-	Priorities        []H2Priority `json:"priorities,omitempty"`
+	Settings       [][]uint32 `json:"settings,omitempty"` // [[id, value],...] 有序；id 可为 GREASE 值
+	SettingsGrease bool       `json:"settings_grease,omitempty"`
+	// WindowUpdate 是连接级 WINDOW_UPDATE 的增量。三态：
+	//   nil = 交给 fhttp 补默认（15663105，Chrome 形状）
+	//   &0  = **不发**连接级 WINDOW_UPDATE（RFC 7540 §6.9.1 把增量 0 判为
+	//         PROTOCOL_ERROR，所以 0 只能解释为"不发"；引擎侧读路径会退回协议
+	//         默认窗口做补充额度，长响应不会卡死）
+	//   &N  = 发 N
+	// 用指针而不是 uint32+omitempty 的原因：值形态的 0 在 marshal 时会被
+	// omitempty 吞掉，预设 JSON 根本写不出"不发"这一档，回读就成了"未设置"。
+	WindowUpdate      *uint32  `json:"window_update,omitempty"`
+	PseudoHeaderOrder []string `json:"pseudo_header_order,omitempty"` // 短码 m/a/s/p
+	// FirstStreamID 是这条连接上第一个请求的 stream id。0 = 默认 1；必须是正奇数，
+	// 后续请求按 +2 递增。第三方 tls_config 对 Firefox 135/145/l_latest 记的是 3
+	// ⇒ 已在对应 E3 预设里照抄；我们没有"首个流号"的 E1 实测，故自测预设一律留空。
+	FirstStreamID uint32       `json:"first_stream_id,omitempty"`
+	Priorities    []H2Priority `json:"priorities,omitempty"`
 	// HeadersPriority：HEADERS 帧**内嵌**的 priority（见 H2HeadersPriority 注释）。
 	// nil = 用 fhttp 默认值（= Chrome 实测量形状）。
 	HeadersPriority *H2HeadersPriority `json:"headers_priority,omitempty"`
@@ -171,16 +183,26 @@ type H2HeadersPriority struct {
 
 // HTTP3Profile（P4）。
 type HTTP3Profile struct {
-	Enabled           bool              `json:"enabled,omitempty"`
-	QUICVersion       string            `json:"quic_version,omitempty"` // "0x00000001"
-	TransportParams   map[string]uint64 `json:"transport_params,omitempty"`
+	Enabled         bool              `json:"enabled,omitempty"`
+	QUICVersion     string            `json:"quic_version,omitempty"` // "0x00000001"
+	TransportParams map[string]uint64 `json:"transport_params,omitempty"`
 	// TransportParamsRaw（T4-1，blob 直通）：有序 QUIC transport parameters，
 	// 每项 [id, value]；id 为数值或 "grease"（随机 GREASE id + value 长度的随机数据），
 	// value 为数值（按 varint 编码）或 "hex:..."（原始字节）。
 	// 设置后优先于 TransportParams（map 形态被忽略）；数组顺序即线上顺序，
 	// 可表达非标参数与任意顺序（整块有序直通，非逐项 setter）。
-	TransportParamsRaw [][]any         `json:"transport_params_raw,omitempty"`
-	InitialLayout      *H3InitialLayout `json:"initial_layout,omitempty"` // P4-T4 结论：quic-go 不可控，见 capability 文档
+	TransportParamsRaw [][]any          `json:"transport_params_raw,omitempty"`
+	InitialLayout      *H3InitialLayout `json:"initial_layout,omitempty"` // 仍是占位（coalesce/分片表要动 packer，见下）
+
+	// InitialPacketSize 控制**首个 Initial datagram 的尺寸**（也就是 PADDING 填到
+	// 多少）：1200..1452，0 = 上游默认 1280。取自 quic-go 的 Config.InitialPacketSize
+	// （上游字段，无需 fork patch），packer 会把 Initial 包补齐到它
+	//（third_party/quic-go-utls/packet_packer.go 的 initialPaddingLen）⇒ 这是 T4 记的
+	// "PADDING 大小不可控"里**可兑现的那半边**。
+	// 仍不可控（要动 packer/packer 之上的 SC-3）：coalesce 阈值（Initial+Handshake
+	// 合并成一 datagram 的判据）、CRYPTO 分片表（fork 内置的 clienthello scrambling
+	// 规则）。默认不设该字段 ⇒ 线上与改动前逐字节相同。
+	InitialPacketSize int `json:"initial_packet_size,omitempty"`
 
 	// --- QUIC 内层 ClientHello 的 TLS1.3 形态（实测驱动，见 docs/07-capability-gaps.md §6.1）---
 	// 真实浏览器在 QUIC 上只发 TLS1.3 有意义的扩展，且不发任何 TLS 层 GREASE。
@@ -194,15 +216,18 @@ type HTTP3Profile struct {
 	InnerHelloExtraSigAlgs []string `json:"inner_hello_extra_sig_algs,omitempty"`
 	// InnerHelloDropGrease：QUIC 内层是否完全不发 TLS 层 GREASE
 	//   （Chrome 149 实测 true：cipher / 扩展 / group / key_share / version 五处全无）。
-	InnerHelloDropGrease bool `json:"inner_hello_drop_grease,omitempty"`
-	GreaseFrames       bool             `json:"grease_frames,omitempty"`
-	Settings           [][]uint32       `json:"settings,omitempty"`
-	PseudoHeaderOrder  []string         `json:"pseudo_header_order,omitempty"`
-	PriorityParam      uint32           `json:"priority_param,omitempty"` // Chrome 的 PRIORITY 帧参数（如 984832）
-	H2RaceMs           int              `json:"h2_race_ms,omitempty"`     // H2/H3 竞速：H3 起跑后多少 ms 内无响应头则并发 H2
+	InnerHelloDropGrease bool       `json:"inner_hello_drop_grease,omitempty"`
+	GreaseFrames         bool       `json:"grease_frames,omitempty"`
+	Settings             [][]uint32 `json:"settings,omitempty"`
+	PseudoHeaderOrder    []string   `json:"pseudo_header_order,omitempty"`
+	PriorityParam        uint32     `json:"priority_param,omitempty"` // Chrome 的 PRIORITY 帧参数（如 984832）
+	H2RaceMs             int        `json:"h2_race_ms,omitempty"`     // H2/H3 竞速：H3 起跑后多少 ms 内无响应头则并发 H2
 }
 
-// H3InitialLayout（P4）。
+// H3InitialLayout（P4 占位）。**当前不生效**：quic-go 的 packer 不接受布局参数，
+// padding 的可行部分改由 HTTP3Profile.InitialPacketSize 表达（它决定首 datagram
+// 尺寸 = 填充量），coalesce 与 CRYPTO 分片表要动 packer 层（SC-3）才谈得上。
+// 保留结构体是为了让既有 profile 文件里的这一节仍然能被解析（不报未知字段）。
 type H3InitialLayout struct {
 	Padding  string `json:"padding,omitempty"`
 	Coalesce bool   `json:"coalesce,omitempty"`
@@ -212,9 +237,15 @@ type H3InitialLayout struct {
 type TCPProfile struct {
 	TTL          int      `json:"ttl,omitempty"`
 	MSS          int      `json:"mss,omitempty"`
-	WindowSize   int      `json:"window_size,omitempty"`
+	WindowSize   int      `json:"window_size,omitempty"` // setsockopt 档=尽力逼近（Linux SO_RCVBUF+TCP_WINDOW_CLAMP）；netstack 档=精确
 	WindowScale  int      `json:"window_scale,omitempty"`
 	OptionsOrder []string `json:"options_order,omitempty"`
+	// DF=true 置 DF 位（Linux IP_MTU_DISCOVER=DO / macOS IP_DONTFRAG /
+	// Windows IP_DONTFRAGMENT；best-effort，ENOPROTOOPT 不中止）。
+	DF bool `json:"df,omitempty"`
+	// Mode："setsockopt"（默认，三平台）/ "netstack"（Linux root 全量档，
+	// gVisor 用户态栈；非 Linux 报 linux-only 结构化错误）。
+	Mode string `json:"mode,omitempty"`
 }
 
 // HTTP1Profile（P3）。
@@ -381,6 +412,10 @@ func (e *Extension) validate() error {
 
 // GreaseToken 是 ciphers/groups/extensions/versions 列表里的 GREASE 字面量。
 const GreaseToken = "grease"
+
+// U32 取 v 的地址。schema 里的三态 uint32 字段（如 HTTP2Profile.WindowUpdate）
+// 用它写"显式给值"的字面量，含显式 0。
+func U32(v uint32) *uint32 { return &v }
 
 // IsGrease 判断 RFC 8701 GREASE 值（0x?a?a：两字节相同且低半字节为 0xa）。
 func IsGrease(v uint16) bool {
