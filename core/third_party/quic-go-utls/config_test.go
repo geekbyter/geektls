@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	tls "github.com/bogdanfinn/utls" // geektls patch: for ClientHelloSpec / TransportParameters fields
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn" // geektls patch: for ClientHelloSpec / TransportParameters fields
 
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
-	"github.com/bogdanfinn/quic-go-utls/quicvarint"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/quicvarint"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

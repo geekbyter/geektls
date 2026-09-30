@@ -11,10 +11,10 @@ import (
 	"io"
 	"net"
 
-	fhttp "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/http2"
+	fhttp "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/http2"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // NewClientConn 在已建立的（TLS）连接上按 http2 profile 建 H2 ClientConn。

@@ -12,7 +12,7 @@ import (
 	"hash"
 	"io"
 
-	"github.com/bogdanfinn/utls/internal/tls13"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/tls13"
 )
 
 // This file contains the functions necessary to compute the TLS 1.3 key
@@ -57,6 +57,18 @@ type keySharePrivateKeys struct {
 	mlkemEcdhe *ecdh.PrivateKey // [uTLS] seperate ecdhe key for pq keyshare in line with Chrome, instead of reusing ecdhe key like stdlib
 	// [FIX] Add this field
 	keys map[CurveID]*ecdh.PrivateKey
+}
+
+// usable（geektls patch）报告这组私钥能否用于（EC)DHE 密钥交换：新形态
+// （keys map / mlkem / mlkemEcdhe）与旧形态（单字段 ecdhe）任一存在即可。
+// 供 handshake_client_tls13.go 的前置一致性检查使用——那里的旧判定只看 ecdhe，
+// 会把 ApplyPreset / 会话恢复路径的合法握手误杀；判定口径必须与 key schedule 的
+// 动态查找（"Dynamic Key Selection"）一致。
+func (k *keySharePrivateKeys) usable() bool {
+	if k == nil {
+		return false
+	}
+	return k.ecdhe != nil || len(k.keys) > 0 || k.mlkem != nil || k.mlkemEcdhe != nil
 }
 
 const x25519PublicKeySize = 32

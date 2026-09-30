@@ -29,10 +29,10 @@ import (
 	"strconv"
 	"strings"
 
-	http2 "github.com/bogdanfinn/fhttp/http2"
+	http2 "github.com/geekbyter/geektls/core/third_party/fhttp/http2"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // ---------- 第三方数据模型（只取用得到的字段）----------

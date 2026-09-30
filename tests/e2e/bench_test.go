@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geektls/core/engine"
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/engine"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func benchThroughput(t *testing.T, base string, concurrency int, dur time.Duration) (reqs int64, errs int64) {

@@ -78,7 +78,7 @@ Python 一行自检：
 
 ```bash
 python -c "import geektls,json;print(json.dumps(geektls.version()));print(len(geektls.list_presets()),'presets')"
-# {"abi": 1, "core": "0.1.7", "utls": "refraction-networking/utls v1.8.2; bogdanfinn/utls v1.7.8-barnius; ..."} / 368 presets
+# {"abi": 1, "core": "0.1.8", "utls": "refraction-networking/utls v1.8.2; bogdanfinn/utls v1.7.8-barnius; ..."} / 368 presets
 ```
 
 > `version()["utls"]` 是**指纹栈溯源**：报告动态库里实际链接的 uTLS / fhttp / quic-go-utls
@@ -316,7 +316,7 @@ print(geektls.check_profile("t13d1516h2_8daaf6152771_d8a2da3f94cd"))
 
 | 函数 | 签名 | 说明 |
 |---|---|---|
-| `version()` | `-> dict` | `{"abi":1,"core":"0.1.7","utls":"<指纹栈版本串>"}`；启动时可用它断言 ABI 匹配，`utls` 用于溯源（见上文） |
+| `version()` | `-> dict` | `{"abi":1,"core":"0.1.8","utls":"<指纹栈版本串>"}`；启动时可用它断言 ABI 匹配，`utls` 用于溯源（见上文） |
 | `init(options=None)` | `-> None` | 幂等初始化钩子（当前无全局状态，留作后续） |
 | `last_error()` | `-> dict` | 最近一次失败的结构化错误（`code`/`message`/`op`） |
 | `list_presets()` | `-> list[str]` | 全部内置预设名（排序，368 条；返回**规范名**，旧名是别名） |
@@ -738,7 +738,7 @@ firefox 档对齐 Firefox 59 抓包（字节级），safari 档为保守近似�
 | 生态与熟悉度 | 远不如 `curl_cffi` / `curl-impersonate`：Python 迁移成本、示例与社区最少；没有 `hrequests` 那种浏览器自动化集成 |
 | 真栈行为级 | `curl_cffi`（libcurl + BoringSSL）与 `cyCronet`（Chromium Cronet 真栈）的行为级细节天然全真（含握手重试、协议栈内部实现）；这里靠逐维度对齐逼近，理论上存在未发现的行为差异 |
 | 预设更新 | 依赖人工采样（SLA 2 周）；大量预设是 E3 转写而非实测，`curl_cffi` / `curl-impersonate` 靠社区补丁更快 |
-| H3 可控面 | QUIC **首 datagram 尺寸 / PADDING 量可控**（`http3.initial_packet_size`，1200–1452），但 **coalesce 阈值与 CRYPTO 分片表仍不可控**（要动 vendor packer 层 = SC-3）；transport params 顺序靠 blob 直通；Firefox / Safari H3 未实测 |
+| H3 可控面 | QUIC **首飞全控**：首 datagram **填充下限**（`initial_packet_size`，1200–1452，不设=1200）、**SCID 长度**（`connection_id_length`，0 = Chrome 形态空 SCID）、PADDING 位置、CRYPTO 分片表、scrambling 开关、coalesce 阈值（`initial_layout`，vendor patch #8/#10）；transport params 顺序靠 blob 直通；Firefox / Safari H3 未实测 |
 | Safari 侧 | HPACK 的 safari 档是全 literal 保守近似；padding 用实测字节数表达；无 CFNetwork 字节级证据 |
 | 四层 | Windows 仅 setsockopt 档（TTL/MSS/DF，MSS 项缺失）；netstack 档（window/wscale 精确控制）仅 Linux root；IP ID / TSval 不可控 |
 | 发布面 | npm 与 Go module 尚未发布；wheel 只覆盖 5 平台（无 musllinux / Windows ARM64） |
@@ -762,7 +762,7 @@ requests 语义面）；剩余差距集中在**发布面**（Node/Go 未发布�
 | 边界 | 说明 |
 |---|---|
 | QUIC 内层 ECH 与 bogdanfinn 服务端 | 其 QUIC server 不处理 ECH-in-QUIC 会静默失败（客户端侧已合成 Chrome 等效 payload；真服务器按规范忽略 GREASE ECH） |
-| QUIC Initial 布局 | **首 datagram 尺寸 / PADDING 量可控**（`http3.initial_packet_size`，1200–1452，默认不设 = 上游 1280）；**coalesce 阈值（Initial+Handshake 合并判据）与 CRYPTO 分片表仍不可控** —— 要动 vendor `packet_packer.go` / `crypto_stream.go`（SC-3），且必须按 perspective 分支，否则影响服务端路径 |
+| QUIC Initial 布局 | 已全控（vendor patch #8/#10）：PADDING 位置、CRYPTO 分片表、scrambling 开关、coalesce 阈值（`initial_layout`）、首包**填充下限**（`initial_packet_size`，不设=1200，不是"精确尺寸"）、首飞 **SCID 长度**（`connection_id_length`，0 = Chrome 形态空 SCID；此时 `initial_source_connection_id` 才允许空值）。逐字节复刻真机首包 1230B 还需 CH 尺寸与分片表一致（属 profile 侧保真，不在布局旋钮内） |
 | 明文 `http://` 的边界 | 只走 H1（**不做 h2c**，无 `prior knowledge` / Upgrade 路径）；经 HTTP 代理时走 **CONNECT 隧道**（不发 absolute-form `GET http://…`）；明文没有 TLS 层 ⇒ `selfcheck` 恒为零值、`force_http3` + `http://` 直接报错 |
 | 代理环境变量按 scheme 取 | https/wss 读 `HTTPS_PROXY`、http/ws 读 `HTTP_PROXY`，都不跨 scheme 取（curl/requests 同语义）；都没命中再退 `ALL_PROXY` |
 | QUIC transport params 顺序/非标参数 | 已经 T4-1 blob 直通可控（顺序/值硬断言全绿）；个别残余值与 blob 整块替换冲突，待 fork 决策（能力矩阵 H3-7） |

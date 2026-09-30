@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2011 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -15,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bogdanfinn/fhttp/internal/race"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/internal/race"
 )
 
 var headerWriteTests = []struct {

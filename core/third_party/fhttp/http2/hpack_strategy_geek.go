@@ -19,7 +19,7 @@
 package http2
 
 import (
-	"github.com/bogdanfinn/fhttp/http2/hpack"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/http2/hpack"
 )
 
 // HPACK 策略名（与 geektls profile.http2.hpack_strategy 对齐）。

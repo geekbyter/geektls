@@ -13,9 +13,9 @@ import (
 	"io"
 
 	"github.com/andybalholm/brotli"
-	"github.com/bogdanfinn/utls/internal/fips140tls"
-	"github.com/bogdanfinn/utls/internal/hpke"
-	"github.com/bogdanfinn/utls/internal/tls13"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/fips140tls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/hpke"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/tls13"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -444,6 +444,54 @@ func (c *UConn) clientHandshake(ctx context.Context) (err error) {
 		}
 
 		binderKey = c.HandshakeState.State13.BinderKey
+
+		// [geektls patch] 这条分支（会话已由 BuildHandshakeState 装载 ⇒ sessionIsLocked）
+		// **绕过了 c.loadSession()**，而 QUIC 的 0-RTT 判定——"票据允许 early data +
+		// 同一 cipher suite + 同一 ALPN ⇒ hello.earlyData = true"——只写在
+		// loadSession 的 QUIC 分支里（handshake_client.go）。不补这一段，恢复连接上
+		// early_data 永远是 false：不发 0-RTT、不推 early secret，`Used0RTT` 恒假。
+		// 判定条件与 loadSession 内那段**逐条一致**（避免两处口径漂移）。
+		if c.quic != nil && session != nil && session.EarlyData &&
+			mutualCipherSuiteTLS13(hello.cipherSuites, session.cipherSuite) != nil {
+			for _, alpn := range hello.alpnProtocols {
+				if alpn == session.alpnProtocol {
+					hello.earlyData = true
+					// [geektls patch] wire 上的 ClientHello 由 **uconn.Extensions（spec 扩展对象）**
+					// 拼出（MarshalClientHelloNoECH），early_data(42) 不在 spec ⇒ 必须动态插入一个
+					// **空** early_data 扩展（RFC 8446 §4.2.10），且必须位于 pre_shared_key 之前
+					//（PSK 必须是最后一个扩展），然后经 MarshalClientHello 重出字节、接回本 hello、
+					// 重算 PSK binder（CH 内容变了）。
+					// 不做这一步：服务端 TLS 解析不到 early_data ⇒ EE 不带它 ⇒ 客户端自拒
+					//（Err0RTTRejected）——这正是 0-RTT 此前红的原因。
+					idx := len(c.Extensions)
+					if len(c.Extensions) > 0 {
+						if _, isPSK := c.Extensions[len(c.Extensions)-1].(PreSharedKeyExtension); isPSK {
+							idx = len(c.Extensions) - 1 // PSK 必须是最后一个扩展 ⇒ 插在它前面
+						}
+					}
+					exts := make([]TLSExtension, 0, len(c.Extensions)+1)
+					exts = append(exts, c.Extensions[:idx]...)
+					exts = append(exts, &GenericExtension{Id: ExtensionEarlyData, Data: []byte{}})
+					exts = append(exts, c.Extensions[idx:]...)
+					c.Extensions = exts
+
+					c.HandshakeState.Hello.EarlyData = true
+					if err := c.MarshalClientHello(); err != nil {
+						return err
+					}
+					hello.original = c.HandshakeState.Hello.Raw
+					if len(hello.pskIdentities) > 0 {
+						if cs := mutualCipherSuiteTLS13(hello.cipherSuites, session.cipherSuite); cs != nil {
+							transcript := cs.hash.New()
+							if err := computeAndUpdatePSK(hello, binderKey, transcript, cs.finishedHash); err != nil {
+								return err
+							}
+						}
+					}
+					break
+				}
+			}
+		}
 	}
 	// [uTLS section ends]
 	if err != nil {
@@ -489,6 +537,15 @@ func (c *UConn) clientHandshake(ctx context.Context) (err error) {
 	}
 
 	c.serverName = hello.serverName
+
+	println("GEEKTLS-DEBUG 发 CH: earlyData=", hello.earlyData, "sessionNil=", session == nil,
+		"sessionIsLocked=", sessionIsLocked, "buildStatus=", int(c.clientHelloBuildStatus),
+		"helloPSK=", len(hello.pskIdentities), "quic=", c.quic != nil)
+	if session != nil {
+		println("GEEKTLS-DEBUG   session.EarlyData=", session.EarlyData,
+			"sessionSuite=", int(session.cipherSuite), "sessionALPN=", session.alpnProtocol,
+			"helloALPN=", len(hello.alpnProtocols))
+	}
 
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
 		return err

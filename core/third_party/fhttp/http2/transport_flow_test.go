@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2026 The fhttp Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -11,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
 )
 
 // throttledSink caps the rate at which a response body is consumed, simulating

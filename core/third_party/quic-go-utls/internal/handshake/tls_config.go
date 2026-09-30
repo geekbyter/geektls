@@ -3,7 +3,7 @@ package handshake
 import (
 	"net"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 )
 
 func setupConfigForServer(conf *tls.Config, localAddr, remoteAddr net.Addr) *tls.Config {

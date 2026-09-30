@@ -3,8 +3,8 @@ package qlog
 import (
 	"encoding/hex"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/wire"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter/jsontext"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/wire"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter/jsontext"
 )
 
 type Frame struct {

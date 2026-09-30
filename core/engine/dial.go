@@ -13,9 +13,9 @@ import (
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/proxy"
 
-	"github.com/geektls/core/profiles"
-	tcp "github.com/geektls/core/tcp"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tcp "github.com/geekbyter/geektls/core/tcp"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // transportConn 是一次请求的完整连接产物。

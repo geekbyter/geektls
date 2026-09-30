@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 func TestLineageInterpolationSemantics(t *testing.T) {

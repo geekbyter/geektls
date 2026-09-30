@@ -10,7 +10,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func readBackFd(t *testing.T, conn net.Conn, fn func(fd uintptr)) {

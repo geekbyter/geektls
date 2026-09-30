@@ -10,18 +10,18 @@ import (
 	"strings"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
-	tls "github.com/bogdanfinn/utls"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	"github.com/bogdanfinn/quic-go-utls/internal/handshake"
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
-	"github.com/bogdanfinn/quic-go-utls/internal/qtls"
-	"github.com/bogdanfinn/quic-go-utls/interop/http09"
-	"github.com/bogdanfinn/quic-go-utls/interop/utils"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/handshake"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/qtls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/interop/http09"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/interop/utils"
 )
 
 var errUnsupported = errors.New("unsupported test case")

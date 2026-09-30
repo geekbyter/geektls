@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2014 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -15,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
 
-	"github.com/bogdanfinn/fhttp/http2/hpack"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/http2/hpack"
 )
 
 var knownFailing = flag.Bool("known_failing", false, "Run known-failing tests.")

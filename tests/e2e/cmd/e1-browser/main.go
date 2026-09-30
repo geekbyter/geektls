@@ -41,8 +41,8 @@ import (
 	"github.com/gospider007/gtls"
 	"github.com/gospider007/ja3"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 type captured struct {

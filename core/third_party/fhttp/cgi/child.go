@@ -18,9 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	http "github.com/bogdanfinn/fhttp"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
 )
 
 // Request returns the HTTP request as represented in the current

@@ -19,7 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // SYNProbeResult 的定义在 dialer.go（跨平台共享）。

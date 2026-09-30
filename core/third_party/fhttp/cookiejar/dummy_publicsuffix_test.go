@@ -1,10 +1,12 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2016 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package cookiejar_test
 
-import "github.com/bogdanfinn/fhttp/cookiejar"
+import "github.com/geekbyter/geektls/core/third_party/fhttp/cookiejar"
 
 type dummypsl struct {
 	List cookiejar.PublicSuffixList

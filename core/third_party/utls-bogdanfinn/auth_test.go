@@ -1,3 +1,5 @@
+//go:build geektls_upstream_utls_tests
+
 // Copyright 2017 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -8,7 +10,7 @@ import (
 	"crypto"
 	"testing"
 
-	"github.com/bogdanfinn/utls/internal/fips140tls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/fips140tls"
 )
 
 func TestSignatureSelection(t *testing.T) {

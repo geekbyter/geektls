@@ -5,11 +5,11 @@ import (
 	"errors"
 	"io"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/monotime"
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
-	"github.com/bogdanfinn/quic-go-utls/internal/wire"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/monotime"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/wire"
 )
 
 var (

@@ -27,12 +27,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	http "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/httptrace"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptrace"
 
-	"github.com/bogdanfinn/fhttp/http2/hpack"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/http2/hpack"
 	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/idna"
 )

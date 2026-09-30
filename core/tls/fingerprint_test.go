@@ -5,7 +5,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // 官方向量数据（FoxIO JA4 技术文档 Example 节）：一个典型 Chrome ClientHello。

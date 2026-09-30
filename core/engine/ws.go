@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // WS opcode（RFC 6455 §5.2）。

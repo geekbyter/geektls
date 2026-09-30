@@ -10,15 +10,17 @@
 // 原来那份没有同步收窄约束 —— 结果 mac 上两份同时参与编译、符号重名，云编译直接红
 // （只有 darwin 会撞；linux/windows 各自独占，所以本地与 linux runner 都是绿的）。
 // 这里把"darwin 之外的 Unix"重新填上，约束与另外三个平台文件互斥且完备：
-//   linux ← sockopt_linux.go ｜ darwin ← sockopt_darwin.go ｜ windows ← sockopt_windows.go
-//   ｜ 其余 Unix ← 本文件
+//
+//	linux ← sockopt_linux.go ｜ darwin ← sockopt_darwin.go ｜ windows ← sockopt_windows.go
+//	｜ 其余 Unix ← 本文件
+//
 // 平台差异的完整表格见 docs/tcp-platform-matrix.md。
 package tcp
 
 import (
 	"strings"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 	"golang.org/x/sys/unix"
 )
 

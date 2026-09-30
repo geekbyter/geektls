@@ -194,12 +194,23 @@ type HTTP3Profile struct {
 	TransportParamsRaw [][]any          `json:"transport_params_raw,omitempty"`
 	InitialLayout      *H3InitialLayout `json:"initial_layout,omitempty"` // 首飞 Initial 布局（PADDING 位置/分片表/coalesce 阈值）
 
-	// InitialPacketSize 控制**首个 Initial datagram 的尺寸**（也就是 PADDING 填到
-	// 多少）：1200..1452，0 = 上游默认 1280。取自 quic-go 的 Config.InitialPacketSize
-	// （上游字段，无需 fork patch），packer 会把 Initial 包补齐到它
-	//（third_party/quic-go-utls/packet_packer.go 的 initialPaddingLen）。
+	// ConnectionIDLength 控制客户端首飞的 **SCID 长度**（长头包里的 source
+	// connection ID）：nil = 上游默认 4 字节；0 = Chrome 形态的**零长 SCID**；
+	// 1..20 自定义。它与 transport_params 里的 initial_source_connection_id(0x0f)
+	// 是一对——0x0f 必须等于真实 SCID，所以只有 SCID 长度为 0 时"空值声明"才合法
+	//（Chrome 实测就是空值），core/h3/transport_params.go 据此放行。
+	// 走 vendor patch #10（quic.Transport.AllowZeroLengthConnectionIDs +
+	// http3.Transport 转发）。
+	ConnectionIDLength *int `json:"connection_id_length,omitempty"`
+
+	// InitialPacketSize 是首个 Initial datagram 的**填充下限**（floor）：不足补到它，
+	// 自然尺寸更大就按自然尺寸发：1200..1452，0/不设 = **1200**（QUIC 协议下限，也是
+	// 真机形态——Chrome 149 实测只在需要时补到 1200，首包 1230B 就是自然尺寸）。
+	// 取自 quic-go 的 Config.InitialPacketSize（上游字段，无需 fork patch），packer
+	// 在不足时补齐到它（third_party/quic-go-utls/packet_packer.go 的 initialPaddingLen）。
 	// PADDING 在包内的位置、CRYPTO 分片表与 coalesce 阈值由 InitialLayout 表达
-	//（vendor patch #8，2026-09-30 起生效）。默认不设 ⇒ 线上与上游逐字节相同。
+	//（vendor patch #8，2026-09-30 起生效）。
+	// ⚠️ 线上可见：不设该字段时的首 datagram 由"填到 1280"变为 max(自然尺寸, 1200)。
 	InitialPacketSize int `json:"initial_packet_size,omitempty"`
 
 	// --- QUIC 内层 ClientHello 的 TLS1.3 形态（实测驱动，见 docs/07-capability-gaps.md §6.1）---

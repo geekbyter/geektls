@@ -26,8 +26,8 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 const oracleHost = "tls.peet.ws"

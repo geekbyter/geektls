@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync" // geektls patch: quicState.closeOnce
 )
 
 // QUICEncryptionLevel represents a QUIC encryption level used to transmit
@@ -166,6 +167,19 @@ type quicState struct {
 	transportParams []byte // to send to the peer
 
 	enableSessionEvents bool
+
+	// closeOnce (geektls patch) 保证 blockedc/signalc 只关一次——
+	// uTLS 的握手 goroutine 有提前 return 路径（如 BuildHandshakeState
+	// 失败）会跳过尾部关闭逻辑，把 UQUICConn.Start 永久挂死。
+	closeOnce sync.Once
+}
+
+// closeChans (geektls patch) 幂等关闭握手信号通道。
+func (qs *quicState) closeChans() {
+	qs.closeOnce.Do(func() {
+		close(qs.blockedc)
+		close(qs.signalc)
+	})
 }
 
 // QUICClient returns a new TLS client side connection using QUICTransport as the

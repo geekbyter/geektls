@@ -13,13 +13,13 @@ import (
 	"fmt"
 	"time"
 
-	quic "github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	utlsb "github.com/bogdanfinn/utls"
+	quic "github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	h2core "github.com/geektls/core/h2"
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	h2core "github.com/geekbyter/geektls/core/h2"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // transportParamsToQUICConfig 把 profile.http3.transport_params 映射到
@@ -96,15 +96,31 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 		}
 		qcfg.Versions = []quic.Version{quic.Version(v)}
 	}
-	// 首个 Initial datagram 的尺寸（= PADDING 填到多少）。上游 quic-go 的
-	// Config.InitialPacketSize 本来就把值夹到 1200..1452，但那会**静默改值**；
-	// 越界在这里直接报错，免得"设了 1500 却发出 1452"这种事查半天。
+	// 首个 Initial datagram 的填充**下限**（floor）：不足则补到它，自然尺寸更大就
+	// 按自然尺寸发。语义是"至少这么多"而不是"精确这么多"——QUIC 只要求客户端每个
+	// 含 Initial 的 datagram ≥1200，真机（Chrome 149 实测首包 1230B）也只在需要时补，
+	// 所以不设时下限 = 1200（不再是上游 quic-go 的"填到 1280"）。
+	// 上游 Config.InitialPacketSize 会把值静默夹到 1200..1452；越界在这里直接报错。
+	floor := 1200
 	if h3p.InitialPacketSize != 0 {
 		if h3p.InitialPacketSize < 1200 || h3p.InitialPacketSize > 1452 {
-			return nil, fmt.Errorf("h3: initial_packet_size %d 越界（want 1200..1452，0 = 上游默认 1280）", h3p.InitialPacketSize)
+			return nil, fmt.Errorf("h3: initial_packet_size %d 越界（want 1200..1452 = 填充下限）", h3p.InitialPacketSize)
 		}
-		qcfg.InitialPacketSize = uint16(h3p.InitialPacketSize) // 上文已限 1200..1452
+		floor = h3p.InitialPacketSize
 	}
+	qcfg.InitialPacketSize = uint16(floor) // 上游会夹到 1200..1452；上面已验，不静默改值
+
+	// SCID 长度（patch #10）：决定长头包里的 source connection ID，也是 0x0f
+	//（initial_source_connection_id）声明合法性的前提。nil = 上游默认 4；0 = Chrome
+	// 形态的空 SCID；1..20 自定义。范围在这里校验（NewTransport 与测试共用本函数）。
+	scidLen := -1
+	if h3p.ConnectionIDLength != nil {
+		if *h3p.ConnectionIDLength < 0 || *h3p.ConnectionIDLength > 20 {
+			return nil, fmt.Errorf("h3: connection_id_length %d 越界（want 0..20；nil = 上游默认 4）", *h3p.ConnectionIDLength)
+		}
+		scidLen = *h3p.ConnectionIDLength
+	}
+
 	if len(h3p.TransportParamsRaw) > 0 {
 		if len(h3p.TransportParams) > 0 {
 			// 两种形态同时设置时不许静默选一边（Q2 冲突规则）。
@@ -117,7 +133,7 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 			return nil, err
 		}
 		qcfg.TransportParamsOverride = tps
-		if err := applyKnownRawTP(tps, qcfg); err != nil {
+		if err := applyKnownRawTP(tps, qcfg, scidLen); err != nil {
 			return nil, err
 		}
 	} else if len(h3p.TransportParams) > 0 {
@@ -176,6 +192,13 @@ func NewTransport(p *profiles.Profile, tlsOpts TLSSettings) (*http3.Transport, e
 		TLSClientConfig: tlsCfg,
 		QUICConfig:      qcfg,
 		EnableDatagrams: true, // Chrome 开 H3_DATAGRAM
+	}
+	if h3p != nil && h3p.ConnectionIDLength != nil {
+		// SCID 长度（patch #10）：0 = Chrome 形态的空 SCID，也是 0x0f
+		//（initial_source_connection_id）空值声明的前提。范围已在
+		// QUICConfigFromProfile 校验过，这里只做映射。
+		tr.QUICConnectionIDLength = *h3p.ConnectionIDLength
+		tr.QUICAllowZeroLengthConnectionIDs = *h3p.ConnectionIDLength == 0
 	}
 	if h3p == nil {
 		return tr, nil

@@ -11,7 +11,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/bogdanfinn/utls/dicttls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/dicttls"
 	"golang.org/x/crypto/cryptobyte"
 )
 

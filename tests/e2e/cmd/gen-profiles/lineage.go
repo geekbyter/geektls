@@ -23,8 +23,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/geektls/core/profiles"
-	"github.com/geektls/tests/e2e/specimens"
+	"github.com/geekbyter/geektls/core/profiles"
+	"github.com/geekbyter/geektls/tests/e2e/specimens"
 )
 
 // lineageAnchor 是一个实测锚点及其编译结果。

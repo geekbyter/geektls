@@ -17,9 +17,9 @@ import (
 	"os"
 	"time"
 
-	fhttp "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	utlsb "github.com/bogdanfinn/utls"
+	fhttp "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 	"golang.org/x/net/http2"
 )
 

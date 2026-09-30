@@ -19,8 +19,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/bogdanfinn/utls/internal/hkdf"
-	"github.com/bogdanfinn/utls/internal/tls13"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/hkdf"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/tls13"
 )
 
 type clientHandshakeStateTLS13 struct {
@@ -60,7 +60,12 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 	}
 
 	// Consistency check on the presence of a keyShare and its parameters.
-	if hs.keyShareKeys == nil || hs.keyShareKeys.ecdhe == nil || len(hs.hello.keyShares) == 0 {
+	// [geektls patch] 原来只认旧的单字段 `ecdhe`，但 ApplyPreset 流（u_parrots.go）
+	// 把私钥放进 `keys` map（会话恢复路径尤其如此：握手状态经 Pub/Private 往返后
+	// 只保留 map / mlkem），于是**合法的恢复握手被误杀**——客户端直接发
+	// internal_error（CRYPTO_ERROR 0x150），0-RTT 永远起不来。
+	// 这里的判定与下面 key schedule 的动态查找保持一致（"Dynamic Key Selection"）。
+	if hs.keyShareKeys == nil || !hs.keyShareKeys.usable() || len(hs.hello.keyShares) == 0 {
 		return c.sendAlert(alertInternalError)
 	}
 
@@ -617,6 +622,10 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		clientKey = hs.keyShareKeys.mlkemEcdhe
 	}
 
+	println("GEEKTLS-DEBUG key schedule: group=", int(selectedGroup), "fromMap=", hs.keyShareKeys.keys[selectedGroup] != nil,
+		"legacyEcdhe=", hs.keyShareKeys.ecdhe != nil, "mlkem=", hs.keyShareKeys.mlkem != nil,
+		"mlkemEcdhe=", hs.keyShareKeys.mlkemEcdhe != nil, "clientKeyNil=", clientKey == nil,
+		"nKeys=", len(hs.keyShareKeys.keys), "buildByUtls=", hs.uconn != nil && hs.uconn.clientHelloBuildStatus == BuildByUtls)
 	sharedKey, err := getSharedKey(ecdhePeerData, clientKey)
 	// [FIX END]
 

@@ -10,13 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
-	"github.com/bogdanfinn/quic-go-utls/internal/utils"
-	"github.com/bogdanfinn/quic-go-utls/internal/wire"
-	"github.com/bogdanfinn/quic-go-utls/qlog"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/utils"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/wire"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlog"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter"
 )
 
 // ErrTransportClosed is returned by the [Transport]'s Listen or Dial method after it was closed.
@@ -82,6 +82,13 @@ type Transport struct {
 	// All Connection IDs returned by the ConnectionIDGenerator MUST
 	// have the same length.
 	ConnectionIDGenerator ConnectionIDGenerator
+
+	// geektls patch (patch #10): AllowZeroLengthConnectionIDs 让 ConnectionIDLength == 0
+	// 真正生效，即客户端首飞 SCID 长度 0（Chrome 形态；E1 evidence 里 Chrome 的
+	// initial_source_connection_id 就是 len=0）。默认 false = 上游行为：0 会退回
+	// DefaultConnectionIDLength(4)。只影响 **SCID**——首飞 DCID 由
+	// GenerateConnectionIDForInitial 生成（8 字节随机），不受本字段影响。
+	AllowZeroLengthConnectionIDs bool
 
 	// The StatelessResetKey is used to generate stateless reset tokens.
 	// If no key is configured, sending of stateless resets is disabled.
@@ -245,7 +252,9 @@ func (t *Transport) DialEarly(ctx context.Context, addr net.Addr, tlsConf *tls.C
 }
 
 func (t *Transport) dial(ctx context.Context, addr net.Addr, host string, tlsConf *tls.Config, conf *Config, use0RTT bool) (*Conn, error) {
-	if err := t.init(t.isSingleUse); err != nil {
+	// geektls patch (patch #10): 追加 AllowZeroLengthConnectionIDs——单次用途的静态
+	// Dial（isSingleUse）本来就允许零长 SCID，这里让常规 Transport 也能开。
+	if err := t.init(t.isSingleUse || t.AllowZeroLengthConnectionIDs); err != nil {
 		return nil, err
 	}
 	if err := validateConfig(conf); err != nil {
@@ -538,7 +547,7 @@ func (t *Transport) listen(conn rawConn) {
 		//nolint:staticcheck // SA1019 ignore this!
 		// TODO: This code is used to ignore wsa errors on Windows.
 		// Since net.Error.Temporary is deprecated as of Go 1.18, we should find a better solution.
-		// See https://github.com/bogdanfinn/quic-go-utls/issues/1737 for details.
+		// See https://github.com/geekbyter/geektls/core/third_party/quic-go-utls/issues/1737 for details.
 		if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
 			t.mutex.Lock()
 			closed := t.closeErr != nil

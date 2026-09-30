@@ -4,7 +4,8 @@
 // 覆盖到 Chrome 152 / Firefox 144 / Safari 26——比我们内置预设更新）。
 //
 // 链路：标本 hex → profiles.FromClientHelloHex（解析）→ engine 编译重放
-//       → fp（独立解析器）抓 wire 逐字段对比。
+//
+//	→ fp（独立解析器）抓 wire 逐字段对比。
 //
 // 断言语义：GREASE 值归一化后精确相等——Chrome 每次连接会重随机化 GREASE 值，
 // 但 GREASE 的位置/数量/其余字段必须逐字节保真（对应 01 文档维度 #18 hex 回放
@@ -19,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geektls/core/profiles"
-	gbt "github.com/geektls/golang"
-	"github.com/geektls/tests/e2e/specimens"
+	gbt "github.com/geekbyter/geektls/bindings/golang"
+	"github.com/geekbyter/geektls/core/profiles"
+	"github.com/geekbyter/geektls/tests/e2e/specimens"
 	"github.com/gospider007/ja3"
 )
 

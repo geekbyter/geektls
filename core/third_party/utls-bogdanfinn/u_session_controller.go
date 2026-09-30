@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bogdanfinn/utls/internal/tls13"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/tls13"
 )
 
 // Tracking the state of calling conn.loadSession

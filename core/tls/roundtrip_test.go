@@ -14,7 +14,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // recordingConn 记录客户端写出的全部字节。

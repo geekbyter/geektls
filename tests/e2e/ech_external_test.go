@@ -19,8 +19,8 @@ import (
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/dns/dnsmessage"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // queryHTTPSRecord 用最小 DNS 客户端查 domain 的 HTTPS(65) 记录，

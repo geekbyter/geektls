@@ -71,27 +71,36 @@ PADDING 写在 CRYPTO **之前**（与 Chrome/quiche 相反）。这些现已全
 
 | 维度 | 结论 | 入口（profile.http3） |
 |---|---|---|
-| 首 datagram 尺寸 / PADDING 量 | ✅ | `initial_packet_size`（1200–1452，上游 `Config.InitialPacketSize`，无需 patch；0 = 默认 1280） |
+| 首 datagram 填充**下限** | ✅ | `initial_packet_size`（1200–1452，上游 `Config.InitialPacketSize`，无需 patch）。语义 = **补到下限**：不足补到它，自然尺寸更大就按自然尺寸发；不设 = 1200（协议下限，真机形态）。越界配置期报错（不静默夹取） |
+| 首飞 **SCID 长度** | ✅ | `connection_id_length`（nil = 上游默认 4；**0 = Chrome 形态的空 SCID**；1..20 自定义）。vendor patch #10：`quic.Transport.AllowZeroLengthConnectionIDs` + `http3.Transport` 转发 |
 | PADDING 在包内位置 | ✅ | `initial_layout.padding: "end"` = PADDING 在包尾（Chrome 形态）；缺省 = 上游（PADDING 在前） |
 | CRYPTO 分片表 | ✅ | `initial_layout.crypto_fragments: [300,250,...]`——按表切 CRYPTO 帧（含关闭 scrambling；表内分片保序，跳过上游的反固化洗牌） |
 | clienthello scrambling 开关 | ✅ | `initial_layout.disable_scramble`（SNI/ECH 中点切割的逐连接开关；Chrome 形态 = 关） |
 | coalesce 阈值 | ✅ | `initial_layout.coalesce_min_size`（0 = 默认 128；-1 = 禁用合并；>0 = 自定义）。注意语义：空 datagram 永远可装，"禁用"不会死锁握手 |
 
 Chrome 149 真机形态（`chrome_windows_h3.json`：首 datagram 1230B、CH 1784B 单片
-按包空间填充、PADDING 在尾）= `padding:"end"` + `disable_scramble:true` +
-`initial_packet_size` 按 MTU 设。嗅探器断言（`tests/e2e/quic_layout_test.go`）：
+按包空间填充、PADDING 在尾、**SCID 长 0**）= `padding:"end"` + `disable_scramble:true`
++ `connection_id_length: 0` + `initial_packet_size` 按下限设。嗅探器断言
+（`tests/e2e/quic_layout_test.go` / `quic_sniff_test.go`）：
 默认路径 PADDING 在前 + scramble 空洞（回归守门）；Chrome 形态 CRYPTO 严格连续
-+ PADDING 在尾（796B 实测）；分片表 [300 250 400] 逐片上线；coalesce 阈值经真服务端
-+ UDP 中继实证（默认第二飞 [initial handshake 1rtt] 合并，-1 拆成 [initial]+[handshake]）。
++ PADDING 在尾（字节数随下限/自然尺寸而定，本次实测 602B）；
+分片表 [300 250 400] 逐片上线；coalesce 阈值经真服务端 + UDP 中继实证
+（默认第二飞 [initial handshake 1rtt] 合并，-1 拆成 [initial]+[handshake]）；
+首飞 SCID 长度 0/4/8 三档 + `initial_source_connection_id` 空值闭环
+（`TestQUICConnectionIDLength`）。
 
-**不设 `initial_layout` 的默认路径与上游逐字节不变**（nil 即不触碰 packer/crypto stream）。
+**不设 `initial_layout` 的默认路径与上游逐字节不变**（nil 即不触碰 packer/crypto stream）；
+但**首包填充下限的默认值变了**：不设 `initial_packet_size` 时从"填到 1280"改为
+`max(自然尺寸, 1200)`（见 CHANGELOG 0.1.7，属线上可见变更）。
 
-已知残余差异（登记，未做）：① **SCID 长度**——Chrome 首飞 SCID 长 0（evidence 里
-`initial_source_connection_id` len=0），fork 默认 4 字节，ConnectionIDGenerator
-未从 http3.Transport 接出；② **填充目标粒度**——`initial_packet_size` 是每个含
-Initial 的 datagram 都补齐到该值，Chrome/quiche 是"至少 1200、内容超出则按自然
-尺寸"（真机首包 1230B 即自然尺寸）；要逐字节复刻 1230 需把
-`initialPaddingLen` 的语义从"补到固定值"改成"补到下限"，增量小、暂未做。
+H3-7 闭环已完成（2026-09-30，patch #10）：`connection_id_length: 0` 时
+`transport_params_raw` 里的 `initial_source_connection_id(0x0f)` 允许取**空值**
+（Chrome 实测形态，与真实 SCID 一致）；SCID 非零时空值仍**配置期报错**——
+声明与行为脱节比缺一项更难查。
+
+已知残余差异（登记）：逐字节复刻真机首包 1230B 还要求 CH 尺寸与 CRYPTO 分片表
+与 Chrome 一致（我们当前自然尺寸 ≤1200 ⇒ 首包 1200）；这属于 profile 侧
+（`crypto_fragments` + CH 形态）的保真问题，不在 QUIC 布局旋钮范围内。
 
 ## 行为层（T5）
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
 )
 
 var (

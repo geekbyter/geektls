@@ -34,7 +34,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // handshakeOnce 用给定 spec 对本地服务端握手一次。
@@ -194,4 +194,3 @@ func TestSpecReuseIsUnsafe(t *testing.T) {
 	}
 	t.Log("(c) 每次重新 CompileDetail：连续两次握手均成功")
 }
-

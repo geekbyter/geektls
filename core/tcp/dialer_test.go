@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func startTCPEcho(t *testing.T) string {

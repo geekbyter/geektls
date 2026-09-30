@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	fhttp "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/quic-go-utls/http3"
+	fhttp "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
 
-	h3core "github.com/geektls/core/h3"
+	h3core "github.com/geekbyter/geektls/core/h3"
 )
 
 // learnAltSvc 从响应头学习 Alt-Svc（h3/h3-29 广告）。显式负缓存优先：

@@ -1,3 +1,5 @@
+//go:build geektls_upstream_quic_integrations
+
 package self_test
 
 import (
@@ -10,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	quicproxy "github.com/bogdanfinn/quic-go-utls/integrationtests/tools/proxy"
-	"github.com/bogdanfinn/quic-go-utls/qlog"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	quicproxy "github.com/geekbyter/geektls/core/third_party/quic-go-utls/integrationtests/tools/proxy"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlog"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter"
 
 	"github.com/stretchr/testify/require"
 )

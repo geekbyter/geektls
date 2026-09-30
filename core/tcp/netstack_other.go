@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // DialNetstack 非 Linux：netstack 档不可用。

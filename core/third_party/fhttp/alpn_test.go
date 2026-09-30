@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2013 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -13,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	. "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/httptest"
+	. "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptest"
 )
 
 func TestNextProtoUpgrade(t *testing.T) {

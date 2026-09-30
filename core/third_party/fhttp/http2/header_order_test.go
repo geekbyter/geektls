@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 package http2
 
 import (
@@ -6,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	http "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/httptrace"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptrace"
 )
 
 func TestHeaderOrder(t *testing.T) {

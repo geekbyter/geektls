@@ -2,46 +2,46 @@
 
 package quic
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_send_conn_test.go github.com/bogdanfinn/quic-go-utls SendConn"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_send_conn_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls SendConn"
 type SendConn = sendConn
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_raw_conn_test.go github.com/bogdanfinn/quic-go-utls RawConn"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_raw_conn_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls RawConn"
 type RawConn = rawConn
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_sender_test.go github.com/bogdanfinn/quic-go-utls Sender"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_sender_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls Sender"
 type Sender = sender
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_stream_sender_test.go github.com/bogdanfinn/quic-go-utls StreamSender"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_stream_sender_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls StreamSender"
 type StreamSender = streamSender
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_stream_control_frame_getter_test.go github.com/bogdanfinn/quic-go-utls StreamControlFrameGetter"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_stream_control_frame_getter_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls StreamControlFrameGetter"
 type StreamControlFrameGetter = streamControlFrameGetter
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_stream_frame_getter_test.go github.com/bogdanfinn/quic-go-utls StreamFrameGetter"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_stream_frame_getter_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls StreamFrameGetter"
 type StreamFrameGetter = streamFrameGetter
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_frame_source_test.go github.com/bogdanfinn/quic-go-utls FrameSource"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_frame_source_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls FrameSource"
 type FrameSource = frameSource
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_ack_frame_source_test.go github.com/bogdanfinn/quic-go-utls AckFrameSource"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_ack_frame_source_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls AckFrameSource"
 type AckFrameSource = ackFrameSource
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_sealing_manager_test.go github.com/bogdanfinn/quic-go-utls SealingManager"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_sealing_manager_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls SealingManager"
 type SealingManager = sealingManager
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_unpacker_test.go github.com/bogdanfinn/quic-go-utls Unpacker"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_unpacker_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls Unpacker"
 type Unpacker = unpacker
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_packer_test.go github.com/bogdanfinn/quic-go-utls Packer"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_packer_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls Packer"
 type Packer = packer
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_mtu_discoverer_test.go github.com/bogdanfinn/quic-go-utls MTUDiscoverer"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_mtu_discoverer_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls MTUDiscoverer"
 type MTUDiscoverer = mtuDiscoverer
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_conn_runner_test.go github.com/bogdanfinn/quic-go-utls ConnRunner"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_conn_runner_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls ConnRunner"
 type ConnRunner = connRunner
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/bogdanfinn/quic-go-utls -destination mock_packet_handler_test.go github.com/bogdanfinn/quic-go-utls PacketHandler"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_packet_handler_test.go github.com/geekbyter/geektls/core/third_party/quic-go-utls PacketHandler"
 type PacketHandler = packetHandler
 
-//go:generate sh -c "go tool mockgen -typed -package quic -self_package github.com/bogdanfinn/quic-go-utls -self_package github.com/bogdanfinn/quic-go-utls -destination mock_packetconn_test.go net PacketConn"
+//go:generate sh -c "go tool mockgen -typed -package quic -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -self_package github.com/geekbyter/geektls/core/third_party/quic-go-utls -destination mock_packetconn_test.go net PacketConn"

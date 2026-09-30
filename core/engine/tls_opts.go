@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	utlsb "github.com/bogdanfinn/utls"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 	utls "github.com/refraction-networking/utls"
 )
 

@@ -19,12 +19,12 @@ import (
 	"testing"
 	"time"
 
-	quic "github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	utlsb "github.com/bogdanfinn/utls"
+	quic "github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	h3core "github.com/geektls/core/h3"
-	"github.com/geektls/core/profiles"
+	h3core "github.com/geekbyter/geektls/core/h3"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // layoutQUICConfig：chrome_133 + QUIC 内层形态（E1 实测裁剪）+ 指定布局。
@@ -187,6 +187,7 @@ func layoutJSON(l *profiles.H3InitialLayout) string {
 type relaySniff struct {
 	mu      sync.Mutex
 	dgrams  [][]byte
+	markIdx int
 	server  *net.UDPAddr
 	conn    *net.UDPConn
 	closeCh chan struct{}
@@ -231,6 +232,20 @@ func (r *relaySniff) captured() [][]byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([][]byte(nil), r.dgrams...)
+}
+
+// mark 记录当前位置；sinceMark 返回 mark 之后抓到的 datagram（0-RTT 测试
+// 用来切掉首连的流量）。
+func (r *relaySniff) mark() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.markIdx = len(r.dgrams)
+}
+
+func (r *relaySniff) sinceMark() [][]byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([][]byte(nil), r.dgrams[r.markIdx:]...)
 }
 
 // 调试：返回服务端地址字符串。

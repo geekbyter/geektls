@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 	"golang.org/x/sys/unix"
 )
 

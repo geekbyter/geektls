@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/utils"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/utils"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter"
 )
 
 // EventSchema is the qlog event schema for QUIC

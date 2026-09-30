@@ -1,3 +1,5 @@
+//go:build geektls_upstream_utls_tests
+
 package tls
 
 import (

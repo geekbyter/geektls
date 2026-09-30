@@ -1,3 +1,5 @@
+//go:build geektls_upstream_quic_integrations
+
 package self_test
 
 import (
@@ -18,17 +20,17 @@ import (
 	"testing"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/httptrace"
-	tls "github.com/bogdanfinn/utls"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptrace"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	"github.com/bogdanfinn/quic-go-utls/http3/qlog"
-	quicproxy "github.com/bogdanfinn/quic-go-utls/integrationtests/tools/proxy"
-	"github.com/bogdanfinn/quic-go-utls/testutils/events"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3/qlog"
+	quicproxy "github.com/geekbyter/geektls/core/third_party/quic-go-utls/integrationtests/tools/proxy"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/testutils/events"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -3,7 +3,7 @@ package protocol
 import (
 	"fmt"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 )
 
 // EncryptionLevel is the encryption level

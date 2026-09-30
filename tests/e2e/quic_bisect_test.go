@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	quic "github.com/bogdanfinn/quic-go-utls"
-	utlsb "github.com/bogdanfinn/utls"
+	quic "github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	h3core "github.com/geektls/core/h3"
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	h3core "github.com/geekbyter/geektls/core/h3"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // tryQUICHello 用给定 detail 发 Initial，返回是否抓到了包。

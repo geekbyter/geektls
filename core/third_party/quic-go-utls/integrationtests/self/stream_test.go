@@ -1,3 +1,5 @@
+//go:build geektls_upstream_quic_integrations
+
 package self_test
 
 import (
@@ -8,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bogdanfinn/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
 
 	"golang.org/x/sync/errgroup"
 

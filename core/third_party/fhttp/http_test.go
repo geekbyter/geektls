@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2014 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -13,7 +15,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/bogdanfinn/fhttp/internal/testenv"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/internal/testenv"
 )
 
 func TestForeachHeaderElement(t *testing.T) {

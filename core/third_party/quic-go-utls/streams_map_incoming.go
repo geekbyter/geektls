@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
-	"github.com/bogdanfinn/quic-go-utls/internal/qerr"
-	"github.com/bogdanfinn/quic-go-utls/internal/wire"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/qerr"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/wire"
 )
 
 type incomingStream interface {

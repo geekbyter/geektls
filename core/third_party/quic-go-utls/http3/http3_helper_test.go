@@ -18,13 +18,13 @@ import (
 	"testing"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
-	tls "github.com/bogdanfinn/utls"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/http3/qlog"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
-	"github.com/bogdanfinn/quic-go-utls/quicvarint"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3/qlog"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/quicvarint"
 	"github.com/quic-go/qpack"
 
 	"github.com/stretchr/testify/require"

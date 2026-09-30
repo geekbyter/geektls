@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	quic "github.com/bogdanfinn/quic-go-utls"
-	utlsb "github.com/bogdanfinn/utls"
+	quic "github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 )
 
 // buildTransportParamsRaw 编译 profile.http3.transport_params_raw：
@@ -103,8 +103,9 @@ func readVarintValue(b []byte) (uint64, bool) {
 // 对端触发流控错误或静默丢包）。冲突规则（违反即报错，不静默忽略）：
 //
 //   - 服务端专属参数（0x00/0x02/0x0d/0x10）出现在客户端 blob ⇒ 错
-//   - initial_source_connection_id(0x0f)：必须与逐连接随机 SCID 一致，profile
-//     无法钉死 ⇒ 错（Chrome 发空值，前提是 SCID 长度 0；fork 默认 SCID 长 4）
+//   - initial_source_connection_id(0x0f)：必须与真实 SCID 一致。**唯一合法形态**是
+//     `connection_id_length: 0` 时的空值（Chrome 实测如此，patch #10 让 SCID 真能
+//     为 0）；其余一律错——逐连接随机 SCID 钉不死，写别的值是"声明与行为脱节"
 //   - max_udp_payload_size(0x03)：必须 1200..1500（上限 = fork 接收缓冲
 //     protocol.MaxIncomingPacketSize；vendor patch #9 把接收缓冲从 1452 提到
 //     1500，Chrome 的 1472 因此可用），并映射为 Config.MaxUDPPayloadSize
@@ -117,12 +118,20 @@ func readVarintValue(b []byte) (uint64, bool) {
 //   - max_ack_delay(0x0b)/ack_delay_exponent(0x0a)：纯声明项——描述的是**我们
 //     自己**的 ACK 行为，quic-go 发包侧硬编码 MaxAckDelayInclGranularity，
 //     声明什么不影响线上正确性（只影响对端 RTT 估计），故不映射、不报错
-func applyKnownRawTP(tps utlsb.TransportParameters, cfg *quic.Config) error {
+//
+// scidLen 是 profile 声明的 SCID 长度（-1 = 未声明 = fork 默认 4），0x0f 的
+// 合法性按它判定（见上面的规则说明）。
+func applyKnownRawTP(tps utlsb.TransportParameters, cfg *quic.Config, scidLen int) error {
 	seen := map[uint64]bool{}
 	for _, tp := range tps {
 		fake, ok := tp.(*utlsb.FakeQUICTransportParameter)
 		if !ok {
 			continue // GREASE 参数：id 逐连接随机，不参与校验
+		}
+		// 0x0f 的唯一合法形态：SCID 长度 0 且取空值（Chrome 实测）。必须在通用禁令
+		// 之前判定，否则合法形态也会被 forbiddenClientRawTP 直接拒掉。
+		if fake.Id == 0x0f && scidLen == 0 && len(fake.Val) == 0 {
+			continue
 		}
 		if seen[fake.Id] {
 			return fmt.Errorf("h3: transport_params_raw 中参数 %#x 重复（RFC 9000 §7.4 禁止）", fake.Id)
@@ -166,6 +175,6 @@ var forbiddenClientRawTP = map[uint64]string{
 	0x02: "stateless_reset_token 仅服务端发送",
 	0x0d: "preferred_address 仅服务端发送",
 	0x10: "retry_source_connection_id 仅服务端发送",
-	0x0f: "initial_source_connection_id 必须与逐连接随机 SCID 一致，profile 钉不死" +
-		"（Chrome 发的是空值，前提是 SCID 长度 0；fork 默认 SCID 长 4，SCID 长度控制未接线）",
+	0x0f: "initial_source_connection_id 必须与真实 SCID 一致；唯一合法形态是 " +
+		"connection_id_length=0 时的空值（Chrome 实测如此），其余值钉不死逐连接随机 SCID",
 }

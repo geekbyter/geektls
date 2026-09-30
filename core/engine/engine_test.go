@@ -19,8 +19,8 @@ import (
 
 	"golang.org/x/net/http2"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // echoServer：同时支持 h2 与 http/1.1 的回环服务。

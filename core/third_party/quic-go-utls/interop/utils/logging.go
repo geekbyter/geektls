@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	h3qlog "github.com/bogdanfinn/quic-go-utls/http3/qlog"
-	"github.com/bogdanfinn/quic-go-utls/internal/utils"
-	"github.com/bogdanfinn/quic-go-utls/qlog"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	h3qlog "github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3/qlog"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/utils"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlog"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter"
 )
 
 // GetSSLKeyLog creates a file for the TLS key log

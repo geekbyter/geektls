@@ -24,7 +24,7 @@ import (
 
 	"golang.org/x/net/http2"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 type testPKI struct {

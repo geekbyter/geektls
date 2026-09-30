@@ -1,3 +1,5 @@
+//go:build geektls_upstream_quic_integrations
+
 package self_test
 
 import (
@@ -9,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
-	tls "github.com/bogdanfinn/utls"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	quicproxy "github.com/bogdanfinn/quic-go-utls/integrationtests/tools/proxy"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	quicproxy "github.com/geekbyter/geektls/core/third_party/quic-go-utls/integrationtests/tools/proxy"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

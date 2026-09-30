@@ -10,7 +10,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // extTypeID 通过扩展自身的 Read 序列化取线上 type（前两字节），是最贴近 wire 的断言。

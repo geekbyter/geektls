@@ -17,7 +17,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func (s *Session) doH1(e *poolEntry, req *Request, u *url.URL, headers [][2]string) (*Response, error) {

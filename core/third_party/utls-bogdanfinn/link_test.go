@@ -1,3 +1,5 @@
+//go:build geektls_upstream_utls_tests
+
 // Copyright 2020 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -11,7 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bogdanfinn/utls/testenv"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/testenv"
 )
 
 // Tests that the linker is able to remove references to the Client or Server if unused.

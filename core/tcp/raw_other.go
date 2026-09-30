@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // ProbeSYN 非 Linux 平台：raw socket 档不可用（docs/tcp-platform-matrix.md）。

@@ -3,7 +3,7 @@ package handshake
 import (
 	"encoding/binary"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
 )
 
 func createAEAD(suite cipherSuite, trafficSecret []byte, v protocol.Version) *xorNonceAEAD {

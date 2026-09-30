@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	geektls "github.com/geektls/golang"
+	geektls "github.com/geekbyter/geektls/bindings/golang"
 )
 
 func main() {

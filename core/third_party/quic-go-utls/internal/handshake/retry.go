@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
 )
 
 // Instead of using an init function, the AEADs are created lazily.
-// For more details see https://github.com/bogdanfinn/quic-go-utls/issues/4894.
+// For more details see https://github.com/geekbyter/geektls/core/third_party/quic-go-utls/issues/4894.
 var (
 	retryAEADv1 cipher.AEAD // used for QUIC v1 (RFC 9000)
 	retryAEADv2 cipher.AEAD // used for QUIC v2 (RFC 9369)

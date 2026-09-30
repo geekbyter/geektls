@@ -38,7 +38,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // countingCache 包一层记录 Get/Put——用于区分"没拿到票据"与"拿到票据但服务端不接受 PSK"，

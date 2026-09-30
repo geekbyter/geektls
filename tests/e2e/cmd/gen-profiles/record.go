@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/geektls/core/profiles"
-	"github.com/geektls/tests/e2e/specimens"
+	"github.com/geekbyter/geektls/core/profiles"
+	"github.com/geekbyter/geektls/tests/e2e/specimens"
 )
 
 // e1Record 对应 tests/e2e/cmd/e1-browser 的记录（只取生成预设所需字段）。

@@ -18,7 +18,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // chromeH2EvidenceAbsentIDs 是 E1 证据里 Chrome/Edge **不发**、而其它常见实现

@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/net/http2"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // startStallServer 起一个带 /stall（发一字节后就挂住）与 /trickle（分块慢发）的

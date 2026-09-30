@@ -10,7 +10,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func TestPresetsAreValid(t *testing.T) {
@@ -90,9 +90,9 @@ func TestPresetJA4Pinned(t *testing.T) {
 		"edge_148_ios":    "t13d2014h2_a09f3c656075_14788d8d241b",
 		// peet.ws 记录导入（2026-09-30，grade=E3）：与记录自报 ja4 逐字符一致
 		// （H2 侧另核对 akamai 指纹串与其 md5，见导入脚本与提交说明）。
-		"edge_154_windows":          "t13d1516h2_8daaf6152771_806a8c22fdea",
-		"yabrowser_26_8_windows":    "t13d1516h2_8daaf6152771_806a8c22fdea",
-		"opera_136_windows":         "t13d1517h2_8daaf6152771_cb7bf5808d99",
+		"edge_154_windows":           "t13d1516h2_8daaf6152771_806a8c22fdea",
+		"yabrowser_26_8_windows":     "t13d1516h2_8daaf6152771_806a8c22fdea",
+		"opera_136_windows":          "t13d1517h2_8daaf6152771_cb7bf5808d99",
 		"quarkpc_7_3_5_1009_windows": "t13d1515h1_8daaf6152771_cc38aef784ae",
 		// Brave：记录自报 t13d1517…（17 个扩展），但它自己的 ja3 只列了 16 个且不含
 		// 51764 ⇒ **记录内部不自洽**（ja4 疑来自另一次握手）。本预设以记录的 ja3/扩展

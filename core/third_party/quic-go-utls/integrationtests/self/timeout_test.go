@@ -1,3 +1,5 @@
+//go:build geektls_upstream_quic_integrations
+
 package self_test
 
 import (
@@ -12,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
-	"github.com/bogdanfinn/quic-go-utls/internal/synctest"
-	"github.com/bogdanfinn/quic-go-utls/qlog"
-	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
-	"github.com/bogdanfinn/quic-go-utls/testutils/simnet"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/synctest"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlog"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/qlogwriter"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/testutils/simnet"
 
 	"github.com/stretchr/testify/require"
 )
@@ -218,7 +220,7 @@ func TestKeepAlive(t *testing.T) {
 		requireIdleTimeoutError(t, err)
 
 		// can't rely on the server connection closing, since we impose a minimum idle timeout of 5s,
-		// see https://github.com/bogdanfinn/quic-go-utls/issues/4751
+		// see https://github.com/geekbyter/geektls/core/third_party/quic-go-utls/issues/4751
 		serverConn.CloseWithError(0, "")
 	})
 }

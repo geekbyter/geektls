@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"sync"
 
-	http "github.com/bogdanfinn/fhttp"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
 )
 
 // hello world, the web server

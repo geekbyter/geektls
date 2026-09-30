@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 package http_test
 
 import (
@@ -14,11 +16,11 @@ import (
 	"strings"
 	"testing"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	http "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/http2"
-	"github.com/bogdanfinn/fhttp/httptest"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/http2"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptest"
 )
 
 // Basic http test with Header Order + enable push

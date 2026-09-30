@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	http "github.com/bogdanfinn/fhttp"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
 
 	"github.com/quic-go/qpack"
 	"github.com/stretchr/testify/require"
@@ -30,7 +30,7 @@ func TestRequestHeaderParsing(t *testing.T) {
 		testRequestHeaderParsing(t, "/foo")
 	})
 
-	// see https://github.com/bogdanfinn/quic-go-utls/pull/1898
+	// see https://github.com/geekbyter/geektls/core/third_party/quic-go-utls/pull/1898
 	t.Run("path starting with //", func(t *testing.T) {
 		testRequestHeaderParsing(t, "//foo")
 	})

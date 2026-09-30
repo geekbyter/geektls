@@ -12,15 +12,15 @@ const (
 	// ABI 是 C ABI 主版本号，只增不改；破坏性变更升号（docs/02-ffi-abi.md §4）。
 	ABI = 1
 	// Core 是 core 语义版本。
-	Core = "0.1.7"
+	Core = "0.1.8"
 )
 
 // stackModules 是"指纹栈"依赖（顺序即报告顺序）。语义见 UTLSVersion。
 var stackModules = []string{
-	"github.com/refraction-networking/utls", // TCP 侧 ClientHello spec 引擎
-	"github.com/bogdanfinn/utls",            // QUIC 内层 TLS（随 quic-go-utls vendor）
-	"github.com/bogdanfinn/fhttp",           // H2 帧层 + HPACK（vendor fork）
-	"github.com/bogdanfinn/quic-go-utls",    // QUIC + H3（vendor fork）
+	"github.com/refraction-networking/utls",                         // TCP 侧 ClientHello spec 引擎
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn", // QUIC 内层 TLS（随 quic-go-utls vendor）
+	"github.com/geekbyter/geektls/core/third_party/fhttp",           // H2 帧层 + HPACK（vendor fork）
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls",    // QUIC + H3（vendor fork）
 }
 
 var (
@@ -30,12 +30,14 @@ var (
 
 // UTLSVersion 报告动态库里**实际链接**的指纹栈版本（uTLS 及其同族 fork），形如：
 //
-//	refraction-networking/utls v1.8.2; bogdanfinn/utls v1.7.8-barnius;
-//	bogdanfinn/fhttp v0.6.9 => ./third_party/fhttp; ...
+//	refraction-networking/utls v1.8.2;
+//	geekbyter/geektls/core/third_party/utls-bogdanfinn (in-tree);
+//	geekbyter/geektls/core/third_party/fhttp (in-tree); ...
 //
-// 数据取自二进制内嵌的 build info（runtime/debug.ReadBuildInfo），因此**跟随
-// go.mod 自动更新**，不会像手写常量那样漂移；本地 replace 的 vendor fork 会显示成
-// `=> ./third_party/...`，正好说明用的是自持 fork 而非上游原版（出问题时报版本也有的放矢）。
+// 外部模块（refraction utls）取自二进制内嵌的 build info（runtime/debug.ReadBuildInfo），
+// 跟随 go.mod 自动更新；三个 vendor fork 自 2026-09-30 起**内联进 core 模块**
+// （core/third_party/*，不再有独立 go.mod / replace），因此不在 build info 的 Deps 里，
+// 报告为 `(in-tree)`——版本随 core 一同发布，出问题时报 core 版本即可定位。
 //
 // 取不到时为 ""（例如 build info 被裁剪的极端构建）——调用方必须容忍空串：
 // gtls_version 的 utls 字段就是这个值，历史版本一直为空，属**只填不改**的语义。
@@ -47,6 +49,7 @@ func UTLSVersion() string {
 		}
 		var parts []string
 		for _, want := range stackModules {
+			found := false
 			for _, m := range info.Deps {
 				if m.Path != want {
 					continue
@@ -60,7 +63,12 @@ func UTLSVersion() string {
 					}
 				}
 				parts = append(parts, v)
+				found = true
 				break
+			}
+			if !found && info.Main.Path != "" && strings.HasPrefix(want, info.Main.Path+"/") {
+				// 内联 vendor：属于主模块，不在 Deps 里，报告为 (in-tree)。
+				parts = append(parts, strings.TrimPrefix(want, "github.com/")+" (in-tree)")
 			}
 		}
 		stackStr = strings.Join(parts, "; ")

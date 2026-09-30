@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // protoSession 建会话：默认用 chrome_133（有 h2/hpack；**自带 http3 节**，

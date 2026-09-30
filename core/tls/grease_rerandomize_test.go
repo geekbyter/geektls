@@ -22,7 +22,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // greaseSlots 取出 detail 里各 GREASE 采样位置的**线上原值**（不做归一化）。

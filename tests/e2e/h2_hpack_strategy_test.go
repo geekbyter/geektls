@@ -20,9 +20,9 @@ import (
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2/hpack"
 
-	h2core "github.com/geektls/core/h2"
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	h2core "github.com/geekbyter/geektls/core/h2"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // hpackFeat 是一个头字段的线上编码特征。

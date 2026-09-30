@@ -1,3 +1,5 @@
+//go:build geektls_upstream_utls_tests
+
 // Copyright 2009 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -27,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bogdanfinn/utls/internal/fips140tls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/fips140tls"
 )
 
 func testClientHello(t *testing.T, serverConfig *Config, m handshakeMessage) {

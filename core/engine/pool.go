@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bogdanfinn/fhttp/http2"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/http2"
 )
 
 const (

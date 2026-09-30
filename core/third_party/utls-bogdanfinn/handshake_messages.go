@@ -112,6 +112,8 @@ func (m *clientHelloMsg) marshalMsg(echInner bool) ([]byte, error) {
 
 func (m *clientHelloMsg) marshalMsgReorderOuterExts(echInner bool, outerExts []uint16) ([]byte, error) {
 	// [uTLS SECTION END]
+	println("GEEKTLS-DEBUG marshalMsg: earlyData=", m.earlyData, "hasTP=", m.quicTransportParameters != nil,
+		"pskIdents=", len(m.pskIdentities), "echInner=", echInner)
 	var exts cryptobyte.Builder
 	if m.nextProtoNeg {
 		// draft-agl-tls-nextprotoneg-04

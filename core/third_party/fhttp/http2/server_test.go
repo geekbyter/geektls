@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2014 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -27,10 +29,10 @@ import (
 	"testing"
 	"time"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	http "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/httptest"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptest"
 
 	"golang.org/x/net/http2/hpack"
 )
@@ -2682,8 +2684,9 @@ func readBodyHandler(t *testing.T, want string) func(w http.ResponseWriter, r *h
 }
 
 // TestServerWithCurl currently fails, hence the LenientCipherSuites test. See:
-//   https://github.com/tatsuhiro-t/nghttp2/issues/140 &
-//   http://sourceforge.net/p/curl/bugs/1472/
+//
+//	https://github.com/tatsuhiro-t/nghttp2/issues/140 &
+//	http://sourceforge.net/p/curl/bugs/1472/
 func TestServerWithCurl(t *testing.T)                     { testServerWithCurl(t, false) }
 func TestServerWithCurl_LenientCipherSuites(t *testing.T) { testServerWithCurl(t, true) }
 

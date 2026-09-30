@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bogdanfinn/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

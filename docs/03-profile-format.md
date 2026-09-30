@@ -55,8 +55,10 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
       [1, 30000],
       ["grease", 8]                            // 随机 GREASE id + 8 字节随机数据，位置任意
     ],
-    "initial_packet_size": 1280,               // 首个 Initial datagram 尺寸（= PADDING 填到多少），1200..1452
-                                               // 不设 = 上游默认 1280；越界在建 transport 时报错（不静默夹取）
+    "connection_id_length": 0,                 // 首飞 SCID 长度（patch #10）：0 = Chrome 形态空 SCID，nil = 上游默认 4，1..20 自定义
+                                               // 与 0x0f(initial_source_connection_id) 是一对：SCID=0 时后者才允许空值
+    "initial_packet_size": 1230,               // 首个 Initial datagram 的**填充下限**（不是"精确尺寸"），1200..1452
+                                               // 不设 = 1200（协议下限；不足补到它，自然尺寸更大就按自然尺寸发）
     "initial_layout": {                        // 首飞 Initial 布局（vendor patch #8；不设 = 上游默认逐字节不变）
       "padding": "end",                        // PADDING 在包尾（Chrome 形态）；缺省 = 上游（PADDING 在 CRYPTO 前）
       "disable_scramble": true,                // 关内置 ClientHello scrambling（SNI/ECH 中点切割）

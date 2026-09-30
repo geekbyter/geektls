@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // captureServer 是一个"把请求头按原样记下来"的极简 HTTP/1.1 服务端（明文）。

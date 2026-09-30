@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func proxySession(t *testing.T, opts SessionOptions) *Session {

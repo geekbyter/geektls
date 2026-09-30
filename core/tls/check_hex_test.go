@@ -9,7 +9,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // captureCHHex 真实握手一次并返回客户端写出的 ClientHello record hex
@@ -86,10 +86,10 @@ func TestIsClientHelloHexShape(t *testing.T) {
 		"t13d1516h2_8daaf6152771_e2d80978ab2e",  // JA4 短哈希
 		"771,4865-4866-4867,0-41-51,29,0",       // JA3
 		"t13d1516h2_002f,0035,009c,009d_0904",   // JA4R 形状
-		"xyz",                                    // 非 hex
-		"1603",                                   // 太短
-		"1703010020" + strings.Repeat("ab", 16),  // record type 0x17（app-data）
-		strings.Repeat("ab", 64),                 // 无 TLS 头
+		"xyz",                                   // 非 hex
+		"1603",                                  // 太短
+		"1703010020" + strings.Repeat("ab", 16), // record type 0x17（app-data）
+		strings.Repeat("ab", 64),                // 无 TLS 头
 	}
 	for _, s := range no {
 		if isClientHelloHexShape(s) {

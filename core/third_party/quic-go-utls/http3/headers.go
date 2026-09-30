@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	http "github.com/bogdanfinn/fhttp"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
 
 	"golang.org/x/net/http/httpguts"
 

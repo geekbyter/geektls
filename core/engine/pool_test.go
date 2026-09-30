@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/net/http2"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // countingServer：统计 TLS 握手次数的回环服务（h2 + h1）。

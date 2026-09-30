@@ -25,9 +25,9 @@ import (
 	"strings"
 	"sync"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	http "github.com/bogdanfinn/fhttp"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
 
 	"golang.org/x/net/http/httpguts"
 )

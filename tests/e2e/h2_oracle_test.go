@@ -16,9 +16,9 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	h2core "github.com/geektls/core/h2"
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	h2core "github.com/geekbyter/geektls/core/h2"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // expectedAkamai 是各预设 http2 节的期望值（与预设 JSON 保持同步）。

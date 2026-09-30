@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"unsafe"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 )
 
-//go:linkname cipherSuitesTLS13 github.com/bogdanfinn/utls.cipherSuitesTLS13
+//go:linkname cipherSuitesTLS13 github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn.cipherSuitesTLS13
 var cipherSuitesTLS13 []unsafe.Pointer
 
-//go:linkname defaultCipherSuitesTLS13 github.com/bogdanfinn/utls.defaultCipherSuitesTLS13
+//go:linkname defaultCipherSuitesTLS13 github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn.defaultCipherSuitesTLS13
 var defaultCipherSuitesTLS13 []uint16
 
-//go:linkname defaultCipherSuitesTLS13NoAES github.com/bogdanfinn/utls.defaultCipherSuitesTLS13NoAES
+//go:linkname defaultCipherSuitesTLS13NoAES github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn.defaultCipherSuitesTLS13NoAES
 var defaultCipherSuitesTLS13NoAES []uint16
 
 var cipherSuitesModified bool

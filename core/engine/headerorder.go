@@ -24,7 +24,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 const (

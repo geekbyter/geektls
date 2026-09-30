@@ -20,10 +20,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/geektls/core/engine"
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
-	"github.com/geektls/core/version"
+	"github.com/geekbyter/geektls/core/engine"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/version"
 )
 
 const usage = `geektls — TLS/HTTP 指纹工具（命令行）

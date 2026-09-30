@@ -198,7 +198,13 @@ layers:
       status: implemented
       evidence: local
       blocking: null
-      note: "2026-09-30：profile.http3.initial_packet_size（1200–1452，0 = 上游默认 1280）经上游 quic.Config.InitialPacketSize 决定**首个 Initial datagram 尺寸 = PADDING 填到多少**，无需 fork patch；越界在建 transport 时报错（不静默夹取）。线上验证 tests/e2e/quic_sniff_test.go TestQUICInitialPacketSize（1350→[1350 1350]、1200→[1200 1200]、不设→[1280 1280]，默认路径逐字节不变）"
+      note: "2026-09-30 第二轮（下限语义）：profile.http3.initial_packet_size 是首个 Initial datagram 的**填充下限**（floor，1200–1452），不足补到它、自然尺寸更大就按自然尺寸发；**不设 = 1200**（协议下限 + 真机形态：Chrome 149 只在需要时补到 1200，首包 1230B 即自然尺寸）。**线上可见变更**：不设时首 datagram 由 1280 变为 max(自然尺寸,1200)（我们当前自然尺寸 ≤1200 ⇒ 实测 1200）。经上游 quic.Config.InitialPacketSize 生效，无需 fork patch；越界配置期报错（不静默夹取）。验证 tests/e2e/quic_sniff_test.go TestQUICInitialPacketSize（下限 1350 ⇒ [1350 1350]；不设 == 显式 1200；≥1200）"
+    - id: h3.scid_length
+      target: B
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "2026-09-30 第二轮（vendor patch #10）：profile.http3.connection_id_length（nil = 上游默认 4；0 = Chrome 形态的**空 SCID**；1..20 自定义）经 quic.Transport.AllowZeroLengthConnectionIDs + http3.Transport 字段转发生效（仅 Dial==nil 的自建 transport 路径；首飞 DCID 仍 8 字节随机，不受影响）。同时闭合 H3-7：transport_params_raw 里的 initial_source_connection_id(0x0f) 在 SCID=0 时允许**空值**（Chrome 实测），SCID 非零时空值仍配置期报错。验证 tests/e2e/quic_sniff_test.go TestQUICConnectionIDLength（接线层读转发字段 + 线上层嗅探 SCID 0/4/8 三档）+ core/h3 TestTransportParamsInitialSourceConnectionID"
     - id: h3.initial_datagram_layout
       target: A
       status: implemented

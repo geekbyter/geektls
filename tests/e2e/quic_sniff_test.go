@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	quic "github.com/bogdanfinn/quic-go-utls"
-	utlsb "github.com/bogdanfinn/utls"
+	quic "github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 	utls "github.com/refraction-networking/utls"
 
-	h3core "github.com/geektls/core/h3"
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	h3core "github.com/geekbyter/geektls/core/h3"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 func tpVarint(params map[uint64][]byte, id uint64) (uint64, bool) {
@@ -327,9 +327,12 @@ func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, 
 	return chProfile, dgramLens, pkts
 }
 
-// TestQUICInitialPacketSize 断言 profile.http3.initial_packet_size 真的决定首个
-// Initial datagram 的尺寸（= PADDING 填到多少）；**不设该字段时保持上游默认 1280**
-// （默认路径逐字节不变是硬要求：内置 364 条预设没有任何一条带这个键）。
+// TestQUICInitialPacketSize 断言 profile.http3.initial_packet_size 是**填充下限**
+// （floor）而不是"精确尺寸"：
+//   - 下限 > 自然尺寸 ⇒ 补到下限（1350 ⇒ 1350）；
+//   - 下限 ≤ 自然尺寸 ⇒ 按自然尺寸发（真机形态：Chrome 只在需要时补到 1200，
+//     首包 1230B 即自然尺寸）；
+//   - 不设 = 下限 1200（协议下限），与显式 1200 逐字节相同。
 func TestQUICInitialPacketSize(t *testing.T) {
 	first := func(size int) int {
 		t.Helper()
@@ -347,13 +350,15 @@ func TestQUICInitialPacketSize(t *testing.T) {
 	}
 
 	if got := first(1350); got != 1350 {
-		t.Errorf("initial_packet_size=1350 时首 datagram = %d，want 1350", got)
+		t.Errorf("下限 1350（> 自然尺寸）时首 datagram = %d，want 1350", got)
 	}
-	if got := first(1200); got != 1200 {
-		t.Errorf("initial_packet_size=1200 时首 datagram = %d，want 1200", got)
+	def, lo := first(0), first(1200)
+	t.Logf("首 datagram：不设 = %d，显式 1200 = %d，显式 1350 = 1350", def, lo)
+	if def != lo {
+		t.Errorf("不设时首 datagram = %d，显式 1200 = %d，want 相同（不设 = 下限 1200）", def, lo)
 	}
-	if got := first(0); got != 1280 {
-		t.Errorf("未设字段时首 datagram = %d，want 1280（上游默认；默认路径不能被改动）", got)
+	if def < 1200 {
+		t.Errorf("首 datagram = %d < 1200（QUIC 要求客户端每个含 Initial 的 datagram ≥1200）", def)
 	}
 
 	// 越界值：在 QUICConfigFromProfile 就报错，而不是被上游静默夹到 1452
@@ -364,6 +369,141 @@ func TestQUICInitialPacketSize(t *testing.T) {
 	p.HTTP3 = &profiles.HTTP3Profile{Enabled: true, InitialPacketSize: 1500}
 	if _, err := h3core.QUICConfigFromProfile(p); err == nil {
 		t.Error("initial_packet_size=1500 应当报错（不静默夹取）")
+	}
+}
+
+// sniffFirstDatagram 用给定的拨号函数发一次首飞，返回客户端首个 UDP 报文原样
+// （不解密：只看长头字段）。没有真服务端 ⇒ 拨号必然失败，本函数测的就是首飞报文。
+func sniffFirstDatagram(t *testing.T, dial func(ctx context.Context, addr net.Addr) error) []byte {
+	t.Helper()
+	sniffer, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sniffer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	var dialErr error
+	go func() {
+		defer close(done)
+		dialErr = dial(ctx, sniffer.LocalAddr())
+	}()
+
+	if err := sniffer.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 65535)
+	n, _, rerr := sniffer.ReadFromUDP(buf)
+	cancel()
+	<-done // 等拨号收尾，避免调用方在拨号中途 Close
+	if rerr != nil {
+		t.Fatalf("没等到首飞报文：%v（拨号侧：%v）", rerr, dialErr)
+	}
+	out := make([]byte, n)
+	copy(out, buf[:n])
+	return out
+}
+
+// scidLenOf 读长头首包的 SCID 长度：dgram[5] = DCID 长度（裸字节，不是 varint），
+// 其后是 DCID，再 1 字节是 SCID 长度。
+func scidLenOf(t *testing.T, d []byte) int {
+	t.Helper()
+	if len(d) < 7 || d[0]&0x80 == 0 {
+		t.Fatalf("不是长头包（%d 字节，首字节 %#x）", len(d), d[0])
+	}
+	dcidLen := int(d[5])
+	if len(d) < 6+dcidLen+1 {
+		t.Fatalf("报文太短：DCID 声明 %d 字节，总长 %d", dcidLen, len(d))
+	}
+	return int(d[6+dcidLen])
+}
+
+// TestQUICConnectionIDLength 断言 profile.http3.connection_id_length 真的决定首飞
+// 的 SCID 长度（patch #10）。两层分开测，都是确定性断言：
+//  1. **h3 接线**（不起网络）：NewTransport 把 profile 值映射到 http3.Transport 上的
+//     转发字段（0 ⇒ 长度 0 + 允许零长；不设 ⇒ 零值 = 上游默认 4 字节）；
+//  2. **线上生效**（UDP 嗅探）：非单次用途的 quic.Transport 上用新字段，首飞 SCID
+//     长度确实为 0；不开该字段时仍是 4（上游行为回归守门）；8 ⇒ 8。
+func TestQUICConnectionIDLength(t *testing.T) {
+	zero, eight := 0, 8
+
+	// —— 1) 接线层 ——
+	wiring := func(v *int) (int, bool) {
+		t.Helper()
+		p, err := profiles.Get("chrome_133")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.HTTP3 = &profiles.HTTP3Profile{Enabled: true, ConnectionIDLength: v}
+		tr, err := h3core.NewTransport(p, h3core.TLSSettings{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatalf("connection_id_length=%v: %v", v, err)
+		}
+		defer tr.Close()
+		return tr.QUICConnectionIDLength, tr.QUICAllowZeroLengthConnectionIDs
+	}
+	if n, allow := wiring(&zero); n != 0 || !allow {
+		t.Errorf("connection_id_length=0 ⇒ 转发字段 (%d, allowZero=%v)，want (0, true)", n, allow)
+	}
+	if n, allow := wiring(&eight); n != 8 || allow {
+		t.Errorf("connection_id_length=8 ⇒ 转发字段 (%d, allowZero=%v)，want (8, false)", n, allow)
+	}
+	if n, allow := wiring(nil); n != 0 || allow {
+		t.Errorf("不设 ⇒ 转发字段 (%d, allowZero=%v)，want 零值 (0, false) = 上游默认 4 字节", n, allow)
+	}
+
+	// —— 2) 线上层：fork 新字段真的改变首飞长头包的 SCID 长度 ——
+	scid := func(length int, allow bool) int {
+		t.Helper()
+		p, err := profiles.Get("chrome_133")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.HTTP3 = &profiles.HTTP3Profile{Enabled: true}
+		qcfg, err := h3core.QUICConfigFromProfile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		udp, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer udp.Close()
+		tr := &quic.Transport{
+			Conn:                         udp,
+			ConnectionIDLength:           length,
+			AllowZeroLengthConnectionIDs: allow,
+		}
+		d := sniffFirstDatagram(t, func(ctx context.Context, addr net.Addr) error {
+			_, err := tr.DialEarly(ctx, addr, &utlsb.Config{
+				InsecureSkipVerify: true, NextProtos: []string{"h3"}, ServerName: "localhost",
+				OmitEmptyPsk: true,
+			}, qcfg)
+			return err
+		})
+		return scidLenOf(t, d)
+	}
+
+	if got := scid(0, true); got != 0 {
+		t.Errorf("ConnectionIDLength=0 + AllowZeroLength 时首飞 SCID = %d 字节，want 0（Chrome 形态）", got)
+	}
+	if got := scid(0, false); got != 4 {
+		t.Errorf("不开 AllowZeroLength 时首飞 SCID = %d 字节，want 4（上游行为，回归守门）", got)
+	}
+	if got := scid(8, false); got != 8 {
+		t.Errorf("ConnectionIDLength=8 时首飞 SCID = %d 字节，want 8", got)
+	}
+
+	bad := 21
+	p, err := profiles.Get("chrome_133")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.HTTP3 = &profiles.HTTP3Profile{Enabled: true, ConnectionIDLength: &bad}
+	if _, err := h3core.QUICConfigFromProfile(p); err == nil {
+		t.Error("connection_id_length=21 应当报错（不静默夹取）")
 	}
 }
 

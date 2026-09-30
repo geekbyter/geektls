@@ -1,6 +1,6 @@
 package protocol
 
-import "github.com/bogdanfinn/quic-go-utls/quicvarint"
+import "github.com/geekbyter/geektls/core/third_party/quic-go-utls/quicvarint"
 
 // StreamType encodes if this is a unidirectional or bidirectional stream
 type StreamType uint8

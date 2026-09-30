@@ -26,7 +26,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func TestEarlyDataExtensionIsDeclarable(t *testing.T) {

@@ -18,11 +18,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/bogdanfinn/utls/internal/byteorder"
-	"github.com/bogdanfinn/utls/internal/fips140tls"
-	"github.com/bogdanfinn/utls/internal/hkdf"
-	"github.com/bogdanfinn/utls/internal/hpke"
-	"github.com/bogdanfinn/utls/internal/tls13"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/byteorder"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/fips140tls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/hkdf"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/hpke"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/tls13"
 )
 
 // maxClientPSKIdentities is the number of client PSK identities the server will
@@ -450,6 +450,11 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			}
 			earlyTrafficSecret := hs.earlySecret.ClientEarlyTrafficSecret(transcript)
 			c.quicSetReadSecret(QUICEncryptionLevelEarly, hs.suite.id, earlyTrafficSecret)
+		} else if c.quic != nil && i == 0 {
+			println("GEEKTLS-DEBUG 服务端 EE 未开 early_data: helloEarly=", hs.clientHello.earlyData,
+				"ticketEarly=", sessionState.EarlyData,
+				"ticketSuite=", int(sessionState.cipherSuite), "suite=", int(hs.suite.id),
+				"ticketALPN=", sessionState.alpnProtocol, "clientProto=", c.clientProtocol)
 		}
 
 		c.didResume = true

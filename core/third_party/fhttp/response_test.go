@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2010 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -18,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bogdanfinn/fhttp/internal"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/internal"
 )
 
 type respTest struct {

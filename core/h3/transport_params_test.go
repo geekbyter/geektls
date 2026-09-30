@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func rawProfile(t *testing.T, raw [][]any) *profiles.Profile {
@@ -18,6 +18,32 @@ func rawProfile(t *testing.T, raw [][]any) *profiles.Profile {
 	}
 	p.HTTP3 = &profiles.HTTP3Profile{Enabled: true, TransportParamsRaw: raw}
 	return p
+}
+
+// TestTransportParamsInitialSourceConnectionID（H3-7 闭环，patch #10）：
+// 0x0f(initial_source_connection_id) 的唯一合法形态是 **connection_id_length=0 时取空值**
+// （Chrome 实测形态——此时真实 SCID 也是空的，声明与行为一致）；SCID 非零时空值必须报错，
+// 因为"声明与真实 SCID 脱节"会被对端当协议错误。
+func TestTransportParamsInitialSourceConnectionID(t *testing.T) {
+	zero := 0
+	mk := func(scid *int) *profiles.Profile {
+		t.Helper()
+		p := rawProfile(t, [][]any{{15.0, "hex:"}}) // 0x0f，空值
+		p.HTTP3.ConnectionIDLength = scid
+		return p
+	}
+
+	qcfg, err := QUICConfigFromProfile(mk(&zero))
+	if err != nil {
+		t.Fatalf("connection_id_length=0 + 0x0f 空值应当合法（Chrome 形态）：%v", err)
+	}
+	if qcfg.TransportParamsOverride == nil {
+		t.Error("0x0f 空值没有进 TransportParamsOverride（等于没上 wire）")
+	}
+
+	if _, err := QUICConfigFromProfile(mk(nil)); err == nil {
+		t.Error("SCID 非零（不设 = 上游默认 4）时 0x0f 空值应当报错：声明与真实 SCID 脱节")
+	}
 }
 
 func TestTransportParamsRawConflicts(t *testing.T) {

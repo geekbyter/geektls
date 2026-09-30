@@ -23,10 +23,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bogdanfinn/utls/internal/byteorder"
-	"github.com/bogdanfinn/utls/internal/fips140tls"
-	"github.com/bogdanfinn/utls/internal/hpke"
-	"github.com/bogdanfinn/utls/internal/tls13"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/byteorder"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/fips140tls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/hpke"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/tls13"
 )
 
 type clientHandshakeState struct {

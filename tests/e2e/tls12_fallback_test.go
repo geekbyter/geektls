@@ -30,9 +30,9 @@ import (
 	"github.com/gospider007/gtls"
 	"github.com/gospider007/ja3"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
-	gbt "github.com/geektls/golang"
+	gbt "github.com/geekbyter/geektls/bindings/golang"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // fpVerCaptured = fp 独立解析结果 + 客户端在 CH 里声明的 supported_versions。

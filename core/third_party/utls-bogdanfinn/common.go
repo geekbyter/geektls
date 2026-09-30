@@ -27,7 +27,7 @@ import (
 	"time"
 	_ "unsafe" // for linkname
 
-	"github.com/bogdanfinn/utls/internal/fips140tls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/fips140tls"
 )
 
 const (

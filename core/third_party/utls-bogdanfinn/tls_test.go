@@ -1,3 +1,5 @@
+//go:build geektls_upstream_utls_tests
+
 // Copyright 2012 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -31,9 +33,9 @@ import (
 
 	"golang.org/x/crypto/cryptobyte"
 
-	"github.com/bogdanfinn/utls/internal/fips140tls"
-	"github.com/bogdanfinn/utls/internal/hpke"
-	"github.com/bogdanfinn/utls/testenv"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/fips140tls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/hpke"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/testenv"
 )
 
 var rsaCertPEM = `-----BEGIN CERTIFICATE-----

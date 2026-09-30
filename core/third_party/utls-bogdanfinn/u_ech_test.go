@@ -1,3 +1,5 @@
+//go:build geektls_upstream_utls_tests
+
 package tls_test
 
 import (
@@ -5,8 +7,8 @@ import (
 	"io"
 	"testing"
 
-	tls "github.com/bogdanfinn/utls"
-	"github.com/bogdanfinn/utls/dicttls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/dicttls"
 )
 
 func TestGREASEECHWrite(t *testing.T) {

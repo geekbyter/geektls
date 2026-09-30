@@ -146,6 +146,26 @@ coalesce 阈值是常量 `protocol.MinCoalescedPacketSize`(128)。布局是独�
 （0x00/0x02/0x0d/0x10）、0x0f（钉不死逐连接随机 SCID）、重复 id 一律
 **配置期报错**（不静默忽略）。
 
+## patch #10（2026-09-30）：首飞 SCID 长度控制（Chrome 形态的空 SCID）
+
+1. **`transport.go`**：`Transport` 新增字段 `AllowZeroLengthConnectionIDs bool`
+   （默认 false = 上游行为：`ConnectionIDLength == 0` 会退回
+   `DefaultConnectionIDLength`(4)）；`dial()` 里的 `t.init(t.isSingleUse)` 改为
+   `t.init(t.isSingleUse || t.AllowZeroLengthConnectionIDs)`。
+   服务端路径（`createServer`/`Listen`）刻意不动——geektls 只用客户端侧。
+2. **`http3/transport.go`**：`Transport` 新增 `QUICConnectionIDLength int` 与
+   `QUICAllowZeroLengthConnectionIDs bool`，在 `init()` 自建传输层时转发给
+   `quic.Transport`（`Dial != nil` 时本包不建 transport，字段不生效——与上游一致）。
+3. **不改 wire/packer**：首飞 DCID 仍由 `GenerateConnectionIDForInitial` 生成
+   （8 字节随机），本补丁只影响 **SCID**。
+
+配合 core 侧：`core/h3` 的 `QUICConfigFromProfile` 校验 0..20 并映射到
+`http3.Transport`；`transport_params.go` 的 `applyKnownRawTP` 在 `connection_id_length=0`
+时放行 `0x0f(initial_source_connection_id)` 的**空值**（H3-7 闭环）。
+
+验证：`tests/e2e` 的 `TestQUICConnectionIDLength`（接线层 + 线上嗅探 SCID 0/4/8）
++ `core/h3` 的 `TestTransportParamsInitialSourceConnectionID`（空值合法/非法双向）。
+
 ## 升级流程（rebase 上游时）
 
 1. 用新版本模块缓存内容覆盖本目录（保留本文件与 `.patch` 语义）。

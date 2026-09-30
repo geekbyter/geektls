@@ -1,6 +1,6 @@
 {
   "name": "geektls",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Multi-language TLS/HTTP fingerprint impersonation library (Node.js binding)",
   "license": "MIT",
   "main": "index.js",

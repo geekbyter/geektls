@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"hash"
 
-	"github.com/bogdanfinn/utls/internal/tls12"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/internal/tls12"
 )
 
 type prfFunc func(secret []byte, label string, seed []byte, keyLen int) []byte

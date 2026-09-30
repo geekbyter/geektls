@@ -1,14 +1,11 @@
-module github.com/geektls/tests/e2e
+module github.com/geekbyter/geektls/tests/e2e
 
 go 1.27.0
 
 require (
 	github.com/andybalholm/brotli v1.2.4
-	github.com/bogdanfinn/fhttp v0.6.9
-	github.com/bogdanfinn/quic-go-utls v1.0.10-utls
-	github.com/bogdanfinn/utls v1.7.8-barnius
-	github.com/geektls/core v0.0.0
-	github.com/geektls/golang v0.0.0-00010101000000-000000000000
+	github.com/geekbyter/geektls/bindings/golang v0.0.0-00010101000000-000000000000
+	github.com/geekbyter/geektls/core v0.1.8
 	github.com/gospider007/fp v0.0.0-20260922022940-11a30e1428c9
 	github.com/gospider007/gtls v0.0.0-20260922022900-37560707587c
 	github.com/gospider007/ja3 v0.0.0-20260922022812-54ae551bd740
@@ -86,9 +83,6 @@ require (
 
 // replace 不随依赖传递，必须在本模块声明。
 replace (
-	github.com/bogdanfinn/fhttp => ../../core/third_party/fhttp
-	github.com/bogdanfinn/quic-go-utls => ../../core/third_party/quic-go-utls
-	github.com/bogdanfinn/utls => ../../core/third_party/utls-bogdanfinn
-	github.com/geektls/core => ../../core
-	github.com/geektls/golang => ../../bindings/golang
+	github.com/geekbyter/geektls/bindings/golang => ../../bindings/golang
+	github.com/geekbyter/geektls/core => ../../core
 )

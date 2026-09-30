@@ -12,12 +12,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	http "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/httptrace"
-	tls "github.com/bogdanfinn/utls"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptrace"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 	"golang.org/x/net/http/httpguts"
 
-	"github.com/bogdanfinn/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
 )
 
 // Settings are HTTP/3 settings that apply to the underlying connection.
@@ -70,6 +70,13 @@ type Transport struct {
 	// QUICConfig is the quic.Config used for dialing new connections.
 	// If nil, reasonable default values will be used.
 	QUICConfig *quic.Config
+
+	// geektls patch (patch #10): 转发到内部 quic.Transport 的 SCID 控制。
+	// QUICConnectionIDLength = 0 + QUICAllowZeroLengthConnectionIDs = true ⇒ 客户端
+	// 首飞 SCID 长度 0（Chrome 形态）。仅在 Dial == nil（由本包自建 transport）时
+	// 生效；默认零值 = 上游行为（SCID 4 字节）。
+	QUICConnectionIDLength           int
+	QUICAllowZeroLengthConnectionIDs bool
 
 	// Dial specifies an optional dial function for creating QUIC
 	// connections for requests.
@@ -186,7 +193,12 @@ func (t *Transport) init() error {
 		if err != nil {
 			return err
 		}
-		t.transport = &quic.Transport{Conn: udpConn}
+		// geektls patch (patch #10): 透传 SCID 控制（零值 = 上游行为，SCID 4 字节）。
+		t.transport = &quic.Transport{
+			Conn:                         udpConn,
+			ConnectionIDLength:           t.QUICConnectionIDLength,
+			AllowZeroLengthConnectionIDs: t.QUICAllowZeroLengthConnectionIDs,
+		}
 	}
 	return nil
 }

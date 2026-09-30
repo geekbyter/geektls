@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/version"
+	"github.com/geekbyter/geektls/core/version"
 )
 
 // 指纹栈溯源必须真的接上：core/engine 链接了整条栈（tls + h2/fhttp + h3/quic-go-utls），
@@ -16,17 +16,18 @@ func TestUTLSVersionReportsStack(t *testing.T) {
 	}
 	for _, want := range []string{
 		"refraction-networking/utls",
-		"bogdanfinn/utls",
-		"bogdanfinn/fhttp",
-		"bogdanfinn/quic-go-utls",
+		"geekbyter/geektls/core/third_party/utls-bogdanfinn (in-tree)",
+		"geekbyter/geektls/core/third_party/fhttp (in-tree)",
+		"geekbyter/geektls/core/third_party/quic-go-utls (in-tree)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("UTLSVersion()=%q 里缺 %s", got, want)
 		}
 	}
-	// vendor fork 必须能看出来（replace 到本地目录），否则"自持 fork"这件事无从断言。
-	if !strings.Contains(got, "=> ./third_party/") {
-		t.Errorf("UTLSVersion()=%q 未体现 vendor fork 的 replace（应出现 => ./third_party/...）", got)
+	// 三个 vendor fork 已内联进 core 模块（2026-09-30），必须能看出 in-tree 身份，
+	// 否则"自持 fork"这件事无从断言。
+	if !strings.Contains(got, "(in-tree)") {
+		t.Errorf("UTLSVersion()=%q 未体现 in-tree vendor fork", got)
 	}
 	if strings.Contains(got, "(devel)") {
 		t.Errorf("UTLSVersion()=%q 里混进了本地 replace 的占位版本 (devel)", got)

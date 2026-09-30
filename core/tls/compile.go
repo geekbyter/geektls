@@ -10,7 +10,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // CompileDetail 把 profile 的 tls.detail 编译为 utls.ClientHelloSpec。

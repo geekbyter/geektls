@@ -10,7 +10,7 @@ import (
 	"net"
 	"time"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 )
 
 const ALPN = "quic-go integration tests"

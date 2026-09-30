@@ -11,9 +11,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/geektls/core/engine"
-	"github.com/geektls/core/profiles"
-	"github.com/geektls/core/version"
+	"github.com/geekbyter/geektls/core/engine"
+	"github.com/geekbyter/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/version"
 )
 
 // ABI / Core re-export 自 core/version（单一事实源）。

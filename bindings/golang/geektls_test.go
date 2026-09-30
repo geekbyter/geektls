@@ -23,8 +23,8 @@ import (
 
 	"golang.org/x/net/http2"
 
-	"github.com/geektls/core/engine"
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/engine"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func startEcho(t *testing.T) string {

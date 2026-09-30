@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	gbt "github.com/geektls/golang"
+	gbt "github.com/geekbyter/geektls/bindings/golang"
 
-	"github.com/geektls/core/engine"
+	"github.com/geekbyter/geektls/core/engine"
 )
 
 type langResult struct {

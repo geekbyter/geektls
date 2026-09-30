@@ -339,6 +339,10 @@ func (c *UConn) handshakeContext(ctx context.Context) (ret error) {
 	if c.quic != nil {
 		c.quic.cancelc = handshakeCtx.Done()
 		c.quic.cancel = cancel
+		// geektls patch：任何提前 return（含 BuildHandshakeState 失败）都必须
+		// 放掉 blockedc/signalc，否则 UQUICConn.Start 永久挂死。幂等（closeOnce），
+		// 与尾部正常关闭不冲突。
+		defer c.quic.closeChans()
 	} else if ctx.Done() != nil {
 		done := make(chan struct{})
 		interruptRes := make(chan error, 1)
@@ -378,6 +382,9 @@ func (c *UConn) handshakeContext(ctx context.Context) (ret error) {
 	if c.isClient {
 		err := c.BuildHandshakeState()
 		if err != nil {
+			// geektls patch：错误写进 handshakeErr，UQUICConn.Start 才能
+			// 把真实原因报给调用方（此前这里静默 return，外面挂死）。
+			c.handshakeErr = err
 			return err
 		}
 	}
@@ -418,8 +425,9 @@ func (c *UConn) handshakeContext(ctx context.Context) (ret error) {
 			// Truncate the text of the alert to 0 characters.
 			c.handshakeErr = fmt.Errorf("%w%.0w", c.handshakeErr, AlertError(a))
 		}
-		close(c.quic.blockedc)
-		close(c.quic.signalc)
+		// geektls patch：关闭统一走幂等的 closeChans（函数顶部 defer 兜底
+		// 提前 return 路径，二者由 closeOnce 去重，不会双重关闭）。
+		c.quic.closeChans()
 	}
 
 	return c.handshakeErr

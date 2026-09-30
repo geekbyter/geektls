@@ -3,6 +3,60 @@
 本项目遵循语义化版本（版本号规则与"四处单一事实源"见 [docs/versioning.md](docs/versioning.md)）。
 更早的发布过程记录见 [docs/plans/2026-09-28-pypi-release-plan.md](docs/plans/2026-09-28-pypi-release-plan.md) §8.5/§8.6。
 
+## 0.1.8（2026-09-30）
+
+### 新增
+
+- **Go modules 发布形态就绪**：模块路径迁至 `github.com/geekbyter/geektls/*`
+  （core / bindings/golang / tests/*），三个 vendor fork（fhttp、quic-go-utls、
+  utls-bogdanfinn）**内联进 core 模块**（`core/third_party/*`，删除各自的 go.mod 与
+  本地 replace）⇒ **一个 tag（`core/v0.1.8`）即可发布完整指纹栈**——消费者不再因
+  "replace 只对主模块生效"而拿到上游原版依赖。
+  - `version.UTLSVersion()` 相应改造：in-tree fork 报告为 `(in-tree)`（fork 并入主
+    模块后不再出现在 build info 的 Deps/replace 里）。
+  - 上游 vendored 测试套件随内联**首次纳入** go test 范围，对 Go 版本漂移敏感
+    （fhttp 的 net/http 套件 39 处、utls 的 crypto/tls 套件 64 处、quic-go-utls 的
+    self 集成测试不可编译——均为上游用例期望与新版 Go/本 fork API 的偏差，非 geektls
+    回归）。处理：挂 opt-in build tag（`geektls_upstream_nethttp_tests` /
+    `geektls_upstream_utls_tests` / `geektls_upstream_quic_integrations`），默认不跑，
+    需要时 `-tags` 显式开启；geektls 自身行为由 e2e/parity 套件覆盖。
+- **首飞 SCID 长度可控（vendor patch #10）**：新增 `http3.connection_id_length`
+  （nil = 上游默认 4；**0 = Chrome 形态的空 SCID**；1..20 自定义），经
+  `quic.Transport.AllowZeroLengthConnectionIDs` + `http3.Transport` 转发生效；首飞
+  DCID 不受影响（仍 8 字节随机）。同时闭合 **H3-7** 最后一环：`transport_params_raw`
+  里的 `initial_source_connection_id(0x0f)` 在 SCID=0 时允许取**空值**（Chrome 实测
+  形态，声明与真实 SCID 一致），SCID 非零时空值仍配置期报错。验证：
+  `TestQUICConnectionIDLength`（接线层 + 线上嗅探 SCID 0/4/8 三档）、`core/h3` 的
+  `TestTransportParamsInitialSourceConnectionID`。
+- **首包填充改"下限"语义**：`http3.initial_packet_size` 从"把每个含 Initial 的
+  datagram 填到该值"改成**补到下限**（不足补到它；自然尺寸更大就按自然尺寸发），
+  不设 = **1200**（QUIC 协议下限 + 真机形态：Chrome 149 只在需要时补到 1200，首包
+  1230B 就是自然尺寸）。**线上可见变更**：不设时首 datagram 由 `1280` 变为
+  `max(自然尺寸, 1200)`。越界仍配置期报错。验证：`TestQUICInitialPacketSize`。
+
+### 修复（utls-bogdanfinn fork，0-RTT 链路）
+
+- **恢复握手被误杀**：`handshake_client_tls13.go` 的前置检查只认旧字段
+  `keyShareKeys.ecdhe`，而 ApplyPreset 流把私钥放 `keys` map ⇒ 每条恢复连接直接
+  internal_error。修：新增 `usable()`，判定口径与 key schedule 的动态查找一致。
+- **ApplyPreset 污染调用方 spec**：生成的公钥写回共享的 `KeyShareExtension.Data`，
+  同一 spec 的第二条连接会跳过密钥生成 ⇒ 私钥为空 ⇒ 握手失败。**影响所有 H3
+  transport 的第二条连接**，不止 0-RTT。修：克隆扩展再改 + `callerHasKey()` 门。
+- **locked 路径 early_data 缺失**：会话已由 BuildHandshakeState 装载时绕过
+  `loadSession`，early_data 永远不开 ⇒ 自拒 Err0RTTRejected。修：该分支补 QUIC
+  判定 + 动态插空 early_data(42)（置于 PSK 前）+ 重出字节 + 重算 binder。
+
+### 已知未收尾
+
+- `TestQUICZeroRTT` 显式 Skip：链路已推进到"票据装载 ✓ / early_data 上 wire ✓ /
+  服务端接受 0-RTT ✓ / 服务端收到流 ✓"，剩**服务端 QUIC 层 Used0RTT 记账**（接受后
+  服务端不再发飞行包）。utls fork 与 crypto_setup.go 中留有 `GEEKTLS-DEBUG` 现场标记，
+  收尾时移除。
+
+### 变更
+
+- 版本源四处同步为 `0.1.8`；`bindings/golang` 对 core 的 require 升至 `v0.1.8`。
+
 ## 0.1.7（2026-09-30）
 
 ### 新增

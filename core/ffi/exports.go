@@ -16,11 +16,11 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/geektls/core/engine"
-	"github.com/geektls/core/internal/registry"
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
-	"github.com/geektls/core/version"
+	"github.com/geekbyter/geektls/core/engine"
+	"github.com/geekbyter/geektls/core/internal/registry"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/version"
 )
 
 // 跨 ABI 对象注册表；handle 规则见 docs/02-ffi-abi.md §2。

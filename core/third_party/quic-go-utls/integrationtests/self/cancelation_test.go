@@ -1,3 +1,5 @@
+//go:build geektls_upstream_quic_integrations
+
 package self_test
 
 import (
@@ -12,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bogdanfinn/quic-go-utls"
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,7 +43,7 @@ func TestStreamReadCancellation(t *testing.T) {
 	})
 
 	// This test is especially valuable when run with race detector,
-	// see https://github.com/bogdanfinn/quic-go-utls/issues/3239.
+	// see https://github.com/geekbyter/geektls/core/third_party/quic-go-utls/issues/3239.
 	t.Run("concurrent", func(t *testing.T) {
 		testStreamCancellation(t, func(str *quic.ReceiveStream) error {
 			errChan := make(chan error, 1)
@@ -99,7 +101,7 @@ func TestStreamWriteCancellation(t *testing.T) {
 	})
 
 	// This test is especially valuable when run with race detector,
-	// see https://github.com/bogdanfinn/quic-go-utls/issues/3239.
+	// see https://github.com/geekbyter/geektls/core/third_party/quic-go-utls/issues/3239.
 	t.Run("concurrent", func(t *testing.T) {
 		testStreamCancellation(t, nil, func(str *quic.SendStream) error {
 			errChan := make(chan error, 1)

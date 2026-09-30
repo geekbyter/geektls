@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/version"
+	"github.com/geekbyter/geektls/core/version"
 )
 
 func runCLI(t *testing.T, args ...string) (int, string, string) {

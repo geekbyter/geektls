@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // JA4PresetHit 是一次 JA4 反查的结果。

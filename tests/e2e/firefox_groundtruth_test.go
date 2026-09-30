@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 var (

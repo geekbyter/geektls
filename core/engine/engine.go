@@ -21,11 +21,11 @@ import (
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	utlsb "github.com/bogdanfinn/utls"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // SessionOptions 是会话级配置。

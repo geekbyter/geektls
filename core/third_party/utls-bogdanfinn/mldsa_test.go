@@ -1,6 +1,6 @@
 // Copyright 2026 uTLS. Licensed under the BSD 3-Clause License.
 
-//go:build !nomldsa
+//go:build geektls_upstream_utls_tests && !nomldsa
 
 package tls
 

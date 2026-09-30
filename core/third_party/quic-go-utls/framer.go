@@ -4,13 +4,13 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/bogdanfinn/quic-go-utls/internal/ackhandler"
-	"github.com/bogdanfinn/quic-go-utls/internal/flowcontrol"
-	"github.com/bogdanfinn/quic-go-utls/internal/monotime"
-	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
-	"github.com/bogdanfinn/quic-go-utls/internal/utils/ringbuffer"
-	"github.com/bogdanfinn/quic-go-utls/internal/wire"
-	"github.com/bogdanfinn/quic-go-utls/quicvarint"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/ackhandler"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/flowcontrol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/monotime"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/protocol"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/utils/ringbuffer"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/internal/wire"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/quicvarint"
 )
 
 const (
@@ -213,7 +213,7 @@ func (f *framer) appendControlFrames(
 // This is a hack.
 // It is easier to implement than propagating an error return value in QueueControlFrame.
 // The correct solution would be to queue frames with their respective structs.
-// See https://github.com/bogdanfinn/quic-go-utls/issues/4271 for the queueing of stream-related control frames.
+// See https://github.com/geekbyter/geektls/core/third_party/quic-go-utls/issues/4271 for the queueing of stream-related control frames.
 func (f *framer) QueuedTooManyControlFrames() bool {
 	return f.queuedTooManyControlFrames
 }

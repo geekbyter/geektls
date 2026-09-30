@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // Dialer 按 profile.tcp 应用 socket 选项后拨号。

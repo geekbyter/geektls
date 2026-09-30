@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	fhttp "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/quic-go-utls/http3"
-	utlsb "github.com/bogdanfinn/utls"
+	fhttp "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
+	utlsb "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func testH3Server(t *testing.T) string {

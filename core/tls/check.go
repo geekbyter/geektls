@@ -11,7 +11,7 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // CheckResult 是 gtls_check_profile 的返回载荷。

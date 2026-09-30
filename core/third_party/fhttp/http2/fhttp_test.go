@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 package http2_test
 
 import (
@@ -13,13 +15,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bogdanfinn/fhttp/cookiejar"
-	"github.com/bogdanfinn/fhttp/httptest"
-	tls "github.com/bogdanfinn/utls"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/cookiejar"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptest"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 	"golang.org/x/net/publicsuffix"
 
-	http "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/http2"
+	http "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/http2"
 )
 
 // Tests if connection settings are written correctly

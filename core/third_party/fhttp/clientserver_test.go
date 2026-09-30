@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 // Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -27,11 +29,11 @@ import (
 	"testing"
 	"time"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 
-	. "github.com/bogdanfinn/fhttp"
-	"github.com/bogdanfinn/fhttp/httptest"
-	"github.com/bogdanfinn/fhttp/httputil"
+	. "github.com/geekbyter/geektls/core/third_party/fhttp"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httptest"
+	"github.com/geekbyter/geektls/core/third_party/fhttp/httputil"
 )
 
 type clientServerTest struct {
@@ -1502,9 +1504,9 @@ func testWriteHeaderAfterWrite(t *testing.T, h2, hijack bool) {
 		return
 	}
 	gotLog := strings.TrimSpace(errorLog.String())
-	wantLog := "http: superfluous response.WriteHeader call from github.com/bogdanfinn/fhttp_test.testWriteHeaderAfterWrite.func1 (clientserver_test.go:"
+	wantLog := "http: superfluous response.WriteHeader call from github.com/geekbyter/geektls/core/third_party/fhttp_test.testWriteHeaderAfterWrite.func1 (clientserver_test.go:"
 	if hijack {
-		wantLog = "http: response.WriteHeader on hijacked connection from github.com/bogdanfinn/fhttp_test.testWriteHeaderAfterWrite.func1 (clientserver_test.go:"
+		wantLog = "http: response.WriteHeader on hijacked connection from github.com/geekbyter/geektls/core/third_party/fhttp_test.testWriteHeaderAfterWrite.func1 (clientserver_test.go:"
 	}
 	if !strings.HasPrefix(gotLog, wantLog) {
 		t.Errorf("stderr output = %q; want %q", gotLog, wantLog)

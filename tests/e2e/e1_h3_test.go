@@ -42,40 +42,40 @@ import (
 
 	"github.com/gospider007/gtls"
 
-	tlscore "github.com/geektls/core/tls"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // tpNames 是已知 QUIC transport parameter 名（RFC 9000 §18.2 / RFC 9221）。
 // 未知 id（含 GREASE）按数值记录，不猜名字。
 var tpNames = map[uint64]string{
-	0x00: "original_destination_connection_id",
-	0x01: "max_idle_timeout",
-	0x02: "stateless_reset_token",
-	0x03: "max_udp_payload_size",
-	0x04: "initial_max_data",
-	0x05: "initial_max_stream_data_bidi_local",
-	0x06: "initial_max_stream_data_bidi_remote",
-	0x07: "initial_max_stream_data_uni",
-	0x08: "initial_max_streams_bidi",
-	0x09: "initial_max_streams_uni",
-	0x0a: "ack_delay_exponent",
-	0x0b: "max_ack_delay",
-	0x0c: "disable_active_migration",
-	0x0d: "preferred_address",
-	0x0e: "active_connection_id_limit",
-	0x0f: "initial_source_connection_id",
-	0x10: "retry_source_connection_id",
-	0x20: "max_datagram_frame_size",
+	0x00:   "original_destination_connection_id",
+	0x01:   "max_idle_timeout",
+	0x02:   "stateless_reset_token",
+	0x03:   "max_udp_payload_size",
+	0x04:   "initial_max_data",
+	0x05:   "initial_max_stream_data_bidi_local",
+	0x06:   "initial_max_stream_data_bidi_remote",
+	0x07:   "initial_max_stream_data_uni",
+	0x08:   "initial_max_streams_bidi",
+	0x09:   "initial_max_streams_uni",
+	0x0a:   "ack_delay_exponent",
+	0x0b:   "max_ack_delay",
+	0x0c:   "disable_active_migration",
+	0x0d:   "preferred_address",
+	0x0e:   "active_connection_id_limit",
+	0x0f:   "initial_source_connection_id",
+	0x10:   "retry_source_connection_id",
+	0x20:   "max_datagram_frame_size",
 	0x2ab2: "google_connection_options", // Chrome 私有（gQUIC 遗留选项）
 }
 
 type h3TPRecord struct {
-	ID    uint64 `json:"id"`
-	Name  string `json:"name,omitempty"`
-	Value uint64 `json:"value,omitempty"`
-	Hex   string `json:"hex,omitempty"`
-	Len   int    `json:"len"`
-	Grease bool  `json:"grease,omitempty"`
+	ID     uint64 `json:"id"`
+	Name   string `json:"name,omitempty"`
+	Value  uint64 `json:"value,omitempty"`
+	Hex    string `json:"hex,omitempty"`
+	Len    int    `json:"len"`
+	Grease bool   `json:"grease,omitempty"`
 }
 
 type h3Record struct {
@@ -90,13 +90,13 @@ type h3Record struct {
 	ClientHelloCrypto string       `json:"clienthello_crypto_hex"`
 	// 内层 ClientHello 的形态（QUIC 只允许 TLS1.3 ⇒ 与 TCP 侧形态不同，
 	// 这是 clampSpecForQUIC 必须复刻的部分）。
-	Ciphers          []uint16 `json:"ciphers"`
-	ExtensionTypes   []uint16 `json:"extension_types"`
-	Curves           []uint16 `json:"curves"`
-	KeyShares        []uint16 `json:"key_shares"`
-	Versions         []uint16 `json:"versions"`
-	SigAlgs          []uint16 `json:"sig_algs"`
-	Computed         *struct {
+	Ciphers        []uint16 `json:"ciphers"`
+	ExtensionTypes []uint16 `json:"extension_types"`
+	Curves         []uint16 `json:"curves"`
+	KeyShares      []uint16 `json:"key_shares"`
+	Versions       []uint16 `json:"versions"`
+	SigAlgs        []uint16 `json:"sig_algs"`
+	Computed       *struct {
 		JA4 string `json:"ja4"`
 	} `json:"computed,omitempty"`
 }

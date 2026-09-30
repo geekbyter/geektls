@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 // 抓包实测的 Chromium 导航头顺序（Chrome 149 / Edge 149）。

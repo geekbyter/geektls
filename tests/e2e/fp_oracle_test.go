@@ -6,9 +6,10 @@
 // （gospider007/ja3 + gaukas/clienthellod），用于打破"同源自证"。
 //
 // 对比面：
-//   TLS：cipher 列表 / 扩展顺序 / curves / points / supported_versions /
-//         signature_algorithms / ALPN / SNI（观察项）
-//   H2 ：SETTINGS id:value 有序 / 连接级 WINDOW_UPDATE / 伪头顺序
+//
+//	TLS：cipher 列表 / 扩展顺序 / curves / points / supported_versions /
+//	      signature_algorithms / ALPN / SNI（观察项）
+//	H2 ：SETTINGS id:value 有序 / 连接级 WINDOW_UPDATE / 伪头顺序
 //
 // 运行：go test ./... -run TestFPSecondOracle -v
 package e2e
@@ -30,9 +31,9 @@ import (
 	"github.com/gospider007/gtls"
 	"github.com/gospider007/ja3"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
-	gbt "github.com/geektls/golang"
+	gbt "github.com/geekbyter/geektls/bindings/golang"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // fpCaptured 是一次请求在 fp 侧解析出的全部指纹。

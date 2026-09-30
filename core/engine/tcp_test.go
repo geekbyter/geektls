@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/geektls/core/profiles"
+	"github.com/geekbyter/geektls/core/profiles"
 )
 
 func TestEngineTCPProfile(t *testing.T) {

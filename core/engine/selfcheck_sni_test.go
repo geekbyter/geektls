@@ -10,8 +10,8 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 
-	"github.com/geektls/core/profiles"
-	tlscore "github.com/geektls/core/tls"
+	"github.com/geekbyter/geektls/core/profiles"
+	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
 // ja4SNIFlag 取 JA4_a 段的 SNI 标志位：a 段 = 协议(t/q) + 2 位版本 + d/i +

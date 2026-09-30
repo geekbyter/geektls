@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	tls "github.com/bogdanfinn/utls"
+	tls "github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn"
 )
 
 // NthBit gets the n-th bit of a byte (counting starts at 0).

@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	h2core "github.com/geektls/core/h2"
+	h2core "github.com/geekbyter/geektls/core/h2"
 )
 
 // Upload 是一次进行中的流式上传。Write 可多次调用；Finish 结束 body 并

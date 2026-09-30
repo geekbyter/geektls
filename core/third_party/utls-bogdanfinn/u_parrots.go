@@ -20,7 +20,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/bogdanfinn/utls/dicttls"
+	"github.com/geekbyter/geektls/core/third_party/utls-bogdanfinn/dicttls"
 )
 
 var ErrUnknownClientHelloID = errors.New("tls: unknown ClientHelloID")
@@ -3327,6 +3327,22 @@ func removeFromSlice(orig []string, s string) []string {
 	return filtered
 }
 
+// callerHasKey（geektls patch）报告调用方是否已为某个曲线组提供了私钥：
+// 旧形态的单字段 Ecdhe / 新形态的 Keys map，以及 PQ 混合组用的 Mlkem。
+// 只有它成立时，ApplyPreset 才会沿用 spec 里已有的 key_share Data（否则按本连接重新生成）。
+func callerHasKey(ks *KeySharePrivateKeys, group CurveID) bool {
+	if ks == nil {
+		return false
+	}
+	if ks.Ecdhe != nil || ks.Keys[group] != nil {
+		return true
+	}
+	if (group == X25519MLKEM768 || group == X25519Kyber768Draft00) && ks.Mlkem != nil {
+		return true
+	}
+	return false
+}
+
 // ApplyPreset should only be used in conjunction with HelloCustom to apply custom specs.
 // Fields of TLSExtensions that are slices/pointers are shared across different connections with
 // same ClientHelloSpec. It is advised to use different specs and avoid any shared state.
@@ -3412,7 +3428,7 @@ func (uconn *UConn) ApplyPreset(p *ClientHelloSpec) error {
 	var haveNPN bool
 
 	// reGrease, and point things to each other
-	for _, e := range uconn.Extensions {
+	for extIdx, e := range uconn.Extensions {
 		switch ext := e.(type) {
 		case *SNIExtension:
 			if ext.ServerName == "" {
@@ -3439,9 +3455,23 @@ func (uconn *UConn) ApplyPreset(p *ClientHelloSpec) error {
 				}
 			}
 		case *KeyShareExtension:
+			// [geektls patch] 克隆扩展再改：uconn.Extensions 与调用方的 p.Extensions 是
+			// 浅拷贝（共享同一批扩展对象），直接写 ext.KeyShares[i].Data = 公钥 会把
+			// **逐连接的密钥材料写回调用方的 spec**。spec 跨连接复用（geektls 的 H3
+			// transport 就是一条 spec 打所有连接）时后果很重：第二条连接看到 Data 已有
+			// 值就跳过密钥生成 ⇒ keyShareKeys 为空 ⇒ 握手直接 internal_error
+			//（CRYPTO_ERROR 0x150），恢复/0-RTT 连接全废。克隆后只改本连接自己的那份。
+			ksClone := &KeyShareExtension{KeyShares: make([]KeyShare, len(ext.KeyShares))}
+			copy(ksClone.KeyShares, ext.KeyShares)
+			ext = ksClone
+			uconn.Extensions[extIdx] = ksClone
+
 			preferredCurveIsSet := false
 
 			// [FIX START] Initialize the map to store all generated keys
+			// prevKeys 是调用方**可能自己提供过**的私钥（例如 TLS13OnlyState.KeyShareKeys /
+			// EcdheKey）；下面的 reset 会清掉 map，所以先留一份引用用于"尊重调用方密钥"的判断。
+			prevKeys := uconn.HandshakeState.State13.KeyShareKeys
 			if uconn.HandshakeState.State13.KeyShareKeys == nil {
 				// Ensure struct is initialized if it wasn't already (though usually it is by makeClientHelloForApplyPreset)
 				uconn.HandshakeState.State13.KeyShareKeys = &KeySharePrivateKeys{}
@@ -3455,7 +3485,10 @@ func (uconn *UConn) ApplyPreset(p *ClientHelloSpec) error {
 					ext.KeyShares[i].Group = CurveID(GetBoringGREASEValue(uconn.greaseSeed, ssl_grease_group))
 					continue
 				}
-				if len(ext.KeyShares[i].Data) > 1 {
+				// [geektls patch] 原来只用 "Data 已有值" 当跳过条件——但 spec 跨连接复用，
+				// 上一次连接写回的公钥会让这里**永久跳过**密钥生成。只有调用方自己提供了
+				// 该组的私钥时才该尊重现有 Data；否则必须为本连接重新生成。
+				if len(ext.KeyShares[i].Data) > 1 && callerHasKey(prevKeys, curveID) {
 					continue
 				}
 

@@ -1,3 +1,5 @@
+//go:build geektls_upstream_nethttp_tests
+
 package profile
 
 import (

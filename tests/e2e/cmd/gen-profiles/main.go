@@ -3,9 +3,9 @@
 //
 // 产物语义：
 //   - tls.detail   来自标本原始字节（逐字段真实，GREASE 归一为占位符以保留
-//                  每次连接重随机化的浏览器行为）
+//     每次连接重随机化的浏览器行为）
 //   - http2        来自同一抓包的 SETTINGS / WINDOW_UPDATE（真实值）；
-//                  伪头顺序标本内不可得，取该浏览器族的固定顺序（标注见 README）
+//     伪头顺序标本内不可得，取该浏览器族的固定顺序（标注见 README）
 //   - identity     按族/版本/平台合成 UA 与 UA-CH（确定性字符串）
 //   - tcp          标本无 TCP 层数据（需 pcap），生成的预设不含 tcp 节
 //
@@ -26,10 +26,10 @@ import (
 	"regexp"
 	"strings"
 
-	http2 "github.com/bogdanfinn/fhttp/http2"
+	http2 "github.com/geekbyter/geektls/core/third_party/fhttp/http2"
 
-	"github.com/geektls/core/profiles"
-	"github.com/geektls/tests/e2e/specimens"
+	"github.com/geekbyter/geektls/core/profiles"
+	"github.com/geekbyter/geektls/tests/e2e/specimens"
 )
 
 func main() {
