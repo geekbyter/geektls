@@ -64,7 +64,11 @@ func (s *Session) BeginUpload(req *Request) (*Upload, error) {
 		return nil, fmt.Errorf("engine: streaming upload over h3 is not supported")
 	}
 
-	headers := s.appendCookieHeader(u, s.applyIdentity(req.Headers))
+	identHeaders, idWarns := s.applyIdentity(req.Headers)
+	// G9：流式上传路径没有"响应对象"承载 warnings（BeginUpload 只回 Upload），
+	// 身份自洽的告警这里丢弃；普通请求路径会如实挂在 resp.Warnings 上。
+	_ = idWarns
+	headers := s.appendCookieHeader(u, identHeaders)
 	key, err := s.poolKey(req, u.Scheme, u.Host)
 	if err != nil {
 		return nil, err
@@ -101,7 +105,7 @@ func (s *Session) beginH2Upload(e *poolEntry, req *Request, u *url.URL, headers 
 	pr, pw := io.Pipe()
 	up := &Upload{s: s, u: u, req: req, pw: pw, resCh: make(chan uploadResult, 1)}
 	go func() {
-		resp, err := h2core.Do(e.cc, req.Method, req.URL, headers, pr)
+		resp, err := h2core.Do(e.cc, req.Method, req.URL, s.orderForWire(headers), pr)
 		if err != nil {
 			// RoundTrip 提前失败：关读端唤醒阻塞中的 Write
 			pr.CloseWithError(err)
@@ -130,7 +134,7 @@ func (s *Session) beginH1Upload(e *poolEntry, req *Request, u *url.URL, headers 
 		path = "/"
 	}
 
-	headers = orderH1Headers(s.profile, headers, u)
+	headers = s.orderH1Headers(s.profile, headers, u)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s HTTP/1.1\r\n", req.Method, path)

@@ -17,4 +17,5 @@ require (
 	golang.org/x/text v0.23.0 // indirect
 )
 
-// replace github.com/bogdanfinn/utls => ../utls
+// geektls vendor fork：0-RTT 链路（UQUICConn 会话事件）
+replace github.com/bogdanfinn/utls => ../utls-bogdanfinn

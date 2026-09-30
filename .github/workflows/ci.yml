@@ -95,8 +95,10 @@ jobs:
 
       # 预设守门：core/profiles/builtin 里"由生成器产出"的文件必须逐字节等于
       # 生成器当前输出（防止手改预设后忘记同步生成器，或生成器改动未重跑）。
-      # 手写预设（chrome_131/133/150、firefox_120/135、safari_16/18）不在生成器
-      # 输出里，会被自动跳过。
+      # 手写预设（chrome_131_windows/chrome_133_windows/chrome_150_windows、
+      # firefox_120_windows/firefox_135_windows、safari_16_macos、safari_18_macos）
+      # 不在生成器输出里，会被自动跳过。
+      # （2026-09-30 命名统一后旧名成为别名，见 docs/03-profile-format.md §3.1。）
       - name: presets must equal generator output (Linux)
         if: runner.os == 'Linux'
         working-directory: tests/e2e

@@ -28,7 +28,7 @@
 3. `go test ./tests/e2e/ -run 'TestPresetsLoopback|TestH2FrameCapture'`
    （L1 字节级）。
 4. `GEEKTLS_ORACLE_PRESETS=<新预设名> go test -tags external ./tests/e2e/ -run TestExternalOracle`
-   （只打这一条，别为入库一个预设把 364 条全推给第三方 oracle）。
+   （只打这一条，别为入库一个预设把 368 条全推给第三方 oracle）。
 5. `profiles/evidence/README.md` 表格补行（等级/依据/日期）。
 
 ## 外部 oracle 与实测闭环（nightly CI）
@@ -50,7 +50,7 @@ README 里"✅ 实测 MATCH"这类结论在 `ci.yml` 中**全部是 skip 态**�
 # 注意：core / tests/e2e / bindings/golang 是**各自独立的 module**（没有 go.work，根目录没有
 # go.mod），所以必须 cd 进去跑，`go test ./tests/e2e/` 在仓库根会直接报 "main module" 错。
 
-# TLS + H2 oracle：子集用 GEEKTLS_ORACLE_PRESETS（逗号分隔，支持 chrome_* 通配；不设=全量 364 条）
+# TLS + H2 oracle：子集用 GEEKTLS_ORACLE_PRESETS（逗号分隔，支持 chrome_* 通配；不设=全量 368 条）
 # 默认只打印 MATCH/DIFF（V-3：oracle 自己的解析口径可能变）；CI 里加 ASSERT=1 让 DIFF 判红
 (cd tests/e2e && GEEKTLS_ORACLE_PRESETS="chrome_154_windows,edge_153_windows,firefox_156_windows,safari_18_macos,opera_122_windows,chrome_150,chrome_154_macos" \
   GEEKTLS_ORACLE_ASSERT=1 go test -tags external . -run 'TestExternalOracle$|TestExternalOracleH2' -v)

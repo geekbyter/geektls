@@ -84,7 +84,7 @@ __all__ = [
 
 # 包版本与动态库版本是**两个**版本（见 docs/versioning.md）：包内库与包版本锁死，
 # 运行时再用 version() 核对 ABI 主版本。
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 
 EXPECTED_ABI = 1
 
@@ -498,6 +498,8 @@ _SESSION_LEVEL_FIELDS = {
     "proxy", "proxy_from_env", "timeout_ms", "read_timeout_ms", "redirect_max",
     "cookie_jar", "insecure_skip_verify", "auto_decompress", "ca_bundle",
     "client_cert", "client_key", "resolve", "local_address", "ip_version",
+    "protocols", "h3",
+    "header_order", "identity_sync",
 }
 
 
@@ -856,6 +858,7 @@ class Session:
                  allow_redirects=None, max_redirects=None, cookies=None,
                  auth=None, trust_env=None,
                  resolve=None, local_address=None, ip_version=None,
+                 protocols=None, h3=None, header_order=None, identity_sync=None,
                  **options):
         config = {}
         if isinstance(profile, str):
@@ -886,6 +889,22 @@ class Session:
             opts["local_address"] = str(local_address)
         if ip_version is not None:
             opts["ip_version"] = str(ip_version)
+        # 协议选择（G8）：默认 h1.1 + h2（**不含 H3**，与 curl_cffi 同口径）。
+        #   protocols=["h1.1"] / ["h2"] / ["h2","h3"] / ["h3"]（只给 h3 = 会话级强制）
+        #   h3=True 是便捷写法（= 默认集合加 h3）；两者同时给会被引擎拒（不静默取其一）。
+        if protocols is not None:
+            if isinstance(protocols, str):
+                protocols = [protocols]
+            opts["protocols"] = [str(p).strip() for p in protocols if str(p).strip()]
+        if h3 is not None:
+            opts["h3"] = bool(h3)
+        # 头序与身份自洽（G9）：
+        #   header_order="preserve"（默认）/ "input"（按你给的顺序）/ "random"（打乱）
+        #   identity_sync="auto"（默认：UA 与预设身份冲突时校正 sec-ch-ua* 并告警）/ "off"
+        if header_order is not None:
+            opts["header_order"] = str(header_order)
+        if identity_sync is not None:
+            opts["identity_sync"] = str(identity_sync)
         _apply_timeout(opts, timeout, read_timeout)
         _apply_verify(opts, verify)
         _apply_cert(opts, cert, cert_key)

@@ -29,3 +29,8 @@ replace github.com/bogdanfinn/quic-go-utls => ./third_party/quic-go-utls
 
 // geektls vendor fork：HPACK 编码策略钩子（见 third_party/fhttp/GEEKTLS_PATCHES.md）
 replace github.com/bogdanfinn/fhttp => ./third_party/fhttp
+
+// geektls vendor fork：UQUICConn 会话事件/StoreSession（0-RTT 链路，见
+// third_party/utls-bogdanfinn/GEEKTLS_PATCHES.md）。注意：这只覆盖 QUIC 侧
+// （bogdanfinn/utls）；TCP 侧用的是 refraction-networking/utls，不受影响。
+replace github.com/bogdanfinn/utls => ./third_party/utls-bogdanfinn

@@ -109,6 +109,12 @@ type initialCryptoStream struct {
 	scramble bool
 	end      protocol.ByteCount
 	cuts     [2]clientHelloCut
+
+	// fragQueue is the geektls patch fragmentation table (see
+	// InitialLayoutConfig.CryptoFragments): remaining payload sizes of the
+	// CRYPTO frames to produce, consumed in order. Empty = fill packets
+	// naturally.
+	fragQueue []protocol.ByteCount
 }
 
 func newInitialCryptoStream(isClient bool) *initialCryptoStream {
@@ -126,6 +132,20 @@ func newInitialCryptoStream(isClient bool) *initialCryptoStream {
 		s.cuts[i].end = protocol.InvalidByteCount
 	}
 	return s
+}
+
+// applyInitialLayout applies the geektls patch layout config (see
+// InitialLayoutConfig). Must be called before the first Write.
+func (s *initialCryptoStream) applyInitialLayout(l *InitialLayoutConfig) {
+	if l.DisableClientHelloScrambling || len(l.CryptoFragments) > 0 {
+		s.scramble = false
+	}
+	if len(l.CryptoFragments) > 0 {
+		s.fragQueue = make([]protocol.ByteCount, len(l.CryptoFragments))
+		for i, f := range l.CryptoFragments {
+			s.fragQueue[i] = protocol.ByteCount(f)
+		}
+	}
 }
 
 func (s *initialCryptoStream) HasData() bool {
@@ -181,7 +201,10 @@ func (s *initialCryptoStream) Write(p []byte) (int, error) {
 
 func (s *initialCryptoStream) PopCryptoFrame(maxLen protocol.ByteCount) *wire.CryptoFrame {
 	if !s.scramble {
-		return s.baseCryptoStream.PopCryptoFrame(maxLen)
+		if len(s.fragQueue) == 0 {
+			return s.baseCryptoStream.PopCryptoFrame(maxLen)
+		}
+		return s.popFragment(maxLen) // geektls patch
 	}
 
 	// send out the skipped parts
@@ -245,5 +268,24 @@ func (s *initialCryptoStream) PopCryptoFrame(maxLen protocol.ByteCount) *wire.Cr
 		s.writeOffset = nextCut.end
 	}
 
+	return f
+}
+
+// popFragment (geektls patch) pops a CRYPTO frame honoring the fragmentation
+// table: the current fragment caps the payload size; a fragment that doesn't
+// fit into the current packet is continued in the next one.
+func (s *initialCryptoStream) popFragment(maxLen protocol.ByteCount) *wire.CryptoFrame {
+	f := &wire.CryptoFrame{Offset: s.writeOffset}
+	n := min(f.MaxDataLen(maxLen), protocol.ByteCount(len(s.writeBuf)), s.fragQueue[0])
+	if n <= 0 {
+		return nil
+	}
+	f.Data = s.writeBuf[:n]
+	s.writeBuf = s.writeBuf[n:]
+	s.writeOffset += n
+	s.fragQueue[0] -= n
+	if s.fragQueue[0] == 0 {
+		s.fragQueue = s.fragQueue[1:]
+	}
 	return f
 }

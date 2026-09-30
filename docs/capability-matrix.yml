@@ -171,9 +171,10 @@ layers:
       evidence: E2
     - id: h2.missing_setting_signal
       target: A
-      status: partial
-      evidence: local
-      blocking: "H2-2：缺失项断言待阶段 3"
+      status: implemented
+      evidence: E1
+      blocking: null
+      note: "2026-09-30 补上负断言（原 H2-2）：tests/e2e/h2_missing_setting_test.go——锚定 E1 证据（chrome_windows.json / chrome_149·154_peetws / edge_windows.json：Chrome/Edge SETTINGS 恰好 {1,2,4,6}），双层断言：预设数据与证据逐项相等 + 显式负断言 {3,5}（MAX_CONCURRENT_STREAMS/MAX_FRAME_SIZE，curl 等会发、真浏览器不发）不在其列；线上层 captureH2Frames 实抓帧确认这些 id 不存在（防引擎补默认项）"
 
   http3_quic:
     - id: h3.quic_version
@@ -200,10 +201,10 @@ layers:
       note: "2026-09-30：profile.http3.initial_packet_size（1200–1452，0 = 上游默认 1280）经上游 quic.Config.InitialPacketSize 决定**首个 Initial datagram 尺寸 = PADDING 填到多少**，无需 fork patch；越界在建 transport 时报错（不静默夹取）。线上验证 tests/e2e/quic_sniff_test.go TestQUICInitialPacketSize（1350→[1350 1350]、1200→[1200 1200]、不设→[1280 1280]，默认路径逐字节不变）"
     - id: h3.initial_datagram_layout
       target: A
-      status: partial
+      status: implemented
       evidence: local
-      blocking: "coalesce 阈值（MinCoalescedPacketSize 是常量）与 CRYPTO 分片表（crypto_stream.go 内置 clienthello scrambling，规则固定）仍要动 vendor packer 层 = SC-3"
-      note: "2026-09-30 修订：尺寸/PADDING 量这一半已可控（见 h3.initial_packet_size）；PADDING 在包内的位置、分片策略、coalesce 仍由 packer 决定（docs/p4-h3-capability.md 同步）"
+      blocking: null
+      note: "2026-09-30 第二轮（vendor patch #8，GEEKTLS_PATCHES.md）：initial_layout 四旋钮全部落地——padding:\"end\"（PADDING 在包尾=Chrome 形态，上游默认在前）、disable_scramble（关 SNI/ECH 中点切割）、crypto_fragments（CRYPTO 分片表，表内保序跳过反固化洗牌）、coalesce_min_size（0=默认 128/-1=禁用合并/>0 自定义；空 datagram 永远可装，禁用不死锁握手——实测踩过并修复）。嗅探器字节级断言 tests/e2e/quic_layout_test.go：默认路径回归守门（PADDING 在前+scramble 空洞）、Chrome 形态 CRYPTO 连续+PADDING 在尾 796B、分片表 [300 250 400] 逐片上线、coalesce 真服务端+UDP 中继实证（默认 [initial handshake 1rtt] 合并 vs -1 拆 [initial]+[handshake]）。残余差异：SCID 长度（Chrome 0 字节 vs fork 默认 4，未接线）"
     - id: h3.quic_grease_frames
       target: A
       status: implemented
@@ -223,7 +224,8 @@ layers:
       target: C
       status: missing
       evidence: null
-      blocking: "H3-5：依赖 QUIC 会话缓存（T4-5）"
+      blocking: "H3-5：缺环在 bogdanfinn/utls 而非 quic-go-utls（2026-09-30 fork 内重新取证，精确到行）"
+      note: "quic-go 的 0-RTT 链路 = DialEarly + 会话票据 Extra 存对端 transport params + QUICResumeSession 事件恢复（crypto_setup.go:248 双条件门）。断点：① utls newUQUICConn（u_quic.go:31）建 quicState 时不复制 QUICConfig.EnableSessionEvents（对照 newQUICConn quic.go:191）⇒ UQUICConn 永不发 QUICStoreSession/QUICResumeSession（存侧退化为自动写 ClientSessionCache 但无 QUIC Extra；取侧 zeroRTTParameters 恒 nil ⇒ 门恒假）；② UQUICConn 无 StoreSession 方法（QUICConn.StoreSession 在 quic.go:322，结构不同）。补齐 = vendor 第三个 fork（utls）+ 验证 ApplyPreset 下 PSK binder 在 QUIC 模式注入——改动面覆盖整个 TCP-TLS 栈，本轮不做。打通后 http3.Transport 本就 DialEarly（http3/transport.go:408），链路自然接上"
     - id: h3.h2_h3_racing
       target: C
       status: implemented
@@ -381,7 +383,7 @@ evidence_baselines:
   preset_coverage:
     source: "自测（E1/E1r/E2）+ 第三方导入 tls_config-0.0.2（E3）"
     grade_rule: "预设的 grade 留空 = 本项目自测；\"E3\" = 第三方配置集导入，未经我们实测。所有 E1 级断言（fp oracle / GT / TLS1.2 回退）一律跳过 E3"
-    counts: "自测 30 + 谱系内插 14（E2i 6 + E2i-u 8）+ 第三方 E3 320 = 364"
+    counts: "自测 29 + 谱系内插 14（E2i 6 + E2i-u 8）+ 第三方 E3 325 = 368（2026-09-30：删掉无实测来源的 safari_18 旧形态后为 363；同日再补 5 条 peet.ws 实机记录 ⇒ 368）"
     lineage:
       tool: "tests/e2e/cmd/gen-profiles -lineage（代码 lineage.go，测试 lineage_test.go）"
       anchors: "chrome 137,141,142,143,152 / edge 141 / firefox 140,144 / safari 18,26（我们自己的真机抓包）"
@@ -438,3 +440,4 @@ verification:
     - "2026-09-29~30 第十五轮（审计 gap plan A2~A15 差集）：A2 version.UTLS 走 build info（vendor fork 显示 => ./third_party/*）；A5 verify 非 bool 报错 + 绑定层会话/请求选项白名单；A4 ca_bundle/client_cert/client_key 三字段进 SessionOptions（ABI 签名未动）；A6 读超时 newTimeoutReader + gtls_error_of（线程局部错误槽改按对象回收）；A11 window_update 三态 + first_stream_id（fork 补丁，顺带修 0 窗口永久挂起）；A8 socks4/4a + 代理环境变量 + NO_PROXY + 有代理即禁 H3；A9 resolve/local_address/ip_version（钉位保留 SNI+Host+JA4 全等）；A7 WS permessage-deflate 帧层（RFC 7692，独立 stdlib 对端逐字节验证）+ 握手扩展头位置修正；A10 0-RTT 结案（声明侧可控、协议侧不做，core/tls/early_data_test.go）；A3/A12 实测闭环与新鲜度进 CI（oracle-nightly.yml + preset-freshness.yml + GEEKTLS_ORACLE_PRESETS/ASSERT）；构件未重建（本机无 cgo）⇒ 绑定层新键的 FFI 用例仍是 skip 态"
     - "第十五轮全量复核（2026-09-30，Windows/go1.27.0）：core 9 包（6 包含测试）build/test 全绿；tests/e2e build/vet/test 绿且 go vet -tags external 绿；bindings/golang 绿；pytest 20 passed/7 skipped；node:test 18 pass/0 fail（修好 npm test 的目录参数缺陷后才成立）；三语言 JA4 逐字符一致；oracle 断言档 6 预设子集 TLS+H2 双套件 PASS；preset_freshness.py 实测 exit 1（firefox 内置 156 vs 官方 157）"
     - "2026-09-30 第十六轮（本轮）：G5 明文 http:// 与 ws:// 落地（拨号决策抽 planDial 供 TLS/明文共用；池键含 scheme；缺省端口按 scheme；代理环境变量按 scheme 取 HTTPS_PROXY/HTTP_PROXY）——http1.plaintext_h1 登记 implemented；G6 CLI 落地（core/cmd/geektls：version/presets/describe/check-profile/request，make cli，退出码 0/1/2，与绑定同批构造入口）；G7 及 requests 同族缺口（Cookies jar / Session.cookies / Response.cookies / 请求级 cookies / timeout=(connect,read) 元组 / auth Basic / 请求级 allow_redirects·max_redirects·proxies 按 scheme 选 / data=list[tuple] 走表单 / HTTPError·Timeout / asyncio 透传补齐）；gtls_error_of 改按对象归因（新增 setLastErrorFor：读 body 记 response、写/收尾记 upload、收发记 ws、请求/建流/握手记 session；未知 handle 仍返回 {}）；h3.initial_packet_size 落地（首 datagram 尺寸=PADDING 量，1200–1452，默认逐字节不变，嗅探实测 1350/1200/1280 三档）⇒ h3.initial_datagram_layout 改 partial；引擎 Cookie 合并改按名（显式头优先，不再整段让位而丢掉重定向中间跳的 cookie）；修 node a9 用例 `e is not defined` 与 tests/smoke 缺 gvisor go.sum；版本四处 → 0.1.6；门禁：core 全量 8 包绿、e2e 全绿（27s）、pytest 35 passed/2 skipped、node:test 18/18、make smoke 三语言 OK"
+    - "2026-09-30 第十七轮（QUIC 布局/TP 冲突/负断言）：Q1 initial_layout 从占位变真生效（vendor patch #8：PADDING 位置 padding:end / CRYPTO 分片表 crypto_fragments / disable_scramble / coalesce_min_size——含'空 datagram 永远可装'语义修正，否则禁用合并死锁握手；分片表保序跳过反固化洗牌），h3.initial_datagram_layout 升 implemented，嗅探器 quic_layout_test.go 字节级+真服务端中继双实证，默认路径逐字节不变；Q2 vendor patch #9（接收缓冲解耦 MaxIncomingPacketSize=1500 ⇒ max_udp_payload_size 1472 可用；Config.DatagramFrameSize 驱动宣告+接收上限）+ 冲突规则全部配置期报错（服务端专属 id/0x0f/重复 id/双形态同设）；Q3 0-RTT 缺环精确定位到 bogdanfinn/utls 的 newUQUICConn（不复制 EnableSessionEvents）+ UQUICConn 无 StoreSession——维持不做，补齐路径成文；Q4 h2.missing_setting_signal 升 implemented（E1 锚定的 {3,5} 负断言，预设层+线上帧层）；顺带修复 G8 遗留的两个 engine 测试红（chrome_133 自带 http3 节的前提错误 + force_http3 代理报错文案 + protoOrder 线上名）与 fork config_test 字段登记红"

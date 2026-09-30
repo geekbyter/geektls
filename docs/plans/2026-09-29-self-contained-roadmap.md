@@ -58,7 +58,7 @@ ClientHello 序列化与握手编排、扩展编解码、H2 帧层与 HPACK 策�
 ## 3. 不变量（任何阶段不许破坏）
 
 - CONTRACT-FREEZE 的 18 个 ABI 导出签名不变；
-- 364 预设的指纹输出逐比特不变（fp_oracle / corpus / groundtruth 三道门）；
+- 368 预设的指纹输出逐比特不变（fp_oracle / corpus / groundtruth 三道门）；
 - 每阶段结束跑全量回归 + L2 nginx 终审；
 - 裁枝删除的代码如需找回，来源是 git 历史与上游 tag——内化前先把上游当前版本 commit 记录进 LICENSES.md。
 

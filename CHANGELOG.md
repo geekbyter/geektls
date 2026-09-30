@@ -3,10 +3,115 @@
 本项目遵循语义化版本（版本号规则与"四处单一事实源"见 [docs/versioning.md](docs/versioning.md)）。
 更早的发布过程记录见 [docs/plans/2026-09-28-pypi-release-plan.md](docs/plans/2026-09-28-pypi-release-plan.md) §8.5/§8.6。
 
+## 0.1.7（2026-09-30）
+
+### 新增
+
+- **5 条新版浏览器预设（E3，peet.ws 实机记录导入）**：`edge_154_windows`（Edge 154 / Windows）、
+  `brave_154_windows`（Brave 154 / Windows）、`yabrowser_26_8_windows`（Chrome 150 内核 /
+  YaBrowser 26.8）、`opera_136_windows`（Chrome 152 内核 / OPR 136）、
+  `quarkpc_7_3_5_1009_windows`（Chrome 144 内核 / QuarkPC 7.3.5.1009）。
+  内置预设 **363 → 368**（E3 320 → 325；带 `hpack_strategy` 的 249 → 253）。
+  - 判据不是"看起来像"：每条都用仓库自己的计算逐字符核对记录 —— JA4
+    `edge_154_windows` / `yabrowser_26_8_windows` = `t13d1516h2_8daaf6152771_806a8c22fdea`、
+    `opera_136_windows` = `t13d1517h2_8daaf6152771_cb7bf5808d99`、
+    `quarkpc_7_3_5_1009_windows` = `t13d1515h1_8daaf6152771_cc38aef784ae`（ALPN **http/1.1 优先**）；
+    H2 侧另核对 akamai 指纹串与其 md5（QuarkPC 的非标 `SETTINGS 39450:282706063` 与
+    `MAX_CONCURRENT_STREAMS=1000` 一并落实，md5 = `a45327d1…`）。
+  - **如实登记记录里两处问题**：Brave 记录自报 `ja4=t13d1517…`（17 个扩展、c 段与含 51764 的
+    Chrome154/Opera136 相同），但它自己的 ja3 只列 16 个扩展且不含 51764 ⇒ **记录内部不自洽**
+    （ja4 疑来自另一次握手）；本预设以记录的 ja3/扩展列表为准，故本库算出 `…1516…`。
+    `edge_154_windows` 的记录只覆盖 h2、**没有 QUIC 抓包** ⇒ 其 `http3` 节按 Chromium 家族
+    继承 `edge_153_windows`（快照 note 写明）。
+  - 证据快照 `profiles/evidence/thirdparty/peet.ws-2026-09-30.json`（6 条，逐条带 `_const`：
+    ja3 / ja4 / ja4_r / peetprint / akamai / 扩展序 / UA / H2 头序）。E3 溯源守门
+    （`core/profiles/provenance_test.go`）要求 source 能回到快照的 `_const` ⇒ source 形如
+    `peet.ws-2026-09-30/PEET_EDGE_154_WINDOWS`。
+  - 同批记录里的 `chrome_154_windows` 与内置自测版 **JA4 逐字符相同** ⇒ 外部独立复现，
+    未新增预设（快照里留档）。
+- **QUIC Initial 首飞布局全控（Q1，vendor patch #8）**：`profile.http3.initial_layout`
+  从占位变为真生效——
+  - `padding: "end"`：PADDING 写到包尾（Chrome/quiche 形态；上游 quic-go 默认写在
+    CRYPTO **之前**， sniff 实测钉死）；
+  - `disable_scramble`：关闭 fork 内置的 ClientHello scrambling（SNI/ECH 中点切割）；
+  - `crypto_fragments: [300, 250, …]`：CRYPTO 帧分片表（按表逐片切 ClientHello；
+    隐含关 scramble；表内分片保序——上游的反固化控制帧洗牌会打乱分片，已按表跳过）；
+  - `coalesce_min_size`（0 = 上游默认 128；-1 = 禁用 Initial+Handshake 合并；>0 =
+    自定义阈值）。语义修正：空 datagram 永远可装——否则"禁用合并"会连单独的
+    Handshake 包都发不出去（握手死锁，中继实测踩过并修复）；
+  - 旧占位字段 `coalesce`（bool，从未生效）退役：显式写 `true` 现在 Parse 报错
+    （不静默忽略），`false`/缺省不受影响。
+  - **不设 `initial_layout` 时与上游逐字节不变**（nil 即不触碰 packer/crypto stream）。
+  - 验证：`tests/e2e/quic_layout_test.go`——默认路径回归守门 / Chrome 形态
+    （CRYPTO 严格连续 + PADDING 在尾）/ 分片表逐片上线 / 非法值配置期报错 /
+    coalesce 阈值经真服务端 + UDP 中继实证（默认第二飞 `[initial handshake 1rtt]`
+    合并，-1 拆成 `[initial]`+`[handshake]`）。
+- **transport params 残余项解决 + 冲突规则（Q2，vendor patch #9）**：
+  - `max_udp_payload_size`：fork 接收缓冲从 1452 提到 1500（新常量
+    `MaxIncomingPacketSize`，与发送/默认宣告值解耦，默认 wire 字节不变），
+    blob 可安全声明 1200..1500（Chrome 真值 1472 因此可用）；越界配置期报错。
+  - `max_datagram_frame_size`：新 `quic.Config.DatagramFrameSize` 同时驱动宣告值
+    与接收上限（原先接收上限硬编码 16383，声明 65536 会被对端大 DATAGRAM 帧打断）。
+  - 私有参数 0x11/0x3128：blob 直通早已可用，确认无行为冲突（opaque 声明）。
+  - 冲突一律**配置期报错**（不静默忽略）：服务端专属参数（0x00/0x02/0x0d/0x10）、
+    `initial_source_connection_id`(0x0f，钉不死逐连接随机 SCID)、重复 id、
+    `transport_params` 与 `transport_params_raw` 同时设置。
+- **H2"缺失项即信号"负断言（Q4）**：`tests/e2e/h2_missing_setting_test.go`——锚定
+  E1 证据（Chrome/Edge 的 SETTINGS 恰好 `{1,2,4,6}`），显式断言 `{3,5}`
+  （MAX_CONCURRENT_STREAMS / MAX_FRAME_SIZE）在预设数据与线上帧里**都不存在**
+  （原先只有全序相等断言，挡不住"多发一项"的漂移）。
+- **0-RTT 缺环精确取证（Q3）**：结论维持"不做"，但原因从模糊的"上游不支持"改为
+  逐行定位：缺环在 bogdanfinn/utls（`newUQUICConn` 不复制 `EnableSessionEvents`、
+  `UQUICConn` 无 `StoreSession`），补齐路径 = vendor 第三个 fork（utls），
+  详见 docs/p4-h3-capability.md 行为层。
+
+### 修复
+
+- engine 协议选择（G8）两处测试红：`TestProtocolValidation` 的前提是"chrome_133
+  无 http3 节"，但内置预设实际带 http3 节——测试改为显式剥掉；`force_http3` 与代理
+  冲突的报错补上 `force_http3` 字样（与会话级 h3Only 分支分开），并修正
+  `protoOrder()` 把短码 `h1.1` 当线上 ALPN 名发出的问题（线上名应为 `http/1.1`）。
+- fork `config_test.go` 的 Config 字段登记测试补 geektls 五个字段（patch #6/#7
+  遗留的红）。
+
+### 变更
+
+- 版本源四处同步为 `0.1.7`（`core/version/version.go`、`bindings/python/pyproject.toml`、
+  `bindings/nodejs/package.json`、`bindings/python/geektls/__init__.py`），文档里的"当前版本"
+  表述（`docs/versioning.md`、README / PyPI 长描述的 `version()` 示例）同批更新。
+
+### 文档
+
+- README 的「协议选择 / 请求头顺序 / 身份自洽」扩写为**可直接复制的三套 demo**（Python / Node /
+  CLI）：H1.1-only、H2-only、H3 opt-in、H3-only、请求级 `force_http3`、`header_order` 三档
+  （preserve/input/random 各自的取舍）、自带 UA 的 `identity_sync`（含"要 TLS 也一致就换同平台
+  变体预设"这条正确路径）。
+- 预设计数在 README / `docs/10` / `docs/maintenance` / `docs/p2-h2-capability` /
+  `docs/capability-matrix.yml` / 三份计划文档里统一到 **368（E3 325、HPACK 253）**。
+- `profiles/evidence/README.md` 的 thirdparty 表补 `peet.ws-2026-09-30.json` 一行。
+
 ## 0.1.6（2026-09-30）
 
 ### 新增
 
+- **协议选择（G8）：H3 默认关闭**，`protocols` / `h3` 交回用户（默认 `["h1.1","h2"]`，
+  与 curl_cffi / requests 同口径）。此前只要预设带 `http3.enabled + h2_race_ms > 0` 就自动
+  竞速 H3，用户没有开关——那不是"更强"，是"不可控"。现在：`protocols=["h1.1"]` 把 ALPN
+  收窄到 `http/1.1`；`["h2"]` 只走 H2（对端不支持即失败，**不静默回落 H1**）；`["h3"]`
+  会话级强制；`h3=true` 是便捷写法（`h3=false` 与 `protocols` 同给不拦，`h3=true` 同给报错）。
+  **默认路径线上字节逐字节不变**（允许集合覆盖 profile 的 ALPN 时连 detail 指针都不换）。
+  默认会话下 `force_http3=true` 仍可用（老行为不变），只有会话显式限定 `protocols` 且不含
+  `h3` 时才冲突报错。三语言绑定 + CLI（`--protocols` / `--h3`）同步暴露；测试见
+  `core/engine/protocol_test.go`（行为层 / 服务端视角 / 协商 ALPN 三层判据）。
+- **请求头顺序可控（G9）**：`header_order` = `preserve`（默认，按预设声明序）/
+  `input`（按调用方传入序）/ `random`（打乱，Host 恒最前）。`random` 是"绕顺序检测"的手段，
+  与真浏览器不符且破坏可复现性，取舍写进 README。H1（含流式上传与 WS 握手）/ H2 / H3 一致生效；
+  测试用原始 TCP 明文服务端**按收到的顺序**逐行核对（`core/engine/headerorder_test.go`）。
+- **身份自洽（G9）**：调用方自带 `user-agent` 与预设身份不一致时（`identity_sync` 默认 `auto`），
+  把 `sec-ch-ua` 的版本号 / `sec-ch-ua-platform` / `sec-ch-ua-mobile` 校正到该 UA，并在响应
+  `warnings` 里**如实告警**"TLS/JA3/JA4/H2 仍为该预设"。**不伪造 TLS**：想要字节级一致，
+  正确路径是改用同平台变体预设（`chrome_154` 的 `_windows`/`_macos`/`_android`），文档写明。
+  `identity_sync="off"` 保持旧行为（不校正、不告警）。
 - **明文 `http://` 与 `ws://`（G5）**：引擎不再只认 https/wss。明文档只做 TCP——
   不握手、不发 ClientHello，`SelfCheck` 恒为零值、`UsedProtocol` 恒为 `http/1.1`
   （h2c 不在承诺面内）；拨号决策抽成 `planDial`，TLS 档与明文档共用同一份
@@ -53,7 +158,7 @@
   - 测试：`tests/e2e/python/test_requests_parity.py`（10 条，本地明文服务端，零外部依赖）。
 - **QUIC 首 datagram 尺寸可控（G3/G6 的尺寸半边）**：`profile.http3.initial_packet_size`
   （1200–1452，0/不设 = 上游默认 1280）经上游 `quic.Config.InitialPacketSize` 生效，
-  即"PADDING 填到多少"可配。**不碰 fork、默认路径逐字节不变**（364 条预设无一带该键）；
+  即"PADDING 填到多少"可配。**不碰 fork、默认路径逐字节不变**（363 条预设无一带该键）；
   越界在建 transport 时报错而不是被上游静默夹到 1452。真实线上验证：
   `tests/e2e/quic_sniff_test.go` 的 `TestQUICInitialPacketSize`（1350→`[1350 1350]`、
   1200→`[1200 1200]`、不设→`[1280 1280]`）。coalesce 阈值与 CRYPTO 分片表仍不可控（= SC-3）。
@@ -85,6 +190,19 @@
 
 ### 变更
 
+- **预设命名统一（2026-09-30）**：规范 = `<家族>_<版本>[_<变体>][_<平台>]`，**平台能判定就
+  必须写，判不定就留空**。改名 7 条：
+  - `chrome_131/133/150`、`firefox_120/135` → `*_windows`（平台依据 = 这些预设 `identity` 里的 UA）；
+  - `safari_16` → `safari_16_macos`；**`safari_18` 的旧形态直接删除**，旧名改指实测导航形态
+    `safari_18_macos`（**Safari 也带 `_macos`**：它同时有 macOS 与 iOS 形态，后缀只允许
+    `_macos`/`_ios`）。删除理由：那条是"无实测来源的历史构造"（13 扩展、wire ≈2.9KB，与真机
+    差得远，`core/tls/presets_test.go` 一直把它标成"待校验"），留着就是遗留问题；代价是
+    用旧名发出的字节会变成实测形态（**刻意的行为变化**，已同步钉住的 JA4 期望值）。
+    预设总数 **364 → 363**（自测集 30 → 29，E3 仍 320，HPACK 带值 250 → 249）。
+  **旧名=别名**（`core/profiles/alias.go`，映射表只增不删）：`impersonate="chrome_133"` 与
+  `"chrome_133_windows"` 取到同一份形态，仓库里 200+ 处旧引用无需迁移；仍然没有族级短名/
+  前缀匹配。新增守门测试 `core/profiles/naming_test.go`（浏览器族含 Safari 必须带平台后缀、
+  Safari 后缀只允许 macos/ios、别名与规范名同形态）；规范文档见 docs/03 §3.1 与 README「预设体系」。
 - `HTTP3Profile.initial_layout` 明确标注为**占位**（不生效）：padding 的可行部分改由
   `initial_packet_size` 表达，coalesce/分片表归入 SC-3；结构体保留以便既有 profile 仍能解析。
 - 版本源四处同步为 `0.1.6`（`core/version/version.go`、`bindings/python/pyproject.toml`、

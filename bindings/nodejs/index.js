@@ -550,6 +550,7 @@ const SESSION_OPTION_KEYS = new Set([
   'proxy', 'proxy_from_env', 'timeout_ms', 'read_timeout_ms', 'redirect_max',
   'cookie_jar', 'insecure_skip_verify', 'auto_decompress', 'ca_bundle',
   'client_cert', 'client_key', 'resolve', 'local_address', 'ip_version',
+  'protocols', 'h3', 'header_order', 'identity_sync',
 ]);
 
 /**
@@ -576,7 +577,8 @@ class Session {
       redirectMax, allowRedirects,
       cookieJar, insecureSkipVerify, verify, caBundle, cert, certKey,
       headers, autoDecompress, proxyFromEnv, trustEnv,
-      resolve, localAddress, ipVersion, ...config
+      resolve, localAddress, ipVersion,
+      protocols, h3, headerOrder, identitySync, ...config
     } = options;
     this._headers = headers
       ? Object.entries(Array.isArray(headers) ? Object.fromEntries(headers) : headers)
@@ -630,6 +632,13 @@ class Session {
       }
       if (localAddress !== undefined) opts.local_address = String(localAddress);
       if (ipVersion !== undefined) opts.ip_version = String(ipVersion);
+      // G8/G9：协议集合与头序/身份自洽（默认都不改既有行为）
+      if (protocols !== undefined) {
+        opts.protocols = Array.isArray(protocols) ? protocols.map(String) : [String(protocols)];
+      }
+      if (h3 !== undefined) opts.h3 = !!h3;
+      if (headerOrder !== undefined) opts.header_order = String(headerOrder);
+      if (identitySync !== undefined) opts.identity_sync = String(identitySync);
       this._session = gtls_session_new(this._client, JSON.stringify(opts));
       if (!this._session) raiseLastError();
     } catch (err) {

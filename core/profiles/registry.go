@@ -54,6 +54,8 @@ func readBuiltin(name string) ([]byte, error) {
 	if name == "" || strings.ContainsAny(name, `/\`) {
 		return nil, fmt.Errorf("invalid preset name %q", name)
 	}
+	// 旧名兼容（见 alias.go）：改名后旧引用照旧可用，新代码用规范名。
+	name = canonicalPresetName(name)
 	data, err := builtinFS.ReadFile("builtin/" + name + ".json")
 	if err != nil {
 		return nil, fmt.Errorf("preset not found: %q", name)

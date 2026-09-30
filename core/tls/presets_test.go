@@ -77,15 +77,27 @@ func TestPresetJA4Pinned(t *testing.T) {
 		// 生成预设 safari_18_macos（原始 hex 标本来源）的 JA4 与**实测 18.6 完全相同** ⇒
 		// 同一真机形态的独立复现（差别只在不进 JA4 的量上：wire 874B vs 实测 1264B）。
 		"safari_18_macos": "t13d2014h2_a09f3c656075_e42f34c56612",
-		// 另两个**无实测来源**的历史预设差距明显：13 扩展（比真机少 1 个）且 wire ≈2.9KB
+		// 旧名别名：`safari_18` 的无实测来源形态已于 2026-09-30 删除，别名改指上面那条
+		// 实测形态 ⇒ 与 `safari_18_macos` 同 JA4。这条同时钉住"别名不会被悄悄改回旧形态"。
+		"safari_18": "t13d2014h2_a09f3c656075_e42f34c56612",
+		// 另一个**无实测来源**的历史预设差距明显：13 扩展（比真机少 1 个）且 wire ≈2.9KB
 		// （真机 ≈1.26KB）⇒ 钉住作为"待校验"的显式记录，避免它被误当成真机形态。
-		"safari_18":       "t13d2013h2_a09f3c656075_874d27d7ca63",
 		"safari_26_macos": "t13d2013h2_a09f3c656075_7f0f34a4126d",
 		// iOS 17.2 三个浏览器（Safari / Chrome CriOS / Edge EdgiOS）**同一个 JA4**：
 		// 与 macOS Safari 17.3.1 也相同 ⇒ WebKit 形态跨平台、跨浏览器一致（见下方专项测试）。
 		"safari_17_2_ios": "t13d2014h2_a09f3c656075_14788d8d241b",
 		"chrome_148_ios":  "t13d2014h2_a09f3c656075_14788d8d241b",
 		"edge_148_ios":    "t13d2014h2_a09f3c656075_14788d8d241b",
+		// peet.ws 记录导入（2026-09-30，grade=E3）：与记录自报 ja4 逐字符一致
+		// （H2 侧另核对 akamai 指纹串与其 md5，见导入脚本与提交说明）。
+		"edge_154_windows":          "t13d1516h2_8daaf6152771_806a8c22fdea",
+		"yabrowser_26_8_windows":    "t13d1516h2_8daaf6152771_806a8c22fdea",
+		"opera_136_windows":         "t13d1517h2_8daaf6152771_cb7bf5808d99",
+		"quarkpc_7_3_5_1009_windows": "t13d1515h1_8daaf6152771_cc38aef784ae",
+		// Brave：记录自报 t13d1517…（17 个扩展），但它自己的 ja3 只列了 16 个且不含
+		// 51764 ⇒ **记录内部不自洽**（ja4 疑来自另一次握手）。本预设以记录的 ja3/扩展
+		// 列表为准，故本库算出 1516…；这条钉住的是"我们按记录的 ja3 建模"这个事实。
+		"brave_154_windows": "t13d1516h2_8daaf6152771_806a8c22fdea",
 		// Android 14 实测（2026-09-28）：与桌面同版本**JA4 完全相同**（Chromium 的 TLS 面
 		// 跨平台一致；Firefox 亦一致）——见 TestCrossPlatformSameVersionShape。
 		"chrome_154_android":  "t13d1517h2_8daaf6152771_cb7bf5808d99",

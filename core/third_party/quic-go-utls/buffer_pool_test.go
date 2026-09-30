@@ -10,7 +10,7 @@ import (
 
 func TestBufferPoolSizes(t *testing.T) {
 	buf1 := getPacketBuffer()
-	require.Equal(t, protocol.MaxPacketBufferSize, cap(buf1.Data))
+	require.Equal(t, protocol.MaxIncomingPacketSize, cap(buf1.Data)) // geektls patch: receive buffers are 1500
 	require.Zero(t, buf1.Len())
 	buf1.Data = append(buf1.Data, []byte("foobar")...)
 	require.Equal(t, protocol.ByteCount(6), buf1.Len())

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/bogdanfinn/quic-go-utls/http3"
+	utlsb "github.com/bogdanfinn/utls"
 
 	"github.com/geektls/core/profiles"
 	tlscore "github.com/geektls/core/tls"
@@ -66,6 +67,25 @@ type SessionOptions struct {
 	// IPVersion 是 "4" / "6"（curl 的 --ipv4 / --ipv6）；空 = 不限。
 	// 与 local_address、resolve 的取值冲突时建会话即报错。
 	IPVersion string `json:"ip_version,omitempty"`
+
+	// --- 协议选择（G8，详见 protocols.go）---
+	// Protocols 是**允许的 HTTP 协议集合**（顺序无关）："h1.1" / "h2" / "h3"。
+	// 默认（省略）= ["h1.1","h2"]：只走 TCP，**不参与 H3**——与 curl / curl_cffi
+	// 一致（哪怕预设声明了 http3 节，也要用户显式点头才走 QUIC）。
+	// 不含 "h2" ⇒ ALPN 收窄到 http/1.1；只有 "h3" ⇒ 会话级强制 H3（失败不回落）。
+	Protocols []string `json:"protocols,omitempty"`
+	// H3 是 Protocols 的便捷写法：true = 在默认集合上追加 "h3"。
+	// 与 Protocols 同时给出时**报错**（不静默取其一）。
+	H3 *bool `json:"h3,omitempty"`
+
+	// --- 头序与身份自洽（G9，详见 headerorder.go / identitysync.go）---
+	// HeaderOrder：请求头顺序策略，preserve（默认，按 profile 声明序）/ input（按
+	// 调用方传入序）/ random（打乱，Host 仍最前）。默认 preserve = 与改动前逐字节相同。
+	HeaderOrder string `json:"header_order,omitempty"`
+	// IdentitySync：调用方自带 user-agent 与预设身份不一致时，是否把客户端提示
+	//（sec-ch-ua / sec-ch-ua-platform / sec-ch-ua-mobile）校正到该 UA（默认 auto）。
+	// 注意：**TLS/JA3/JA4/H2 不会因此改变**——那需要换同平台变体预设，本库如实告警。
+	IdentitySync string `json:"identity_sync,omitempty"`
 }
 
 // Request 是一次请求（FFI 的 request_json 映射到它）。
@@ -152,15 +172,22 @@ func (r *Response) Header(name string) string {
 type Session struct {
 	profile      *profiles.Profile
 	opts         SessionOptions
+	protos       protocolSet    // 归一化后的协议允许集合（G8；建会话时算好）
+	protoCustom  bool           // 用户是否显式指定过 protocols/h3（决定 ALPN 收窄是否"补位"）
+	hdrOrder     string         // 头序策略（G9；preserve / input / random）
+	idSync       string         // 身份自洽策略（G9；auto / off）
 	certs        *certMaterial  // 自持信任库 / mTLS 客户端证书（nil = 系统默认）
 	netctl       *netControl    // 地址钉位 / 源绑定 / 族偏好（A9；nil = 全默认）
 	jar          *cookiejar.Jar // nil = 禁用 cookie
 	altSvcH3     sync.Map       // host:port → 已知广告 H3
 	sessionCache utls.ClientSessionCache
-	pool         *connPool
-	h3tr         *http3.Transport // 池开启时的共享 H3 transport（懒建；quic-go 内部按 host 复用 QUIC 连接）
-	h3mu         sync.Mutex
-	closed       atomic.Bool
+	// h3SessionCache 是 QUIC/H3 侧的票据缓存（bogdanfinn/utls 类型；与 TCP 侧
+	// sessionCache 同一开关）。0-RTT 链路见 third_party/utls-bogdanfinn patch。
+	h3SessionCache utlsb.ClientSessionCache
+	pool           *connPool
+	h3tr           *http3.Transport // 池开启时的共享 H3 transport（懒建；quic-go 内部按 host 复用 QUIC 连接）
+	h3mu           sync.Mutex
+	closed         atomic.Bool
 }
 
 // NewSession 基于 profile 建会话。profile 必须有可编译的 tls.detail。
@@ -187,7 +214,26 @@ func NewSession(p *profiles.Profile, opts SessionOptions) (*Session, error) {
 		return nil, err
 	}
 	opts.IPVersion = netctl.family
-	s := &Session{profile: p, opts: opts, netctl: netctl}
+	// 协议允许集合（G8）：建会话时归一化 + 校验，非法值/非法组合在这里就报错。
+	protos, err := resolveProtocols(opts, p)
+	if err != nil {
+		return nil, err
+	}
+	hdrOrder, err := normalizeHeaderOrder(opts.HeaderOrder)
+	if err != nil {
+		return nil, err
+	}
+	idSync, err := normalizeIdentitySync(opts.IdentitySync)
+	if err != nil {
+		return nil, err
+	}
+	s := &Session{
+		profile: p, opts: opts, netctl: netctl,
+		protos:      protos,
+		protoCustom: len(opts.Protocols) > 0 || opts.H3 != nil,
+		hdrOrder:    hdrOrder,
+		idSync:      idSync,
+	}
 	certs, err := loadCertMaterial(opts)
 	if err != nil {
 		return nil, err
@@ -205,6 +251,7 @@ func NewSession(p *profiles.Profile, opts SessionOptions) (*Session, error) {
 	// 共享 cache 让同 Session 的后续握手发带 PSK 的 ClientHello。
 	if p.Behavior == nil || p.Behavior.SessionResumption {
 		s.sessionCache = utls.NewLRUClientSessionCache(64)
+		s.h3SessionCache = utlsb.NewLRUClientSessionCache(64) // QUIC 侧同一开关（T1）
 	}
 	s.pool = newConnPool()
 	return s, nil

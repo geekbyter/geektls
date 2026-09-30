@@ -46,7 +46,11 @@ request 选项：
   --timeout <秒>                        到响应头为止（默认 30）
   --read-timeout <秒>                   body 读取空闲上限（默认 0 = 不限）
   --proxy <url>                         http/https(CONNECT)/socks5/socks5h/socks4/socks4a
-  --http3                               强制 H3（失败不回落）
+  --protocols <表>                      允许的协议集合，逗号分隔（默认 h1.1,h2；例：h1.1 / h2 / h2,h3）
+  --h3                                  允许 H3（= 默认集合加 h3；默认关闭，与 curl_cffi 一致）
+  --http3                               **强制** H3（失败不回落；请求级 force）
+  --header-order <档>                   请求头顺序：preserve（默认）/ input（按传入序）/ random（打乱）
+  --identity-sync <档>                  自带 UA 与预设身份冲突时：auto（默认，校正 sec-ch-ua* + 告警）/ off
   --insecure                            跳过证书校验
   --resolve host[:port]=<IP>            钉位，可重复
   --local-address <IP>                  出网源地址
@@ -246,6 +250,10 @@ type reqOpts struct {
 	readTimeout  int
 	proxy        string
 	http3        bool
+	h3           bool
+	protocols    string
+	headerOrder  string
+	identitySync string
 	insecure     bool
 	resolve      map[string]string
 	localAddress string
@@ -336,6 +344,20 @@ func cmdRequest(args []string, stdout, stderr io.Writer) int {
 			}
 		case "--http3":
 			o.http3 = true
+		case "--h3":
+			o.h3 = true
+		case "--header-order":
+			if o.headerOrder, _ = val(); o.headerOrder == "" {
+				return usageErr(stderr, "--header-order 需要值（preserve / input / random）")
+			}
+		case "--identity-sync":
+			if o.identitySync, _ = val(); o.identitySync == "" {
+				return usageErr(stderr, "--identity-sync 需要值（auto / off）")
+			}
+		case "--protocols":
+			if o.protocols, _ = val(); o.protocols == "" {
+				return usageErr(stderr, "--protocols 需要值（如 h1.1,h2 / h2 / h2,h3）")
+			}
 		case "--insecure":
 			o.insecure = true
 		case "--resolve":
@@ -380,7 +402,8 @@ func cmdRequest(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "geektls: %v\n", err)
 		return 1
 	}
-	sess, err := engine.NewSession(p, engine.SessionOptions{
+	// 协议选择（G8）：--protocols 与 --h3 二选一（引擎两者同时给会报错）。
+	sessOpts := engine.SessionOptions{
 		Proxy:              o.proxy,
 		TimeoutMs:          o.timeout * 1000,
 		ReadTimeoutMs:      o.readTimeout * 1000,
@@ -389,7 +412,21 @@ func cmdRequest(args []string, stdout, stderr io.Writer) int {
 		Resolve:            o.resolve,
 		LocalAddress:       o.localAddress,
 		IPVersion:          o.ipVersion,
-	})
+		HeaderOrder:        o.headerOrder,
+		IdentitySync:       o.identitySync,
+	}
+	switch {
+	case o.protocols != "":
+		for _, v := range strings.Split(o.protocols, ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				sessOpts.Protocols = append(sessOpts.Protocols, v)
+			}
+		}
+	case o.h3:
+		h3on := true
+		sessOpts.H3 = &h3on
+	}
+	sess, err := engine.NewSession(p, sessOpts)
 	if err != nil {
 		fmt.Fprintf(stderr, "geektls: %v\n", err)
 		return 1

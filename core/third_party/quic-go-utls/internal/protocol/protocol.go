@@ -113,6 +113,14 @@ type StatelessResetToken [16]byte
 // Ethernet's max packet size is 1500 bytes,  1500 - 48 = 1452.
 const MaxPacketBufferSize = 1452
 
+// MaxIncomingPacketSize is the buffer size used on the receive path.
+// geektls patch: it is decoupled from MaxPacketBufferSize (which keeps
+// governing what we send and advertise by default) so that advertising a
+// larger max_udp_payload_size (e.g. Chrome's 1472 = IPv4 MTU) doesn't lead
+// to silently truncated datagrams on receive. 1500 covers the full Ethernet
+// MTU without header deductions.
+const MaxIncomingPacketSize = 1500
+
 // MaxLargePacketBufferSize is used when using GSO
 const MaxLargePacketBufferSize = 20 * 1024
 

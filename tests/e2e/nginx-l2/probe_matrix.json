@@ -1,5 +1,6 @@
 {
-  "chrome_131": {
+  "_note": "2026-09-30 命名统一：键已改为规范名；safari_18 的旧形态已删除（旧名 safari_18 现为别名 → safari_18_macos，字节不同故不在此快照内）。",
+  "chrome_131_windows": {
     "describe": {
       "http2": {
         "headers_priority": {
@@ -388,7 +389,7 @@
     "status": 200,
     "used_protocol": "h2"
   },
-  "chrome_133": {
+  "chrome_133_windows": {
     "describe": {
       "http2": {
         "headers_priority": {
@@ -777,7 +778,7 @@
     "status": 200,
     "used_protocol": "h2"
   },
-  "chrome_150": {
+  "chrome_150_windows": {
     "describe": {
       "http2": {
         "headers_priority": {
@@ -1166,7 +1167,7 @@
     "status": 200,
     "used_protocol": "h2"
   },
-  "firefox_120": {
+  "firefox_120_windows": {
     "describe": {
       "http2": {
         "headers_priority": {
@@ -1462,7 +1463,7 @@
     "status": 200,
     "used_protocol": "h2"
   },
-  "firefox_135": {
+  "firefox_135_windows": {
     "describe": {
       "http2": {
         "headers_priority": {
@@ -1759,7 +1760,7 @@
     "status": 200,
     "used_protocol": "h2"
   },
-  "safari_16": {
+  "safari_16_macos": {
     "describe": {
       "http2": {
         "headers_priority": {
@@ -2058,309 +2059,6 @@
         27,
         31354,
         21
-      ]
-    },
-    "status": 200,
-    "used_protocol": "h2"
-  },
-  "safari_18": {
-    "describe": {
-      "http2": {
-        "headers_priority": {
-          "exclusive": false,
-          "weight": 255
-        },
-        "hpack_strategy": "safari",
-        "pseudo_header_order": [
-          "m",
-          "s",
-          "a",
-          "p"
-        ],
-        "settings": [
-          [
-            4,
-            4194304
-          ],
-          [
-            3,
-            100
-          ]
-        ],
-        "window_update": 10485760
-      },
-      "identity": {
-        "headers": [
-          [
-            "user-agent",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
-          ],
-          [
-            "accept",
-            "*/*"
-          ],
-          [
-            "accept-language",
-            "en-US,en;q=0.9"
-          ],
-          [
-            "accept-encoding",
-            "gzip, deflate, br"
-          ]
-        ]
-      },
-      "name": "safari_18",
-      "tcp": {
-        "mss": 1460,
-        "ttl": 64
-      },
-      "tls": {
-        "detail": {
-          "ciphers": [
-            "grease",
-            "0x1301",
-            "0x1302",
-            "0x1303",
-            "0xc02c",
-            "0xc02b",
-            "0xcca9",
-            "0xc030",
-            "0xc02f",
-            "0xcca8",
-            "0xc00a",
-            "0xc009",
-            "0xc014",
-            "0xc013",
-            "0x009d",
-            "0x009c",
-            "0x0035",
-            "0x002f",
-            "0xc008",
-            "0xc012",
-            "0x000a"
-          ],
-          "extensions": [
-            {
-              "grease_random": true,
-              "type": 2570
-            },
-            {
-              "sni": "auto",
-              "type": 0
-            },
-            {
-              "type": 23
-            },
-            {
-              "data": "00",
-              "type": 65281
-            },
-            {
-              "groups": [
-                "grease",
-                "X25519MLKEM768",
-                "X25519",
-                "P-256",
-                "P-384",
-                "P-521"
-              ],
-              "type": 10
-            },
-            {
-              "point_formats": "AA==",
-              "type": 11
-            },
-            {
-              "alpn": [
-                "h2",
-                "http/1.1"
-              ],
-              "type": 16
-            },
-            {
-              "type": 5
-            },
-            {
-              "sig_algs": [
-                "0x0403",
-                "0x0804",
-                "0x0401",
-                "0x0503",
-                "0x0203",
-                "0x0805",
-                "0x0805",
-                "0x0501",
-                "0x0806",
-                "0x0601",
-                "0x0201"
-              ],
-              "type": 13
-            },
-            {
-              "type": 18
-            },
-            {
-              "key_shares": [
-                "grease",
-                "X25519MLKEM768",
-                "X25519"
-              ],
-              "type": 51
-            },
-            {
-              "psk_modes": "AQ==",
-              "type": 45
-            },
-            {
-              "type": 43,
-              "versions": [
-                "grease",
-                "0x0304",
-                "0x0303",
-                "0x0302",
-                "0x0301"
-              ]
-            },
-            {
-              "cert_compression": [
-                "zlib"
-              ],
-              "type": 27
-            },
-            {
-              "grease_random": true,
-              "type": 2570
-            },
-            {
-              "padding_to": 512,
-              "type": 21
-            },
-            {
-              "type": 41
-            }
-          ],
-          "legacy_version": "0x0303"
-        }
-      }
-    },
-    "nginx": {
-      "clienthello_alpn": "h2,http/1.1",
-      "clienthello_cipher_count": "21",
-      "clienthello_ciphers_hex": "eaea130113021303c02cc02bcca9c030c02fcca8c00ac009c014c013009d009c0035002fc008c012000a",
-      "clienthello_ec_point_formats": "0",
-      "clienthello_extension_count": "13",
-      "clienthello_extension_order_raw": "0-23-65281-10-11-16-5-13-18-51-45-43-27",
-      "clienthello_grease_positions": "cipher:0=60138,group:0=23130,key_share_group:0=23130,supported_version:0=31354",
-      "clienthello_grease_values": "60138-23130-23130-31354",
-      "clienthello_key_share_groups": "23130-4588-29",
-      "clienthello_legacy_version": "771",
-      "clienthello_psk_key_exchange_modes": "1",
-      "clienthello_raw_hex": "4e47464348310303002aeaea130113021303c02cc02bcca9c030c02fcca8c00ac009c014c013009d009c0035002fc008c012000a000d0000000e000c0000096c6f63616c686f737400170000ff01000100000a000e000c5a5a11ec001d001700180019000b000201000010000e000c02683208687474702f312e31000500050100000000000d001800160403080404010503020308050805050108060601020100120000003304ef04ed5a5a00010011ec04c0a02405fdc276a4221a8bc57c07dccf5195707cf887dbfa8c0ba036001279a66227157430e7b52600a4ba614727cd866dd7434960451583f2069226722f81b13b4471d39b2e0f7626b896c0be6a39173b76a1561bca1b4f6e34ce93f484100c62cff3723199bebd07be6b862b5f8742396a6707985d5737b1cfe07c999b64a2e35c78b27c00b73696a015e4868a37bac186674a683cbaf1064f759848e00081b953386acc0914274e128542c5a682cb190cf75c21567598fdf5c7b5bb191ff8412c2413689c5c97862820e6c0f34c20450500a4060b0a89cd0232b71429b647251c80c3009ad7cd5c37ce73152edd81cc76827480c88eb9103b80ba8c50d41e0ec79e93b89d0b2152099b690472bd65e973cd82854e2a8f3e0980011c98c153b37e39851ceb0403e63b480786f117747d15af8248534fe2b4c8cb464c5957822c51b5c19bd6253504317c43501145853b1c1666743a073b732f125b4a251758b1596137b04296953d22c93596fb7ff1b5ace2b9b0b2c145f1296437f0a5a2062cde9cae48ba46f210055d7461991322b223c9c4367975030bf39b1f8dc2b0c180af86ca78b729b4e9143fbb95c69137a6aeb86ebb3875132c1a3fe79f1d712c26b59380014eb89bb4638b4a28d27a9952a3975b2e26c09c0af12739e674051a5ed4b606eac56becc3418184c88987c0f3c59e26665a580b7fde38bdcce70259865bde2286044a77948580148406ae95222fc011fbb31f9049a5db33c8dce9a14957819ecb5c31b7c023322204b27572c2bdd013b73926a339d7a28343860b1ac32ac542f1da40c16778fbd7c2fea202a5505be516a574038ea5eb663f5ac0d4f7481cf7ad9e4c94857c7c0eea7f6311cfe0b62391f00d5aa1789e0a1103a4445b43cf01e4233649a018748e152324998036f26c879f4436298518753b20eea85788b032d723579e7b6e128cb57ef63ecc6a0432c72461a98bd67b3ea75172da771fabe6b55466758ce9276a971f2e025ce2b7093f4c9f36ba09cf0b08f117874074584b217697733feff726b6439c75b0c5616254ff0a37a4358be529185016477b193462b603fbc9994202521f7315b7856888b922841a4d0c5391ceac818d57c4721b5c38612f242566314b44aac2bd2efa0ab459cfc48613477a8dafe0708e0588a7143e1c4b88d1d49f4ef29a2e353eea7523900455b47c916768233e9bc6d85643832090fb88cfe313084273496c48c7a8132af0c29c99c0668903c77cb014d168acde85caa7c6903b85a5e7a793ae405fb4010f0726601ca63b19a20c9ddca851b4bc22084a8062cc56c8432675b055448a8b5ab968d0a2dd55cde9c07b69840d650396fc16b1e7fc52d7873a5f9c416660869b2b45e2a7204f1b4fc8faa3e842c3eefa74c645b417e6b4c92298b5c96bdc9a2186a11a13743b15f34a8e2ca1c9cc9d990cbcc278b3c7082fc530aa4f7383e4ea9aedac1f9b946934748372d8abd3f93837bc7ec447c393c0cc4156467246866733ca66c708330099da12a04f9b062ae11b84bb7e435c83f2acb2135169462130cda6accd4b94e52c05ad56cc38cc0c8aa32ff1781abfe1762baab0f1a696bc4583b347bae0eb2f06c58956d9302a582353f118e47d6f90da9ea9bb774c40868f943584fcb5d3dabbe7512c5edfc64440b0591df69c5255fcd1fc5bfe0ec0de6e23362d9bded679529a49001d00209826d7ad3917986f53b54a165eb94be1fcaf54d194b0d8b50720cc6288e5e274002d00020101002b000b0a7a7a0304030303020301001b0003020001",
-      "clienthello_raw_len": "1459",
-      "clienthello_raw_sha256": "a57dbff61246d0b79b0cfde70c78032030ce431826d393b8b7306fcfa9f5fb54",
-      "clienthello_signature_algorithms": "1027-2052-1025-1283-515-2053-2053-1281-2054-1537-513",
-      "clienthello_sni": "localhost",
-      "clienthello_sni_len": "9",
-      "clienthello_supported_groups": "23130-4588-29-23-24-25",
-      "clienthello_supported_versions": "31354-772-771-770-769",
-      "greased": "1",
-      "http2": "4:4194304;3:100|10485760|1:0:0:256|m,s,a,p",
-      "http2_priorities": "1:0:0:256",
-      "http2_pseudo_headers": "m,s,a,p",
-      "http2_settings": "4:4194304;3:100",
-      "http2_window_update": "10485760",
-      "ja3": "771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47-49160-49170-10,0-23-65281-10-11-16-5-13-18-51-45-43-27,4588-29-23-24-25,0",
-      "ja3_ciphers": "4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47-49160-49170-10",
-      "ja3_curves": "4588-29-23-24-25",
-      "ja3_extensions": "0-23-65281-10-11-16-5-13-18-51-45-43-27",
-      "ja3_hash": "bbdd7e7850802fc0801ab770b0060cf9",
-      "ja3_point_formats": "0",
-      "ja3_version": "771",
-      "ja4": "t13d2013_a09f3c656075_e0fce182f1ce",
-      "ja4h": "ge20n05_813e32c09d15",
-      "ja4one": "t13d2013_a09f3c656075c3e2891820a769e77df3e397f33012ab8d5692597ac52ba8a536_e0fce182f1cebcca789c917e6fce6c0103be75a7abb4884ab9e420665bc7ecec_665bc7ecec_",
-      "ja4s": "h220_02_96066dbf2a17_4194304_10551295_0",
-      "ja4tcp": "65495_2-4-8-1-3_65495_7",
-      "ja4tcp_mss": "65495",
-      "ja4tcp_options": "2-4-8-1-3",
-      "ja4tcp_options_text": "MSS,SACK,TS,NOP,WS",
-      "ja4tcp_window": "65495",
-      "ja4tcp_window_scale": "7"
-    },
-    "selfcheck": {
-      "extensions": [
-        0,
-        23,
-        65281,
-        10,
-        11,
-        16,
-        5,
-        13,
-        18,
-        51,
-        45,
-        43,
-        27
-      ],
-      "grease": [
-        {
-          "index": 0,
-          "value": 2570,
-          "where": "cipher"
-        },
-        {
-          "index": 0,
-          "value": 56026,
-          "where": "extension"
-        },
-        {
-          "index": 0,
-          "value": 23130,
-          "where": "group"
-        },
-        {
-          "index": 0,
-          "value": 23130,
-          "where": "key_share"
-        },
-        {
-          "index": 0,
-          "value": 31354,
-          "where": "version"
-        },
-        {
-          "index": 14,
-          "value": 60138,
-          "where": "extension"
-        }
-      ],
-      "ja3": "771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47-49160-49170-10,0-23-65281-10-11-16-5-13-18-51-45-43-27,4588-29-23-24-25,0",
-      "ja3_fullstring": "771,4865-4866-4867-49196-49195-52393-49200-49199-52392-49162-49161-49172-49171-157-156-53-47-49160-49170-10,0-23-65281-10-11-16-5-13-18-51-45-43-27,4588-29-23-24-25,0",
-      "ja3_hash": "bbdd7e7850802fc0801ab770b0060cf9",
-      "ja4": "t13d2013h2_a09f3c656075_874d27d7ca63",
-      "negotiated": {
-        "alpn": "h2",
-        "cipher": "0x1301",
-        "version": "0x0304"
-      },
-      "sni_sent": true,
-      "wire_extensions": [
-        56026,
-        0,
-        23,
-        65281,
-        10,
-        11,
-        16,
-        5,
-        13,
-        18,
-        51,
-        45,
-        43,
-        27,
-        60138
       ]
     },
     "status": 200,

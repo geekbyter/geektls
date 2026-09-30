@@ -22,13 +22,13 @@
 | initial_max_data | ✅ | `Config.InitialConnectionReceiveWindow` |
 | initial_max_stream_data_bidi_local/remote/uni | ⚠️ 部分 | 三者**共用一个值**（`InitialStreamReceiveWindow`）；三者不一致时取 bidi_local 优先。Chrome 真值 remote=2097152 ≠ local=6291456，粒度损失 |
 | initial_max_streams_bidi / uni | ✅ | `Config.MaxIncomingStreams` / `MaxIncomingUniStreams` |
-| max_udp_payload_size | ❌ | 硬编码 `protocol.MaxPacketBufferSize`（1452；Chrome 1472） |
-| max_ack_delay / ack_delay_exponent | ❌ | 无 config 入口；与默认值相同则不发送（恰好与 Chrome 一致） |
-| active_connection_id_limit | ❌ | 硬编码 `protocol.MaxActiveConnectionIDs`（4，恰与 Chrome 一致） |
-| disable_active_migration | ❌ | 客户端恒不发送（Chrome 也不发） |
-| 非标参数（google_connection_options 等） | ❌ | 无注入点 |
-| **参数顺序** | ❌ | `internal/wire.Marshal` 固定顺序写死 |
-| GREASE transport param | ⚠️ | quic-go 总是发且**恒在首位**；Chrome 位置随机——指纹差异点 |
+| max_udp_payload_size | ❌→✅ | map 路径硬编码 1452；**blob 路径 1200..1500 可控**（patch #9 接收缓冲已提到 1500，Chrome 1472 可对齐） |
+| max_ack_delay / ack_delay_exponent | ❌→✅ | map 路径与默认值相同则不发送；**blob 路径随意**（纯声明项） |
+| active_connection_id_limit | ❌→✅ | map 路径硬编码 4（恰与 Chrome 一致）；**blob 路径随意** |
+| disable_active_migration | ❌→✅ | map 路径客户端恒不发送（Chrome 也不发）；blob 可显式声明（行为侧注意：本库不做连接迁移，声明无害） |
+| 非标参数（google_connection_options 等） | ❌→✅ | **blob 直通**（patch #7），私有参数 0x11/0x3128 已对真机 |
+| **参数顺序** | ❌→✅ | **blob 直通**（顺序即线上顺序） |
+| GREASE transport param | ⚠️→✅ | map 路径恒在首位；**blob 路径位置任意**（Chrome 位置随机 ⇒ 用 blob 对齐） |
 
 ## QUIC 内层 TLS ClientHello ——✅ 已解决（vendor fork patch）
 
@@ -60,24 +60,38 @@ QUIC 化钳制规则（`clampSpecForQUIC`，2026-09-24 起含 TLS1.3 专属裁�
   `clampSpecForQUIC` 直接合成等效 payload——嗅探实测 QUIC hello JA4
   `q13d1517h3_8daaf6152771_697a4d344d1e`，与 TCP 侧仅差 q/t 标志。
 
-QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT/复用随 P7-T2。
+QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT 的精确缺环分析见下文
+「行为层（T5）」的 0-RTT 行（缺环在 bogdanfinn/utls 的 `newUQUICConn`，非本 fork）。
 
-## Initial datagram 布局（T4）——尺寸可控，布局仍不可控（2026-09-30 修订）
+## Initial datagram 布局（T4）——✅ 已全控（vendor patch #8，2026-09-30）
 
-嗅探实测 quic-go 客户端首发：2×默认尺寸的 datagram、每 datagram 单 Initial 包
-（pn 0/1）、ClientHello 被分片进两个 CRYPTO 帧跨包重组。
+嗅探实测上游 quic-go 客户端首发：2×默认尺寸的 datagram、每 datagram 单 Initial 包
+（pn 0/1）、ClientHello 被内置 scrambling 在 SNI/ECH 中点切片后乱序补发、
+PADDING 写在 CRYPTO **之前**（与 Chrome/quiche 相反）。这些现已全部可控：
 
-| 维度 | 结论 |
-|---|---|
-| 分片策略 | ❌ quic-go 内部 packet packer 决定，无钩子（`crypto_stream.go` 有内置的 clienthello scrambling，规则固定） |
-| PADDING 位置/大小 | ⚠️ **尺寸可控（部分关闭）**：`http3.initial_packet_size`（1200–1452）经上游 `quic.Config.InitialPacketSize` 决定首 datagram 被 pad 到多少；实测 1350 → `[1350 1350]`、1200 → `[1200 1200]`、不设 → `[1280 1280]`（默认路径逐字节不变）。**PADDING 在包内的位置**仍由 packer 决定 |
-| coalesce（Initial+Handshake 合并） | ❌ 由对端时序驱动，无配置入口（阈值 `MinCoalescedPacketSize` 是常量） |
+| 维度 | 结论 | 入口（profile.http3） |
+|---|---|---|
+| 首 datagram 尺寸 / PADDING 量 | ✅ | `initial_packet_size`（1200–1452，上游 `Config.InitialPacketSize`，无需 patch；0 = 默认 1280） |
+| PADDING 在包内位置 | ✅ | `initial_layout.padding: "end"` = PADDING 在包尾（Chrome 形态）；缺省 = 上游（PADDING 在前） |
+| CRYPTO 分片表 | ✅ | `initial_layout.crypto_fragments: [300,250,...]`——按表切 CRYPTO 帧（含关闭 scrambling；表内分片保序，跳过上游的反固化洗牌） |
+| clienthello scrambling 开关 | ✅ | `initial_layout.disable_scramble`（SNI/ECH 中点切割的逐连接开关；Chrome 形态 = 关） |
+| coalesce 阈值 | ✅ | `initial_layout.coalesce_min_size`（0 = 默认 128；-1 = 禁用合并；>0 = 自定义）。注意语义：空 datagram 永远可装，"禁用"不会死锁握手 |
 
-**结论**：能兑现的那半边（首包尺寸 / 填充量）已经落地，且不碰 fork——
-用的是上游字段；剩下 coalesce 阈值与 CRYPTO 分片表要动 packer 层
-（比 crypto_setup 深得多），归入 **SC-3（quic-go-utls 内化）** 一起做：
-内化时这些函数就变成自有代码，届时按 profile 暴露分片/合并策略才有意义。
-真实 Chrome 的 Initial 布局差异点仍待 nginx 采集端（P1-T8 环境就绪）量化。
+Chrome 149 真机形态（`chrome_windows_h3.json`：首 datagram 1230B、CH 1784B 单片
+按包空间填充、PADDING 在尾）= `padding:"end"` + `disable_scramble:true` +
+`initial_packet_size` 按 MTU 设。嗅探器断言（`tests/e2e/quic_layout_test.go`）：
+默认路径 PADDING 在前 + scramble 空洞（回归守门）；Chrome 形态 CRYPTO 严格连续
++ PADDING 在尾（796B 实测）；分片表 [300 250 400] 逐片上线；coalesce 阈值经真服务端
++ UDP 中继实证（默认第二飞 [initial handshake 1rtt] 合并，-1 拆成 [initial]+[handshake]）。
+
+**不设 `initial_layout` 的默认路径与上游逐字节不变**（nil 即不触碰 packer/crypto stream）。
+
+已知残余差异（登记，未做）：① **SCID 长度**——Chrome 首飞 SCID 长 0（evidence 里
+`initial_source_connection_id` len=0），fork 默认 4 字节，ConnectionIDGenerator
+未从 http3.Transport 接出；② **填充目标粒度**——`initial_packet_size` 是每个含
+Initial 的 datagram 都补齐到该值，Chrome/quiche 是"至少 1200、内容超出则按自然
+尺寸"（真机首包 1230B 即自然尺寸）；要逐字节复刻 1230 需把
+`initialPaddingLen` 的语义从"补到固定值"改成"补到下限"，增量小、暂未做。
 
 ## 行为层（T5）
 
@@ -85,7 +99,7 @@ QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT/复用
 |---|---|
 | H2/H3 racing | ✅ engine.raceH3H2：H3 先跑，h2_race_ms 未决则并发 H2，先到先得（本地实测 H3 赢/死端口正确回落） |
 | Alt-Svc 升级缓存 | ✅ 会话级 map（学习 `h3=` 广告；pytest 实测首访 h2 → 次访 h3） |
-| 0-RTT | ❌ **结案不做**（A10，2026-09-30）：quic-go 客户端 0-RTT 依赖 `DialEarly` + 会话票据缓存，而 spec 模式下 `StoreSession` 是 no-op、无可补导出面（docs/06 P7-T2 已取证），首飞 Initial 布局又不可控（上文结案项）；指纹侧的 `early_data`(42) 声明已可控，见 `core/tls/early_data_test.go` |
+| 0-RTT | ❌ **结案不做**（A10，2026-09-30；本轮在 fork 里重新取证，缺环定位到具体行）：quic-go 的 0-RTT 链路 = `DialEarly` + TLS 会话票据（票据 Extra 里存对端 transport params，握手时经 `QUICResumeSession` 事件恢复，见 `crypto_setup.go:248` 的双条件门）。**缺环在 bogdanfinn/utls 而非 quic-go-utls**：① `newUQUICConn`（utls `u_quic.go:31`）建 `quicState` 时**没有复制** `QUICConfig.EnableSessionEvents`（对照 `newQUICConn` 在 `quic.go:191` 有复制）⇒ UQUICConn 永不发 `QUICStoreSession`/`QUICResumeSession` 事件——存侧退化成自动写 `ClientSessionCache`（票据里**没有** QUIC transport params 的 Extra），取侧 `zeroRTTParameters` 永远为 nil ⇒ 双条件门恒假；② `UQUICConn` 根本没有 `StoreSession` 方法（`QUICConn.StoreSession` 在 `quic.go:322`，结构不同不通用），我们 fork 里的适配器只能 no-op。补齐路径 = vendor 第三个 fork（bogdanfinn/utls）：`newUQUICConn` 透传 `EnableSessionEvents` + 给 `UQUICConn` 加 `StoreSession`（镜像 quic.go:322）+ 验证 ApplyPreset 下 PSK binder 注入在 QUIC 模式工作——改动面在整个 TCP-TLS 栈上，本轮不动。0-RTT 打通后 `http3.Transport` 本就 `DialEarly`（http3/transport.go:408），链路自然接上。指纹侧的 `early_data`(42) 声明已可控，见 `core/tls/early_data_test.go` |
 
 ## QUIC 内层 ClientHello 形态（E1 实测，2026-09-24）
 
@@ -107,7 +121,7 @@ QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT/复用
 `5(status_request)` 与 `18(SCT)` 在 TLS1.3 里仍有意义，Chrome 在 QUIC 上不发属**实现选择**，
 因此由 profile 的 `http3.inner_hello_drop_extensions` 提供（不为 Firefox/Safari 臆造）。
 
-## transport params 可控边界（实测对照）
+## transport params 可控边界（实测对照，2026-09-30 第二轮修订）
 
 | 参数 | 真机 (Chrome 149) | 我方 wire | 可控性 |
 |---|---|---|---|
@@ -115,20 +129,30 @@ QUIC 会话缓存（StoreSession）在 spec 模式下为 no-op——0-RTT/复用
 | initial_max_data | **15728640** | 15728640 | ✅ `transport_params`（2026-09-24 按实测修正） |
 | initial_max_stream_data_* ×3 | 6291456 | 6291456 | ✅ 但三者共用 quic-go 的**一个**窗口值（粒度损失） |
 | initial_max_streams_bidi / uni | 100 / 103 | 100 / 103 | ✅ `transport_params` |
-| max_datagram_frame_size | 65536 | 16383 | ❌ quic-go 硬编码（仅 `EnableDatagrams` 决定存在与否） |
-| max_udp_payload_size | 1472 | 1452 | ❌ quic-go 硬编码 |
-| max_ack_delay | 不发 | 26 | ❌ quic-go 硬编码 |
-| 私有参数 `0x11` / `0x3128` | 有 | 无 | ❌ 需 `transport_params_raw` blob；blob 为整块替换、连接级参数不可钉死 ⇒ 待 fork 决策 |
+| max_datagram_frame_size | 65536 | 65536 | ✅ **已解**（2026-09-30，patch #9）：blob 声明 + `Config.DatagramFrameSize` 同步放宽接收上限（原先硬编码 16383，声明大于行为会断连） |
+| max_udp_payload_size | 1472 | 1472 | ✅ **已解**（2026-09-30，patch #9）：接收缓冲从 1452 提到 1500（`MaxIncomingPacketSize`，与发送/默认宣告值解耦），blob 可安全声明 1200..1500；越界配置期报错 |
+| max_ack_delay / ack_delay_exponent | 不发 | map 路径 26（硬编码）/ blob 路径随意 | ✅ 用 blob 对齐（纯声明项，描述自身 ACK 行为，无行为冲突） |
+| active_connection_id_limit | 不发 | map 路径 4（硬编码）/ blob 路径随意 | ✅ 用 blob 对齐（行为侧 connIDManager 容忍对端少给 CID） |
+| 私有参数 `0x11` / `0x3128` | 有 | 有 | ✅ blob 直通（opaque，无行为冲突） |
+| initial_source_connection_id | 空值 | ❌ | **配置期报错**：取值必须与逐连接随机 SCID 一致，profile 钉不死；Chrome 发空值的前提是 SCID 长 0，而 fork 默认 SCID 长 4（SCID 长度控制未接线——独立的指纹差异点，见下） |
+| 服务端专属参数（0x00/0x02/0x0d/0x10） | — | — | **配置期报错**（客户端发送即协议违规） |
+| 重复 id / `transport_params`+`transport_params_raw` 同时设置 | — | — | **配置期报错**（不许静默忽略） |
 
-> `transport_params` 里只有 6 个键会被 `transportParamsToQUICConfig` 采纳
-> （max_idle_timeout / initial_max_data / initial_max_streams_* / initial_max_stream_data_*）；
-> 其余键**静默忽略**——预设已不再列这些无效键，避免"看似可控"的假象。
+> GREASE transport parameter：quic-go 默认恒发且恒在**首位**；blob 直通可放任意位置
+> （Chrome 位置随机 ⇒ 用 blob 时才对得上真机）。
+
+> 已知残余差异（本轮登记，未做）：**SCID 长度**——Chrome 首飞 SCID 长 0
+> （evidence 里 `initial_source_connection_id` len=0），fork 默认 4 字节；
+> 需要把 ConnectionIDGenerator 经 http3.Transport 接出来才有得控。
 
 ## 验收证据
 
 - `tests/e2e/quic_sniff_test.go`：Initial 解密嗅探；transport params 与 profile 一致；
   GREASE 参数存在；datagram ≥1200；内层 hello ALPN=h3；**内层 JA4(QUIC) 与真机 E1 值
   逐字符相同**（期望值取真机值，不再自算自比）。
+- `tests/e2e/quic_layout_test.go`（2026-09-30，patch #8/#9 验收）：默认路径回归
+  （PADDING 在前 + scramble 空洞）/ Chrome 形态（CRYPTO 连续 + PADDING 在尾）/
+  分片表逐片上线 / 非法值配置期报错 / coalesce 阈值真服务端 + UDP 中继实证。
 - `tests/e2e/e1_h3_test.go`：真实浏览器 H3 采集（需 `GEEKTLS_E1_H3_BROWSER`，默认跳过）。
 - `core/h3` / `core/engine` H3 用例（强制/竞速/回落）全绿；pytest 新增
   `test_h3_forced` / `test_h3_alt_svc_upgrade` 全绿。

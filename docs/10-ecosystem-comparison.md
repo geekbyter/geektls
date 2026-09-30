@@ -28,7 +28,7 @@
 | WebSocket | ✅ RFC 6455（握手走指纹链路） | ✅ | ✅ | 未核实 | ❌ | ✅ 会话复用 | ✅ | ❌ | ✅（TLS 指纹一致） |
 | Python async | ✅（线程池实现，如实标注） | ✅ | ✅ | 经绑定 | ✅ | — | ✅ | — | ✅（原生异步 API） |
 | 自动解压 | ✅ 四编码 + 多重链 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（Cronet 内置） |
-| 预设规模 | **364（29 族）** | 无内置 | ~20 | ~30 | 76 | Chrome 149 / Firefox 151 | Chrome 142–148 + FF 133–151/ESR | 5 族 | `chrome_144` + `tls_profiles.json` 可自定义 |
+| 预设规模 | **368（29 族）** | 无内置 | ~20 | ~30 | 76 | Chrome 149 / Firefox 151 | Chrome 142–148 + FF 133–151/ESR | 5 族 | `chrome_144` + `tls_profiles.json` 可自定义 |
 | 证据分级/自校验 | ✅ 独有 | ❌ | ❌ | ❌ | ❌ | 部分（声明 live capture 验证） | 部分（pcap 材料） | ❌ | ❌ |
 | 三语言同一引擎 | ✅ | JS+Go | Python | Go+绑定 | Python | Node | Rust+绑定 | Java | Python（单语言） |
 
@@ -37,7 +37,7 @@
 1. **可控粒度最深**：逐字段 + hex 回放 + HPACK 策略 + QUIC 内层 CH + transport params blob 直通——逐字段自由度只有 requests-go 接近，其余全面落后。
 2. **可验证性独有**：证据分级 + selfcheck 响应内回读 + nginx L2 终审 + 外部 oracle 周检——没有第二家把"伪造是否正确"做成可断言的工程闭环。
 3. **三语言同一 C ABI 引擎**：跨语言 JA4 逐字符全等有测试钉住；三语言都有 requests 风格模块级快捷 API。
-4. **预设覆盖面**：364 条 29 族（含国产浏览器/App/抓包工具/国产 App 内嵌 WebView），同行最多 76 条。
+4. **预设覆盖面**：368 条 29 族（含国产浏览器/App/抓包工具/国产 App 内嵌 WebView），同行最多 76 条。
 5. **四层 TCP 指纹**：setsockopt 档三平台 + netstack 档（window/wscale 精确控制，P6-T3 nginx 采集端 ja4tcp 五分量 MATCH）；同类均无。
 
 ## 3. 客观劣势（如实）
@@ -58,7 +58,7 @@
 
 自主化路线（`docs/plans/2026-09-29-self-contained-roadmap.md`）：边界声明与依赖清单已完成，
 `gvisor.dev/gvisor` 已引入；**SC-1（uTLS 内化改写）/ SC-2（fhttp 裁枝内化）/ SC-3（quic-go-utls
-内化，顺带解锁 Initial 布局）均未开始**。不变量：ABI 签名只增不改、364 预设指纹输出逐比特不变、
+内化，顺带解锁 Initial 布局）均未开始**。不变量：ABI 签名只增不改、368 预设指纹输出逐比特不变、
 每阶段全量回归 + L2 nginx 终审。
 
 差距的完整清单、关闭判据与追赶排期见

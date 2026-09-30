@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	tls "github.com/bogdanfinn/utls" // geektls patch: for ClientHelloSpec / TransportParameters fields
+
 	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
 	"github.com/bogdanfinn/quic-go-utls/qlogwriter"
 	"github.com/bogdanfinn/quic-go-utls/quicvarint"
@@ -128,6 +130,17 @@ func configWithNonZeroNonFunctionFields(t *testing.T) *Config {
 			f.Set(reflect.ValueOf(true))
 		case "EnableStreamResetPartialDelivery":
 			f.Set(reflect.ValueOf(true))
+		// geektls patch fields
+		case "ClientHelloSpec":
+			f.Set(reflect.ValueOf(&tls.ClientHelloSpec{}))
+		case "TransportParamsOverride":
+			f.Set(reflect.ValueOf(tls.TransportParameters{&tls.FakeQUICTransportParameter{Id: 0x1234, Val: []byte{1}}}))
+		case "InitialLayout":
+			f.Set(reflect.ValueOf(&InitialLayoutConfig{PaddingEnd: true, CryptoFragments: []uint32{100, 200}}))
+		case "MaxUDPPayloadSize":
+			f.Set(reflect.ValueOf(uint16(1472)))
+		case "DatagramFrameSize":
+			f.Set(reflect.ValueOf(uint64(65536)))
 		default:
 			t.Fatalf("all fields must be accounted for, but saw unknown field %q", fn)
 		}

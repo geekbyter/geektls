@@ -38,3 +38,6 @@ tool (
 //replace github.com/bogdanfinn/fhttp => ../fhttp
 
 //replace github.com/bogdanfinn/utls => ../utls
+
+// geektls vendor fork：UQUICConn 会话事件/StoreSession（0-RTT 链路）
+replace github.com/bogdanfinn/utls => ../utls-bogdanfinn

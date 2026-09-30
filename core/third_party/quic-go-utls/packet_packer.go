@@ -134,6 +134,14 @@ type packetPacker struct {
 	retransmissionQueue *retransmissionQueue
 	rand                rand.Rand
 
+	// geektls patch (see InitialLayoutConfig): both default to upstream behavior.
+	paddingEnd             bool
+	minCoalescedPacketSize protocol.ByteCount
+	// keepFrameOrder disables the anti-ossification control-frame shuffle.
+	// A CRYPTO fragmentation table is an ordered layout claim; shuffling the
+	// fragments inside a packet would defeat it.
+	keepFrameOrder bool
+
 	numNonAckElicitingAcks int
 }
 
@@ -156,19 +164,40 @@ func newPacketPacker(
 	_, _ = crand.Read(b[:])
 
 	return &packetPacker{
-		cryptoSetup:         cryptoSetup,
-		getDestConnID:       getDestConnID,
-		srcConnID:           srcConnID,
-		initialStream:       initialStream,
-		handshakeStream:     handshakeStream,
-		retransmissionQueue: retransmissionQueue,
-		datagramQueue:       datagramQueue,
-		perspective:         perspective,
-		framer:              framer,
-		acks:                acks,
-		rand:                *rand.New(rand.NewPCG(binary.BigEndian.Uint64(b[:8]), binary.BigEndian.Uint64(b[8:]))),
-		pnManager:           packetNumberManager,
+		cryptoSetup:            cryptoSetup,
+		getDestConnID:          getDestConnID,
+		srcConnID:              srcConnID,
+		initialStream:          initialStream,
+		handshakeStream:        handshakeStream,
+		retransmissionQueue:    retransmissionQueue,
+		datagramQueue:          datagramQueue,
+		perspective:            perspective,
+		framer:                 framer,
+		acks:                   acks,
+		rand:                   *rand.New(rand.NewPCG(binary.BigEndian.Uint64(b[:8]), binary.BigEndian.Uint64(b[8:]))),
+		pnManager:              packetNumberManager,
+		minCoalescedPacketSize: protocol.MinCoalescedPacketSize, // geektls patch: overridable
 	}
+}
+
+// applyInitialLayout applies the geektls patch layout config (see
+// InitialLayoutConfig). Must be called before the packer is used.
+func (p *packetPacker) applyInitialLayout(l *InitialLayoutConfig) {
+	p.paddingEnd = l.PaddingEnd
+	if l.CoalesceMinSize > 0 {
+		p.minCoalescedPacketSize = protocol.ByteCount(l.CoalesceMinSize)
+	}
+	p.keepFrameOrder = len(l.CryptoFragments) > 0
+}
+
+// canCoalesce (geektls patch) decides whether another packet may be added to
+// a datagram that already holds `size` bytes. An empty datagram (size == 0)
+// may always be packed into — otherwise a huge CoalesceMinSize ("never
+// coalesce") would also block a lone Handshake packet and stall the
+// handshake. Default (128) matches the upstream condition
+// size < maxSize-protocol.MinCoalescedPacketSize exactly.
+func (p *packetPacker) canCoalesce(size, maxSize protocol.ByteCount) bool {
+	return size == 0 || size < maxSize-p.minCoalescedPacketSize
 }
 
 // PackConnectionClose packs a packet that closes the connection with a transport error.
@@ -359,7 +388,7 @@ func (p *packetPacker) PackCoalescedPacket(onlyAck bool, maxSize protocol.ByteCo
 
 	// Add a Handshake packet.
 	var handshakeSealer sealer
-	if (onlyAck && size == 0) || (!onlyAck && size < maxSize-protocol.MinCoalescedPacketSize) {
+	if (onlyAck && size == 0) || (!onlyAck && p.canCoalesce(size, maxSize)) { // geektls patch: canCoalesce honors InitialLayoutConfig.CoalesceMinSize
 		var err error
 		handshakeSealer, err = p.cryptoSetup.GetHandshakeSealer()
 		if err != nil && err != handshake.ErrKeysDropped && err != handshake.ErrKeysNotYetAvailable {
@@ -386,7 +415,7 @@ func (p *packetPacker) PackCoalescedPacket(onlyAck bool, maxSize protocol.ByteCo
 	var oneRTTSealer handshake.ShortHeaderSealer
 	var connID protocol.ConnectionID
 	var kp protocol.KeyPhaseBit
-	if (onlyAck && size == 0) || (!onlyAck && size < maxSize-protocol.MinCoalescedPacketSize) {
+	if (onlyAck && size == 0) || (!onlyAck && p.canCoalesce(size, maxSize)) { // geektls patch: canCoalesce honors InitialLayoutConfig.CoalesceMinSize
 		var err error
 		oneRTTSealer, err = p.cryptoSetup.Get1RTTSealer()
 		if err != nil && err != handshake.ErrKeysDropped && err != handshake.ErrKeysNotYetAvailable {
@@ -959,12 +988,14 @@ func (p *packetPacker) appendPacketPayload(raw []byte, pl payload, paddingLen pr
 			return nil, err
 		}
 	}
-	if paddingLen > 0 {
+	// geektls patch: upstream writes PADDING before the non-ACK frames;
+	// paddingEnd (Chrome/quiche style) appends it after all frames instead.
+	if paddingLen > 0 && !p.paddingEnd {
 		raw = append(raw, make([]byte, paddingLen)...)
 	}
 	// Randomize the order of the control frames.
 	// This makes sure that the receiver doesn't rely on the order in which frames are packed.
-	if len(pl.frames) > 1 {
+	if len(pl.frames) > 1 && !p.keepFrameOrder { // geektls patch: keepFrameOrder 时分片表保序
 		p.rand.Shuffle(len(pl.frames), func(i, j int) { pl.frames[i], pl.frames[j] = pl.frames[j], pl.frames[i] })
 	}
 	for _, f := range pl.frames {
@@ -980,6 +1011,9 @@ func (p *packetPacker) appendPacketPayload(raw []byte, pl payload, paddingLen pr
 		if err != nil {
 			return nil, err
 		}
+	}
+	if paddingLen > 0 && p.paddingEnd {
+		raw = append(raw, make([]byte, paddingLen)...)
 	}
 
 	if payloadSize := protocol.ByteCount(len(raw)-payloadOffset) - paddingLen; payloadSize != pl.length {

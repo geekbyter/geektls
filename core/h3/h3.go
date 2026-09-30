@@ -106,16 +106,41 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 		qcfg.InitialPacketSize = uint16(h3p.InitialPacketSize) // 上文已限 1200..1452
 	}
 	if len(h3p.TransportParamsRaw) > 0 {
+		if len(h3p.TransportParams) > 0 {
+			// 两种形态同时设置时不许静默选一边（Q2 冲突规则）。
+			return nil, fmt.Errorf("h3: transport_params 与 transport_params_raw 互斥（raw 优先的静默覆盖已禁止）；请只保留一种")
+		}
 		// T4-1 blob 直通：有序/非标/GREASE 全控（vendor patch #7），
-		// 同时把已知流控键值映射回 quic.Config 保证行为一致。
+		// 同时做客户端合法性/行为一致性校验并把已知键值映射回 quic.Config。
 		tps, err := buildTransportParamsRaw(h3p.TransportParamsRaw)
 		if err != nil {
 			return nil, err
 		}
 		qcfg.TransportParamsOverride = tps
-		applyKnownRawTP(tps, qcfg)
+		if err := applyKnownRawTP(tps, qcfg); err != nil {
+			return nil, err
+		}
 	} else if len(h3p.TransportParams) > 0 {
 		transportParamsToQUICConfig(h3p.TransportParams, qcfg)
+	}
+	if l := h3p.InitialLayout; l != nil {
+		// Initial 布局（vendor patch #8）：PADDING 位置 / CRYPTO 分片表 /
+		// coalesce 阈值。合法性已在 profiles.Parse 校验过。
+		layout := &quic.InitialLayoutConfig{
+			PaddingEnd:                   l.Padding == "end",
+			DisableClientHelloScrambling: l.DisableScramble,
+		}
+		switch {
+		case l.CoalesceMinSize < 0:
+			layout.CoalesceMinSize = 0xffff // 事实上禁用合并
+		case l.CoalesceMinSize > 0:
+			layout.CoalesceMinSize = uint16(l.CoalesceMinSize)
+		}
+		if len(l.CryptoFragments) > 0 {
+			layout.DisableClientHelloScrambling = true // 分片表与 scrambling 互斥，以表为准
+			layout.CryptoFragments = l.CryptoFragments
+		}
+		qcfg.InitialLayout = layout
 	}
 	return qcfg, nil
 }
@@ -126,6 +151,10 @@ type TLSSettings struct {
 	InsecureSkipVerify bool
 	RootCAs            *x509.CertPool      // nil = 系统信任库
 	Certificates       []utlsb.Certificate // mTLS 客户端证书
+	// SessionCache：QUIC 会话票据缓存（0-RTT/会话复用，T1）。nil = 不缓存
+	// （utls 语义：无 cache 即不存票）。配合 vendor patch（utls-bogdanfinn
+	// 的 UQUICConn 会话事件 + quic-go-utls 的 StoreSession 委托）生效。
+	SessionCache utlsb.ClientSessionCache
 }
 
 func NewTransport(p *profiles.Profile, tlsOpts TLSSettings) (*http3.Transport, error) {
@@ -135,6 +164,7 @@ func NewTransport(p *profiles.Profile, tlsOpts TLSSettings) (*http3.Transport, e
 		Certificates:       tlsOpts.Certificates,
 		NextProtos:         []string{"h3"},
 		OmitEmptyPsk:       true, // 无票据时线上省略空 PSK 扩展（预设带 41 占位）
+		ClientSessionCache: tlsOpts.SessionCache,
 	}
 	qcfg, err := QUICConfigFromProfile(p)
 	if err != nil {

@@ -201,21 +201,25 @@ func (s *Session) dialAndHandshake(p *dialPlan, alpn []string, detail *profiles.
 	if detail == nil {
 		detail = s.profile.TLS.Detail
 	}
+	// 协议选择（G8）：按会话允许集合收窄 ALPN。默认集合（h1.1+h2）时 narrowALPN
+	// 原样返回 profile 的 detail ⇒ 线上逐字节不变；只有用户显式收窄（如只要
+	// h1.1 / 只要 h2）才会改写扩展里的协议列表。
+	if alpn == nil {
+		narrowed, list, _ := narrowALPN(detail, s.protos, s.protoCustom)
+		detail = narrowed
+		alpn = list
+	}
 	spec, err := tlscore.CompileDetail(detail)
 	if err != nil {
 		raw.Close()
 		return nil, fmt.Errorf("engine: compile tls detail: %w", err)
-	}
-
-	if alpn == nil {
-		alpn = alpnProtocols(detail)
 	}
 	cfg := &utls.Config{
 		ServerName:         p.host, // sni:"auto" 的解析点
 		InsecureSkipVerify: s.opts.InsecureSkipVerify,
 		RootCAs:            s.certs.rootPool(), // nil = 系统信任库
 		Certificates:       s.certs.tcpCerts(), // mTLS：服务端索要证书时用
-		NextProtos:         alpn,               // geektls: nil 时取 profile 的 ALPN
+		NextProtos:         alpn,               // 收窄后的集合；nil = profile 不发 ALPN
 		ClientSessionCache: s.sessionCache,     // P7-T2：nil 时 uTLS 不复用
 		OmitEmptyPsk:       true,               // 无票据时线上省略空 PSK 扩展（不报错）
 	}

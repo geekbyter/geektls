@@ -7,9 +7,8 @@ package handshake
 // preset 模式下不会进 ClientHello（bogdanfinn/utls u_quic.go 的已知行为），
 // 必须落到扩展上。
 //
-// StoreSession 为 no-op：QUIC 会话缓存依赖 uTLS 未导出的 cache key 逻辑，
-// 0-RTT/会话复用随 geektls P7-T2 再做（UQUICConn 默认也不发
-// QUICStoreSession 事件，此路径实际不会被调到）。
+// StoreSession 委托给 utls fork 补上的 UQUICConn.StoreSession（0-RTT 链路，
+// 见 third_party/utls-bogdanfinn/GEEKTLS_PATCHES.md）。
 
 import (
 	"fmt"
@@ -25,7 +24,12 @@ type uquicSpecConn struct {
 	tpOverride tls.TransportParameters
 }
 
-func (c *uquicSpecConn) StoreSession(*tls.SessionState) error { return nil }
+// geektls vendor fork：StoreSession 委托（0-RTT 链路）——适配器不再 no-op，
+// 直接转发给 utls fork 补上的 UQUICConn.StoreSession（票据 Extra 里带对端
+// transport params，QUICResumeSession 恢复用）。
+func (c *uquicSpecConn) StoreSession(s *tls.SessionState) error {
+	return c.UQUICConn.StoreSession(s)
+}
 
 func (c *uquicSpecConn) SetTransportParameters(params []byte) {
 	for _, ext := range c.spec.Extensions {

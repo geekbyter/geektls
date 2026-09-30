@@ -25,10 +25,10 @@ import (
 
 // decodeStage 是一层解压包装（懒初始化）。
 type decodeStage struct {
-	inner *bufio.Reader
-	newFn func(*bufio.Reader) (io.Reader, error)
-	rc    io.Reader // 初始化后的实际解码器
-	init  bool
+	inner   *bufio.Reader
+	newFn   func(*bufio.Reader) (io.Reader, error)
+	rc      io.Reader // 初始化后的实际解码器
+	init    bool
 	initErr error
 }
 

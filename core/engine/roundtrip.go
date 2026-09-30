@@ -37,10 +37,20 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 	if plain && req.ForceHTTP3 {
 		return nil, fmt.Errorf("engine: force_http3 需要 https（明文 http:// 没有 QUIC 承载）")
 	}
+	// 协议选择（G8）：请求级 force_http3 是**显式**选择，默认会话下照旧可用（老行为
+	// 不变）；但用户显式给了 protocols 且不含 h3 时冲突 —— 显式配置优先，报错而不是
+	// 静默降级。会话级"只允许 h3"（protocols=["h3"]）在 resolveProtocols 里已校验。
+	if req.ForceHTTP3 && s.protoCustom && !s.protos.h3 {
+		return nil, fmt.Errorf("engine: force_http3 与本会话 protocols=%s 冲突（显式限定了协议集合）：把 \"h3\" 加进 protocols 或去掉 force_http3", s.protos)
+	}
+	if plain && !s.protos.h1 {
+		return nil, fmt.Errorf("engine: http:// 只能走 h1.1（明文没有 h2c / QUIC 承载）：protocols=%s 需保留 \"h1.1\"", s.protos)
+	}
 
 	// 身份注入（T2-1）：profile.identity 的缺省头补齐用户未提供的头部，
 	// 再注入 Cookie（请求头里显式给的 Cookie 优先）
-	headers := s.appendCookieHeader(u, s.applyIdentity(req.Headers))
+	identHeaders, idWarns := s.applyIdentity(req.Headers)
+	headers := s.appendCookieHeader(u, identHeaders)
 
 	// 生效代理（请求级 > 会话级 > 环境变量 + NO_PROXY）。这里先算一次只为
 	// 判定 H3 可用性：QUIC 过代理需要 CONNECT-UDP（RFC 9298），本库未实现，
@@ -64,14 +74,17 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 
 	var resp *Response
 	switch {
-	case req.ForceHTTP3:
+	case req.ForceHTTP3 || s.protos.h3Only():
 		if !h3ok {
-			return nil, fmt.Errorf("engine: force_http3 与代理不兼容（QUIC 过代理需 CONNECT-UDP/RFC 9298，未实现；要经代理请用 H2/H1，或去掉 proxy）")
+			if req.ForceHTTP3 {
+				return nil, fmt.Errorf("engine: force_http3 与代理不兼容（QUIC 过代理需 CONNECT-UDP/RFC 9298，未实现；要经代理请用 H2/H1，或去掉 proxy）")
+			}
+			return nil, fmt.Errorf("engine: H3 与代理不兼容（protocols 只允许 h3；QUIC 过代理需 CONNECT-UDP/RFC 9298，未实现；要经代理请把 h2/h1.1 加进 protocols，或去掉 proxy）")
 		}
-		// 强制 H3：失败不回落（调用方明确要 H3）
+		// 强制 H3（请求级 force_http3 或会话级"只允许 h3"）：失败不回落
 		resp, err = s.doH3(req, headers)
-	case s.profile.HTTP3 != nil && s.profile.HTTP3.Enabled && s.profile.HTTP3.H2RaceMs > 0 && h3ok:
-		// 竞速模式：H3 先跑，超时并发 H2
+	case s.protos.h3 && s.profile.HTTP3 != nil && s.profile.HTTP3.Enabled && s.profile.HTTP3.H2RaceMs > 0 && h3ok:
+		// 竞速模式：H3 先跑，超时并发 TCP（h2/h1.1 按 ALPN 收窄结果）
 		resp, err = s.raceH3H2(req, u, headers)
 	case h3ok && s.h3Eligible(req, u.Host):
 		// Alt-Svc 已知 H3 能力：H3 优先，失败负缓存该主机并落 H2
@@ -91,6 +104,8 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 	resp.Body = newTimeoutReader(resp.Body, s.readTimeout(req))
 	// 透明解压（T-DECOMP）：按 Content-Encoding 包装 body；headers 不动。
 	s.applyDecompression(req, resp)
+	// G9：身份自洽的告警与解压告警同路（都走 resp.Warnings → 绑定层 r.warnings）
+	resp.Warnings = append(resp.Warnings, idWarns...)
 	s.absorbResponseMeta(u, resp)
 	return resp, nil
 }
@@ -185,22 +200,47 @@ func (s *Session) doTCPLegacy(req *Request, u *url.URL, headers [][2]string) (*R
 // applyIdentity 把 profile.identity 的缺省请求头补齐到用户头部之前：
 // 用户请求里同名头（大小写不敏感）优先，不覆盖；identity 表内顺序即线上顺序。
 // 无 identity 节时原样返回，行为与注入前完全一致（冻结面安全）。
-func (s *Session) applyIdentity(headers [][2]string) [][2]string {
+//
+// G9：调用方自带 `user-agent` 且与预设身份不一致时，按 IdentitySync 策略把
+// **客户端提示**（sec-ch-ua / sec-ch-ua-platform / sec-ch-ua-mobile）校正到该 UA，
+// 并把"TLS/H2 仍是该预设"如实写进返回的 warnings（调用方挂到响应上）。
+func (s *Session) applyIdentity(headers [][2]string) ([][2]string, []string) {
 	id := s.profile.Identity
 	if id == nil || len(id.Headers) == 0 {
-		return headers
+		return headers, nil
 	}
 	present := make(map[string]bool, len(headers))
 	for _, kv := range headers {
 		present[strings.ToLower(kv[0])] = true
 	}
-	out := make([][2]string, 0, len(id.Headers)+len(headers))
+	injected := make([][2]string, 0, len(id.Headers))
 	for _, kv := range id.Headers {
 		if !present[strings.ToLower(kv[0])] {
-			out = append(out, kv)
+			injected = append(injected, kv)
 		}
 	}
-	return append(out, headers...)
+
+	var warns []string
+	if s.idSync == identitySyncAuto {
+		if presetUA, userUA, conflict := identityUAConflict(id.Headers, headers); conflict {
+			if changed := syncClientHints(injected, parseUA(userUA)); len(changed) > 0 {
+				warns = append(warns, fmt.Sprintf(
+					"identity_sync: 调用方 user-agent 与预设身份不一致（预设 %q）：已把 %s 校正为调用方 UA；TLS/JA3/JA4/H2 仍为该预设（要字节级一致请改用同平台变体预设）",
+					presetUA, strings.Join(changed, ", ")))
+			}
+		}
+	}
+	return append(injected, headers...), warns
+}
+
+// orderForWire 按会话头序策略处理"将要上线的头顺序"（H2/H3 用；H1 走
+// orderH1Headers 一族，见 headerorder.go）。input 档在这里是 no-op —— H2/H3 的
+// 切片顺序本来就是调用方给的顺序。
+func (s *Session) orderForWire(headers [][2]string) [][2]string {
+	if s.hdrOrder == headerOrderRandom {
+		return randomizeHeaderOrder(headers)
+	}
+	return headers
 }
 
 // appendCookieHeader 注入 Cookie 头；显式 Cookie 头优先（不覆盖）。
@@ -273,7 +313,7 @@ func (s *Session) doH2(e *poolEntry, req *Request, headers [][2]string) (*Respon
 	if req.Body != nil {
 		body = bytes.NewReader(req.Body)
 	}
-	resp, err := h2core.Do(e.cc, req.Method, req.URL, headers, body)
+	resp, err := h2core.Do(e.cc, req.Method, req.URL, s.orderForWire(headers), body)
 	if err != nil {
 		return nil, fmt.Errorf("engine: h2 request: %w", err)
 	}

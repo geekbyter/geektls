@@ -79,7 +79,7 @@ indexed）。**标注：未验证**（列入 08 待补采样计划，待真机 H
 | 第三方导入 E3（含 opera/yabrowser 等 Chromium 系、iOS 上的 UC/微信） | 217 | 按族/平台 | **族级继承（E4 推断）**：栈归属明确才给，见 `import-tlsconfig` 的 `hpackStrategy` |
 | **刻意留空**（curl/okhttp/charles/fiddler/reqable/powershell/ie/postman + 微信/UC/QQ/夸克/小米/华为/三星等内嵌浏览器） | 114 | 空 = 上游默认 | 它们的栈是各自 fork 或非浏览器，**没有证据就不编** |
 
-合计 250/364 带策略。平台优先规则：**iOS 上任何浏览器都按 safari**（WebKit，依据
+合计 253/368 带策略。平台优先规则：**iOS 上任何浏览器都按 safari**（WebKit，依据
 `presets_test.go` 的 `TestIOSBrowsersShareWebKitShape`），所以 `chrome_148_ios` /
 `edge_148_ios` / `ucbrowser_*_ios` / `wechat_*_ios` 都是 safari 档。
 

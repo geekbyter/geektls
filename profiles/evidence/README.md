@@ -109,6 +109,7 @@ UA-CH 的 GREASE 品牌名称/版本/位置随浏览器版本变化）。H3 记�
 |---|---|---|
 | `tls_config-0.0.2.json` | Python 包 `tls_config` 0.0.2（用户提供，339 条） | **已导入**：320 条 E3 预设（`source: "tls_config-0.0.2/..."`）；见 docs/07 §5.7 |
 | `tls-client-master-profiles-*.go` | `bogdanfinn/tls-client@master` 的 `profiles/`（原始源码，2026-09-28 抓） | **未导入**：差集与所需改动见 docs/08 §E |
+| `peet.ws-2026-09-30.json` | `tls.peet.ws/api/all` 实机记录（用户提供，6 条：Edge 154 / Chrome 154 / Brave 154 / YaBrowser 26.8 / Opera 136 / QuarkPC 7.3.5.1009，均 Windows） | **已导入 5 条**：`edge_154_windows` / `brave_154_windows` / `yabrowser_26_8_windows` / `opera_136_windows` / `quarkpc_7_3_5_1009_windows`（E3，`source: "peet.ws-2026-09-30/PEET_*"`）。`PEET_CHROME_154_WINDOWS` 与内置自测版 JA4 逐字符相同 ⇒ 只留档不新增。**两处如实登记**见 CHANGELOG 0.1.7：Brave 记录 ja3/ja4 不自洽（以 ja3 为准）；Edge 154 无 QUIC 抓包（`http3` 节按 Chromium 家族继承）。 |
 
 ## 待补证据（与 P1-T8/P6-T3 同环境）
 

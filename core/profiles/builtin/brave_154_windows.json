@@ -1,0 +1,232 @@
+{
+  "name": "brave_154_windows",
+  "grade": "E3",
+  "source": "peet.ws-2026-09-30/PEET_BRAVE_154_WINDOWS",
+  "tls": {
+    "detail": {
+      "ciphers": [
+        "grease",
+        "0x1301",
+        "0x1302",
+        "0x1303",
+        "0xc02b",
+        "0xc02f",
+        "0xc02c",
+        "0xc030",
+        "0xcca9",
+        "0xcca8",
+        "0xc013",
+        "0xc014",
+        "0x009c",
+        "0x009d",
+        "0x002f",
+        "0x0035"
+      ],
+      "legacy_version": "0x0303",
+      "extension_permutation": true,
+      "extensions": [
+        {
+          "type": 39578,
+          "grease_random": true
+        },
+        {
+          "type": 65037,
+          "ech": {
+            "mode": "grease"
+          }
+        },
+        {
+          "type": 35
+        },
+        {
+          "type": 51,
+          "key_shares": [
+            "grease",
+            "0x11ec",
+            "0x001d"
+          ]
+        },
+        {
+          "type": 10,
+          "groups": [
+            "grease",
+            "0x11ec",
+            "0x001d",
+            "0x0017",
+            "0x0018"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": [
+            0
+          ]
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 17613,
+          "alpn": [
+            "h2"
+          ]
+        },
+        {
+          "type": 43,
+          "versions": [
+            "grease",
+            "0x0304",
+            "0x0303"
+          ]
+        },
+        {
+          "type": 27,
+          "cert_compression": [
+            "brotli"
+          ]
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "grease",
+            "0x0904",
+            "0x0905",
+            "0x0906",
+            "0x0403",
+            "0x0804",
+            "0x0401",
+            "0x0503",
+            "0x0805",
+            "0x0501",
+            "0x0806",
+            "0x0601"
+          ]
+        },
+        {
+          "type": 18
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 45,
+          "psk_modes": [
+            1
+          ]
+        },
+        {
+          "type": 14906,
+          "grease_random": true,
+          "data": "00"
+        },
+        {
+          "type": 41
+        }
+      ]
+    }
+  },
+  "http2": {
+    "hpack_strategy": "chrome",
+    "settings": [
+      [
+        1,
+        65536
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        4,
+        6291456
+      ],
+      [
+        6,
+        262144
+      ]
+    ],
+    "window_update": 15663105,
+    "pseudo_header_order": [
+      "m",
+      "a",
+      "s",
+      "p"
+    ]
+  },
+  "identity": {
+    "headers": [
+      [
+        "upgrade-insecure-requests",
+        "1"
+      ],
+      [
+        "user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+      ],
+      [
+        "accept",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+      ],
+      [
+        "sec-ch-ua",
+        "\"Chromium\";v=\"154\", \"Brave\";v=\"154\", \"Not A(Brand\";v=\"99\""
+      ],
+      [
+        "sec-ch-ua-mobile",
+        "?0"
+      ],
+      [
+        "sec-ch-ua-platform",
+        "\"Windows\""
+      ],
+      [
+        "sec-gpc",
+        "1"
+      ],
+      [
+        "sec-fetch-site",
+        "none"
+      ],
+      [
+        "sec-fetch-mode",
+        "navigate"
+      ],
+      [
+        "sec-fetch-user",
+        "?1"
+      ],
+      [
+        "sec-fetch-dest",
+        "document"
+      ],
+      [
+        "accept-encoding",
+        "gzip, deflate, br, zstd"
+      ],
+      [
+        "accept-language",
+        "en;q=0.6"
+      ],
+      [
+        "priority",
+        "u=0, i"
+      ]
+    ]
+  }
+}

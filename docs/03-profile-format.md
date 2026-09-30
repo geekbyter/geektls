@@ -57,7 +57,12 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
     ],
     "initial_packet_size": 1280,               // 首个 Initial datagram 尺寸（= PADDING 填到多少），1200..1452
                                                // 不设 = 上游默认 1280；越界在建 transport 时报错（不静默夹取）
-    "initial_layout": {"padding": "chrome", "coalesce": true},  // 占位：仍不生效（coalesce/分片表要动 vendor packer）
+    "initial_layout": {                        // 首飞 Initial 布局（vendor patch #8；不设 = 上游默认逐字节不变）
+      "padding": "end",                        // PADDING 在包尾（Chrome 形态）；缺省 = 上游（PADDING 在 CRYPTO 前）
+      "disable_scramble": true,                // 关内置 ClientHello scrambling（SNI/ECH 中点切割）
+      "crypto_fragments": [600, 600],          // CRYPTO 帧分片表（隐含关 scramble；表内分片保序）
+      "coalesce_min_size": -1                  // 0=上游默认 128；-1=禁用 Initial+Handshake 合并；>0=自定义阈值
+    },
     "grease_frames": true,
     "settings": [[7, 268435456]],
     "pseudo_header_order": ["m", "s", "a", "p"],
@@ -100,7 +105,7 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
 - `ja4r` 输入按 FoxIO JA4 raw 语义解析：cipher/扩展段为**排序后**形式，无法还原原始顺序——因此 ja4r 入口得到的 profile 其扩展顺序标记为 `sorted`，`warnings` 提示与真实浏览器的差异。
 - `"sni": "auto"` 等运行时占位符在发请求时解析。
 - `extension_permutation: true` 时 detail.extensions 是"基准顺序"，core 每次连接做 Chrome 同算法的 Fisher-Yates 洗牌（含 GREASE 固定位）。
-- **`transport_params_raw`（T4-1，2026-09-24 起）**：QUIC transport parameters 的有序 blob 直通——顺序、非标参数、GREASE 参数位置全可控（移植 lexiforest `ngtcp2` 的 blob 直通设计，经 `quic-go-utls` vendor patch #7 原样上 wire）。每项 `[id, value]`：id 为数值或 `"grease"`（随机 GREASE id + value 长度的随机数据）；value 为数值（varint 编码）或 `"hex:..."`（原始字节）。设置后优先于 `transport_params`（map 形态）。注意：已知流控键（1/4/5/6/7/8/9）的值会自动映射回 `quic.Config`，保证 wire 声明与实际流控行为一致——不要写与真实意图矛盾的值。
+- **`transport_params_raw`（T4-1，2026-09-24 起）**：QUIC transport parameters 的有序 blob 直通——顺序、非标参数、GREASE 参数位置全可控（移植 lexiforest `ngtcp2` 的 blob 直通设计，经 `quic-go-utls` vendor patch #7 原样上 wire）。每项 `[id, value]`：id 为数值或 `"grease"`（随机 GREASE id + value 长度的随机数据）；value 为数值（varint 编码）或 `"hex:..."`（原始字节）。设置后优先于 `transport_params`（map 形态）——**两者同设在配置期报错**（2026-09-30 起，不静默选边）。冲突校验（同日起，全部配置期报错）：服务端专属参数（0x00/0x02/0x0d/0x10）、`initial_source_connection_id`(0x0f，钉不死逐连接随机 SCID)、重复 id、`max_udp_payload_size`(0x03) 越出 1200..1500。已知键的行为映射：流控键（1/4/5/6/7/8/9）映射回 `quic.Config` 流控；0x03 → `Config.MaxUDPPayloadSize`、0x20 → `Config.DatagramFrameSize`（patch #9，接收行为与 wire 声明一致）。
 - **`identity`（T2-1，2026-09-24 起）**：profile 携带的缺省请求头身份，解决"TLS 指纹是浏览器但 `user-agent` 却是 `Go-http-client`"的身份分裂。语义：
   - engine 在 H1/H2/H3 三条协议路径统一注入；**用户请求里的同名头（大小写不敏感）优先**，不覆盖；表内顺序即线上顺序。
   - 头部名一律小写（H2 强制小写；H1 下大小写整形由 `http1.header_case` 另行控制）。
@@ -136,6 +141,27 @@ Profile 是 geektls 的一等公民：**一份 JSON 完整描述一个客户端�
   Akamai 四段式不含流号，故此维度是 oracle 之外的可观测形态。
 
 ## 3. 预设体系
+
+### 3.1 命名规范（2026-09-30 统一，守门测试 `core/profiles/naming_test.go`）
+
+```
+<家族>_<版本>[_<变体>][_<平台>]
+```
+
+- **平台后缀 = `windows` / `macos` / `linux` / `android` / `ios`**，能判定就必须写；
+  **确实判不定的留空**（工具 / App 族：`okhttp_3_12_12`、`curl_8_16_0`、`postman_11_30_3`…）。
+- **浏览器族（chrome / edge / firefox）必须带平台后缀** —— 它们跨平台并存，缺后缀等于说不清
+  是哪一个：已按此把 `chrome_131/133/150`、`firefox_120/135` 改名为 `*_windows`
+  （平台依据 = 该预设 `identity` 里的 UA）。
+- **Safari 也带 `_macos`**：Safari 同时存在于 macOS 与 iOS（`safari_18_6_ios`、`safari_18_7_ios`…），
+  不加后缀说不清是哪一个 ⇒ macOS 写 `_macos`、iOS 写 `_ios`，后缀只允许这两个值。已按此把
+  `safari_16` → `safari_16_macos`；`safari_18`（无实测来源的历史构造，13 扩展 / wire ≈2.9KB，
+  与真机差得远）**直接删除**，旧名 `safari_18` 改指实测导航形态 `safari_18_macos`。
+- 变体标记排在平台之前：`chrome_101_109_safe_windows`（`safe` = 该谱系的保守档）。
+- **旧名 = 别名**：改名过的预设旧名继续可用（`core/profiles/alias.go` 的映射表，
+  `impersonate="chrome_133"` 与 `"chrome_133_windows"` 取到同一份形态）。映射表**只增不删**，
+  新代码请用规范名。仍然**没有**族级短名/前缀匹配（`impersonate="chrome_154"` 依然报
+  `preset not found`，要写全名或 `"chrome_154_windows"`）。
 
 - 目录式管理（借 ja3proxy 的 `client@version` 形态）：`profiles/chrome/150/windows.json` …，继承链 `chrome_150` → `chrome_150_windows`。
 - 首批预设来源优先级：

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bogdanfinn/quic-go-utls/internal/protocol"
+	"github.com/bogdanfinn/quic-go-utls/internal/wire"
 	"github.com/bogdanfinn/quic-go-utls/quicvarint"
 )
 
@@ -20,6 +21,23 @@ func (c *Config) handshakeTimeout() time.Duration {
 
 func (c *Config) maxRetryTokenAge() time.Duration {
 	return c.handshakeTimeout()
+}
+
+// geektls patch: advertised max_udp_payload_size (0 = protocol.MaxPacketBufferSize).
+func (c *Config) maxUDPPayloadSize() uint16 {
+	if c.MaxUDPPayloadSize > 0 {
+		return c.MaxUDPPayloadSize
+	}
+	return protocol.MaxPacketBufferSize
+}
+
+// geektls patch: advertised max_datagram_frame_size, doubling as the receive
+// cap for DATAGRAM frames (0 = wire.MaxDatagramSize).
+func (c *Config) maxDatagramFrameSize() protocol.ByteCount {
+	if c.DatagramFrameSize > 0 {
+		return protocol.ByteCount(c.DatagramFrameSize)
+	}
+	return wire.MaxDatagramSize
 }
 
 func validateConfig(config *Config) error {
@@ -125,7 +143,10 @@ func populateConfig(config *Config) *Config {
 		EnableStreamResetPartialDelivery: config.EnableStreamResetPartialDelivery,
 		Allow0RTT:                        config.Allow0RTT,
 		Tracer:                           config.Tracer,
-		ClientHelloSpec:                  config.ClientHelloSpec, // geektls patch
+		ClientHelloSpec:                  config.ClientHelloSpec,         // geektls patch
 		TransportParamsOverride:          config.TransportParamsOverride, // geektls patch
+		InitialLayout:                    config.InitialLayout,           // geektls patch
+		MaxUDPPayloadSize:                config.MaxUDPPayloadSize,       // geektls patch
+		DatagramFrameSize:                config.DatagramFrameSize,       // geektls patch
 	}
 }

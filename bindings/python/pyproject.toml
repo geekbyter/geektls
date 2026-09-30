@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geektls"
-version = "0.1.6"
+version = "0.1.7"
 description = "TLS/HTTP fingerprint impersonation with evidence-graded browser presets (Python binding)"
 readme = "README.md"
 requires-python = ">=3.9"

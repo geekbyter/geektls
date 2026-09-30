@@ -85,6 +85,16 @@ type initialPacket struct {
 	CryptoChunks [][2]int // 在本包 payload 里的 crypto chunk 索引（offset 见 CryptoFrames）
 	CryptoFrames []cryptoFrame
 	NextOffset   int // 本包在 datagram 中的结束位置
+
+	// --- 布局观测（Q1，initial_layout 断言用）---
+	// Type 是长头包类型："initial" / "handshake" / "0rtt" / "retry"。
+	Type string
+	// PaddingBytes 是本包 PADDING 帧总字节数；PaddingBeforeCrypto /
+	// PaddingAfterCrypto 记 PADDING 相对 CRYPTO 帧的位置（quic-go 默认在前，
+	// Chrome/quiche 在尾）。
+	PaddingBytes        int
+	PaddingBeforeCrypto bool
+	PaddingAfterCrypto  bool
 }
 
 type cryptoFrame struct {
@@ -141,8 +151,9 @@ func decryptInitialAt(dgram []byte, off int, keys quicInitialKeys) (*initialPack
 	pnOffset := r.pos
 
 	if pktType != 0x00 {
-		// 非 Initial：只跳过（长度字段 = pn + payload）
-		return &initialPacket{NextOffset: pnOffset + int(length)}, nil
+		// 非 Initial：只跳过（长度字段 = pn + payload），记类型供布局观测
+		typ := map[byte]string{0x10: "0rtt", 0x20: "handshake", 0x30: "retry"}[pktType]
+		return &initialPacket{Type: typ, NextOffset: pnOffset + int(length)}, nil
 	}
 
 	if len(dgram) < pnOffset+4+16 {
@@ -185,19 +196,29 @@ func decryptInitialAt(dgram []byte, off int, keys quicInitialKeys) (*initialPack
 	}
 
 	pkt := &initialPacket{
+		Type:         "initial",
 		PacketNumber: pn,
 		NextOffset:   pnOffset + pnLen + payloadLen,
 	}
 	fr := &varintReader{b: plain}
+	seenCrypto := false
 	for fr.pos < len(plain) {
 		ftype, err := fr.read()
 		if err != nil {
 			return nil, err
 		}
 		switch ftype {
-		case 0x00, 0x01: // PADDING / PING
+		case 0x00: // PADDING（单字节；记相对 CRYPTO 的位置，Q1 布局断言用）
+			pkt.PaddingBytes++
+			if seenCrypto {
+				pkt.PaddingAfterCrypto = true
+			} else {
+				pkt.PaddingBeforeCrypto = true
+			}
+		case 0x01: // PING
 			continue
 		case 0x06: // CRYPTO
+			seenCrypto = true
 			coff, err := fr.read()
 			if err != nil {
 				return nil, err

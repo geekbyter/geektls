@@ -43,7 +43,7 @@
 | G3 | **TLS record 层行为** | ⚠️ 部分：CH 长度由 padding 扩展控制（已有，可做）；**record 分片/大小序列在 crypto/tls 内部，无钩子** | 低-中：少数检测看 record 分片与首飞 record 数 | 高（需 fork crypto/tls，与 G2b/TCP 同一障碍） | 维持现状；不为它 fork |
 | G4 | **session ticket 生命周期行为** | ⚠️ 复用链路已实测可用（G2a）；票据年龄字段由依赖栈按 RFC 8446 处理（**其取值我们未单独验证**）；"复用次数/换票节奏"**无实测依据，故不建模** | 低：需要长时观察才成特征；无依据地编一个"换票节奏"反而更假 | — | 维持现状：有实测证据再建模 |
 | G5 | HPACK 索引细节 | ✅ **已落地（T-HPACK，2026-09-28）**：原评估"无钩子"是当时的实态——现由 vendor fork `core/third_party/fhttp` 提供钩子（`SetIndexPolicy`/`SetHuffmanMode`），`profile.http2.hpack_strategy` 四档 | 低（首连接无动态表历史这条仍成立，所以 safari 档只能是保守近似） | 已付（fork fhttp 的维护成本，见 LICENSES.md 风险项） | **结案**：`tests/e2e/h2_hpack_strategy_test.go` 逐字节断言；`docs/p2-h2-capability.md` 记证据与四档语义 |
-| G6 | QUIC Initial datagram 布局 | ⚠️ **部分关闭（2026-09-30）**：首 datagram 尺寸 / PADDING 量已可控（`http3.initial_packet_size`，1200–1452，上游 `Config.InitialPacketSize`，无需 fork patch；嗅探实测 1350→[1350 1350]、1200→[1200 1200]、不设→[1280 1280]）；**coalesce 阈值与 CRYPTO 分片表仍不可控**（要动 `packet_packer.go` / `crypto_stream.go` = SC-3） | 低-中 | 高（packer 层，且要按 perspective 分支） | 保留后半：SC-3 时随内化一起做 |
+| G6 | QUIC Initial datagram 布局 | ✅ **已关闭（2026-09-30 第二轮，vendor patch #8）**：首 datagram 尺寸（`initial_packet_size`）之外，PADDING 包内位置（`padding:"end"` = Chrome 形态）、CRYPTO 分片表（`crypto_fragments`）、scrambling 开关（`disable_scramble`）、coalesce 阈值（`coalesce_min_size`，空 datagram 永远可装不会死锁）全部落地；默认路径逐字节不变。嗅探器断言 `tests/e2e/quic_layout_test.go` | — | 已付（fork packer 层维护成本） | **结案**；残余差异仅 SCID 长度（Chrome 0 字节 vs fork 默认 4，未接线，登记在 p4 文档） |
 | G7 | TCP 完整档（window/WS/options 真实生效） | ⚠️ 仅 Linux 探测模式 | 中（JA4TCP 场景） | 高（gVisor 级） | 维持降级承诺（T5-1） |
 | G8 | 证书压缩 / ALPS / ECH / 后量子 key_share | ✅ 已有 | — | — | 保持 |
 | G9 | H3/H2 racing + Alt-Svc | ✅ 已有 | — | — | 保持 |
@@ -291,7 +291,9 @@ QUIC transport params **未实测**；这是为满足 `TestBuiltinChromiumH3Cove
 - 生成预设 `safari_18_macos` 的 **TLS 来自带原始 hex 的标本**，其 JA4 与**实测 18.6 完全相同**
   （`t13d2014h2_a09f3c656075_e42f34c56612`）⇒ 是该形态的独立复现（差异只在不进 JA4 的量上：
   wire 874B vs 实测 1264B）。
-- 另两个**无实测来源**的历史预设 `safari_18` / `safari_26_macos` 差距明显：JA4 为 `t13d2013…`
+- （2026-09-30 更新：`safari_18` 的这条无实测来源形态**已删除**，旧名改为别名 → 实测形态
+  `safari_18_macos`；下面这段 Now 只对 `safari_26_macos` 生效。）
+- 另一个**无实测来源**的历史预设 `safari_26_macos` 差距明显：JA4 为 `t13d2013…`
   （13 扩展，比真机少 1 个）且 wire ≈2.9KB（真机 ≈1.26KB）⇒ 一并钉进回归，**登记为待校验**
   （未擅自改数据）。⇒ 需要"导航形态的 Safari"时，请用 `safari_17_3_macos` / `safari_18_6_macos`。
 

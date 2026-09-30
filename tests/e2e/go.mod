@@ -88,6 +88,7 @@ require (
 replace (
 	github.com/bogdanfinn/fhttp => ../../core/third_party/fhttp
 	github.com/bogdanfinn/quic-go-utls => ../../core/third_party/quic-go-utls
+	github.com/bogdanfinn/utls => ../../core/third_party/utls-bogdanfinn
 	github.com/geektls/core => ../../core
 	github.com/geektls/golang => ../../bindings/golang
 )

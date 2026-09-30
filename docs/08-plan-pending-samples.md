@@ -76,7 +76,7 @@
 |---|---|---|---|
 | L1 | 0-RTT（early_data）协议侧 | **不可做/不做**（≠「未接线」，A10 结案） | TCP：uTLS/Go 客户端无 early_data——上游注释 `0-RTT is not supported`，早数据代码仅在 `c.quic != nil` 分支。H3：原判"可做（quic-go `allow0RTT`/`DialEarly`）"改判**不做**——前提是 QUIC 会话缓存，而 spec 模式下 `StoreSession` 是 no-op 且无可补导出面（docs/06 P7-T2），首飞 Initial 布局又已结案为不可控（L3）。**声明侧可控**：预设 `{"type": 42}` 经透传上线并改变 JA3/JA4，边界实证在 `core/tls/early_data_test.go`（只带 42 不带 PSK ⇒ 标准服务端拒） |
 | L2 | TLS record 分片 / 大小序列 | **不可做** | 在 `crypto/tls` 内部、无钩子；可做的只有 CH 长度（padding 扩展，已有） |
-| L3 | QUIC Initial datagram 布局 | 维持结案（G6） | 行业共性：quic-go packer 无钩子 |
+| L3 | QUIC Initial datagram 布局 | ~~维持结案（G6）~~ **撤销结案（2026-09-30）**：vendor patch #8 已把 PADDING 位置 / CRYPTO 分片表 / scrambling / coalesce 阈值全部做成可控（G6 结案），"packer 无钩子"在持有 fork 后不再成立 |
 | L4 | 生成预设的手工修改 | **禁止** | 会被 `gen-profiles` 守门判为不一致；要改就走生成器（改标本/规则）或另起预设名 |
 
 ## C. 采到数据后的固定动作（流程）

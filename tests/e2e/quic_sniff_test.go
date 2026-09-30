@@ -59,7 +59,7 @@ func TestQUICInitialSniff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	chProfile, dgramLens := sniffInnerClientHello(t, qcfg)
+	chProfile, dgramLens, _ := sniffInnerClientHello(t, qcfg)
 	_ = dgramLens
 
 	var foundTP bool
@@ -226,7 +226,9 @@ func normGreaseType(v uint16) uint16 {
 
 // sniffInnerClientHello 起假 UDP 服务端抓客户端 Initial，解密重组出内层
 // ClientHello 并解析（TestQUICInitialSniff 与 TestQUICTransportParamsRaw 共用）。
-func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, []int) {
+// 返回的 pkts 是观测到的全部长头包（含布局信息：PADDING 位置 / 包类型），
+// 供 initial_layout 断言使用。
+func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, []int, []*initialPacket) {
 	t.Helper()
 
 	sniffer, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
@@ -263,7 +265,7 @@ func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, 
 	var keysSet bool
 	var reasm cryptoStreamReassembler
 	var dgramLens []int
-	var totalPackets int
+	var pkts []*initialPacket
 
 	sniffer.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 65535)
@@ -299,7 +301,7 @@ func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, 
 				break
 			}
 			off = pkt.NextOffset
-			totalPackets++
+			pkts = append(pkts, pkt)
 			for _, f := range pkt.CryptoFrames {
 				reasm.add(f)
 			}
@@ -311,7 +313,7 @@ func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, 
 
 	cryptoBytes, total, _ := reasm.assembled()
 	t.Logf("initial datagrams: %v, packets: %d, crypto stream %d/%d bytes",
-		dgramLens, totalPackets, len(cryptoBytes), total)
+		dgramLens, len(pkts), len(cryptoBytes), total)
 
 	// T4 观测点：Initial datagram 必须 ≥1200（QUIC 强制最小 UDP 负载）
 	if dgramLens[0] < 1200 {
@@ -322,7 +324,7 @@ func sniffInnerClientHello(t *testing.T, qcfg *quic.Config) (*profiles.Profile, 
 	if err != nil {
 		t.Fatalf("parse clienthello: %v", err)
 	}
-	return chProfile, dgramLens
+	return chProfile, dgramLens, pkts
 }
 
 // TestQUICInitialPacketSize 断言 profile.http3.initial_packet_size 真的决定首个
@@ -340,7 +342,7 @@ func TestQUICInitialPacketSize(t *testing.T) {
 		if err != nil {
 			t.Fatalf("initial_packet_size=%d: %v", size, err)
 		}
-		_, lens := sniffInnerClientHello(t, qcfg)
+		_, lens, _ := sniffInnerClientHello(t, qcfg)
 		return lens[0]
 	}
 
@@ -384,6 +386,8 @@ func TestQUICTransportParamsRaw(t *testing.T) {
 			{6.0, 6291456.0},         // initial_max_stream_data_bidi_remote
 			{7.0, 6291456.0},         // initial_max_stream_data_uni
 			{9.0, 103.0},             // initial_max_streams_uni
+			{3.0, 1472.0},            // max_udp_payload_size（Q2/patch #9：Chrome 真值，行为映射回 Config）
+			{32.0, 65536.0},          // max_datagram_frame_size（Q2/patch #9：接收上限同步放宽）
 			{"grease", 8.0},          // GREASE 参数放末尾（默认 quic-go 恒首位，此处验证位置可控）
 		},
 	}
@@ -401,8 +405,12 @@ func TestQUICTransportParamsRaw(t *testing.T) {
 	if qcfg.MaxIncomingStreams != 100 {
 		t.Errorf("MaxIncomingStreams = %v, want 100", qcfg.MaxIncomingStreams)
 	}
+	if qcfg.MaxUDPPayloadSize != 1472 || qcfg.DatagramFrameSize != 65536 {
+		t.Errorf("patch #9 映射缺失：MaxUDPPayloadSize=%d DatagramFrameSize=%d, want 1472/65536",
+			qcfg.MaxUDPPayloadSize, qcfg.DatagramFrameSize)
+	}
 
-	chProfile, _ := sniffInnerClientHello(t, qcfg)
+	chProfile, _, _ := sniffInnerClientHello(t, qcfg)
 
 	var raw []byte
 	found := false
@@ -437,11 +445,11 @@ func TestQUICTransportParamsRaw(t *testing.T) {
 		gotIDs = append(gotIDs, tp.ID)
 		vals[tp.ID] = tp.Val
 	}
-	wantIDs := []uint64{8, 0x1234, 1, 4, 5, 6, 7, 9}
+	wantIDs := []uint64{8, 0x1234, 1, 4, 5, 6, 7, 9, 3, 32}
 	if fmt.Sprint(gotIDs) != fmt.Sprint(wantIDs) {
 		t.Errorf("tp order = %v, want %v", gotIDs, wantIDs)
 	}
-	for id, want := range map[uint64]uint64{8: 100, 1: 30000, 4: 10485760, 5: 6291456, 6: 6291456, 7: 6291456, 9: 103} {
+	for id, want := range map[uint64]uint64{8: 100, 1: 30000, 4: 10485760, 5: 6291456, 6: 6291456, 7: 6291456, 9: 103, 3: 1472, 32: 65536} {
 		if v, ok := tpVarint(vals, id); !ok || v != want {
 			t.Errorf("tp %#x = %d,%v, want %d", id, v, ok, want)
 		}

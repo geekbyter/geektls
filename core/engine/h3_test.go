@@ -101,7 +101,10 @@ func h3Session(t *testing.T, raceMs int) *Session {
 			"initial_max_data": 10485760,
 		},
 	}
-	s, err := NewSession(p, SessionOptions{InsecureSkipVerify: true})
+	// G8：H3 默认关，自动路径（竞速 / Alt-Svc）要求会话允许 h3 ⇒ 这些既有用例
+	// 显式开启（force 路径不受影响）。
+	h3On := true
+	s, err := NewSession(p, SessionOptions{InsecureSkipVerify: true, H3: &h3On})
 	if err != nil {
 		t.Fatal(err)
 	}

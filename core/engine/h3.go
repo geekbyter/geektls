@@ -33,9 +33,14 @@ func (s *Session) learnAltSvc(host string, headers [][2]string) {
 }
 
 // h3Eligible 判定本次请求是否走 H3。
+// G8：H3 必须在会话允许集合里（默认不允许）——预设声明了 http3 节只代表"能走"，
+// 不代表"默认走"；Alt-Svc 学习照旧（无害），但消费它要多一道 protocols 检查。
 func (s *Session) h3Eligible(req *Request, host string) bool {
 	if req.ForceHTTP3 {
 		return true
+	}
+	if !s.protos.h3 {
+		return false
 	}
 	if s.profile.HTTP3 == nil || !s.profile.HTTP3.Enabled {
 		return false
@@ -69,6 +74,7 @@ func (s *Session) doH3(req *Request, headers [][2]string) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	headers = s.orderForWire(headers) // G9：头序策略（random 档在这里打乱）
 	order := make([]string, 0, len(headers))
 	for _, kv := range headers {
 		freq.Header.Set(kv[0], kv[1])
@@ -127,6 +133,7 @@ func (s *Session) h3TLSSettings() h3core.TLSSettings {
 		InsecureSkipVerify: s.opts.InsecureSkipVerify,
 		RootCAs:            s.certs.rootPool(),
 		Certificates:       s.certs.quicCerts(),
+		SessionCache:       s.h3SessionCache, // T1：nil = 不存票（utls 语义）
 	}
 }
 

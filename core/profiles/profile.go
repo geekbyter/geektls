@@ -192,16 +192,14 @@ type HTTP3Profile struct {
 	// 设置后优先于 TransportParams（map 形态被忽略）；数组顺序即线上顺序，
 	// 可表达非标参数与任意顺序（整块有序直通，非逐项 setter）。
 	TransportParamsRaw [][]any          `json:"transport_params_raw,omitempty"`
-	InitialLayout      *H3InitialLayout `json:"initial_layout,omitempty"` // 仍是占位（coalesce/分片表要动 packer，见下）
+	InitialLayout      *H3InitialLayout `json:"initial_layout,omitempty"` // 首飞 Initial 布局（PADDING 位置/分片表/coalesce 阈值）
 
 	// InitialPacketSize 控制**首个 Initial datagram 的尺寸**（也就是 PADDING 填到
 	// 多少）：1200..1452，0 = 上游默认 1280。取自 quic-go 的 Config.InitialPacketSize
 	// （上游字段，无需 fork patch），packer 会把 Initial 包补齐到它
-	//（third_party/quic-go-utls/packet_packer.go 的 initialPaddingLen）⇒ 这是 T4 记的
-	// "PADDING 大小不可控"里**可兑现的那半边**。
-	// 仍不可控（要动 packer/packer 之上的 SC-3）：coalesce 阈值（Initial+Handshake
-	// 合并成一 datagram 的判据）、CRYPTO 分片表（fork 内置的 clienthello scrambling
-	// 规则）。默认不设该字段 ⇒ 线上与改动前逐字节相同。
+	//（third_party/quic-go-utls/packet_packer.go 的 initialPaddingLen）。
+	// PADDING 在包内的位置、CRYPTO 分片表与 coalesce 阈值由 InitialLayout 表达
+	//（vendor patch #8，2026-09-30 起生效）。默认不设 ⇒ 线上与上游逐字节相同。
 	InitialPacketSize int `json:"initial_packet_size,omitempty"`
 
 	// --- QUIC 内层 ClientHello 的 TLS1.3 形态（实测驱动，见 docs/07-capability-gaps.md §6.1）---
@@ -224,13 +222,33 @@ type HTTP3Profile struct {
 	H2RaceMs             int        `json:"h2_race_ms,omitempty"`     // H2/H3 竞速：H3 起跑后多少 ms 内无响应头则并发 H2
 }
 
-// H3InitialLayout（P4 占位）。**当前不生效**：quic-go 的 packer 不接受布局参数，
-// padding 的可行部分改由 HTTP3Profile.InitialPacketSize 表达（它决定首 datagram
-// 尺寸 = 填充量），coalesce 与 CRYPTO 分片表要动 packer 层（SC-3）才谈得上。
-// 保留结构体是为了让既有 profile 文件里的这一节仍然能被解析（不报未知字段）。
+// H3InitialLayout：首飞 Initial 报文的线上布局（2026-09-30 起经 vendor patch #8
+// 真生效，嗅探器字节级断言见 tests/e2e/quic_sniff_test.go）。
+// 不设这一节 = 上游 quic-go 默认行为，逐字节不变。
 type H3InitialLayout struct {
-	Padding  string `json:"padding,omitempty"`
-	Coalesce bool   `json:"coalesce,omitempty"`
+	// Padding：PADDING 帧在 Initial 包内的位置。
+	//   ""    = 上游 quic-go 默认（PADDING 写在 CRYPTO 之前）
+	//   "end" = PADDING 写在包尾（Chrome/quiche 形态：CRYPTO...PADDING）
+	Padding string `json:"padding,omitempty"`
+	// CoalesceMinSize：把 Handshake/0-RTT 包合入同一 datagram 的剩余空间阈值。
+	//   0  = 上游默认（128）
+	//   -1 = 禁用合并（Initial / Handshake 各自独立 datagram）
+	//   >0 = 自定义阈值（≤65535）
+	CoalesceMinSize int `json:"coalesce_min_size,omitempty"`
+	// CryptoFragments：CRYPTO 帧分片表——initial crypto stream（ClientHello）
+	// 按表中字节数逐片切出 CRYPTO 帧，按序消费；最后一片之后的数据按包空间
+	// 自然填充。一片大于当前包剩余空间时在下一包继续。设置后隐含
+	// disable_scramble（分片表与 scrambling 互斥，profile 层不报错，以表为准）。
+	CryptoFragments []uint32 `json:"crypto_fragments,omitempty"`
+	// DisableScramble：关闭 fork 内置的 ClientHello scrambling（SNI/ECH 中点
+	// 切割）。Chrome 形态 = disable_scramble + padding:"end"（CRYPTO 单片
+	// 按包空间填充 + PADDING 包尾）。
+	DisableScramble bool `json:"disable_scramble,omitempty"`
+
+	// Coalesce（已退役占位）：本字段从引入起就是占位、从未生效。显式写 true
+	// 现在会在 Parse 时报错（不允许"看似生效"的静默忽略）；请改用
+	// coalesce_min_size（-1 = 禁用合并）。false/缺省不受影响。
+	Coalesce bool `json:"coalesce,omitempty"`
 }
 
 // TCPProfile（P6；平台允许时才生效）。
@@ -310,10 +328,43 @@ func (p *Profile) validate() error {
 			}
 		}
 	}
+	if h := p.HTTP3; h != nil {
+		if err := h.validate(); err != nil {
+			return err
+		}
+	}
 	if p.TLS == nil || p.TLS.Detail == nil {
 		return nil
 	}
 	return p.TLS.Detail.validate()
+}
+
+func (h *HTTP3Profile) validate() error {
+	l := h.InitialLayout
+	if l == nil {
+		return nil
+	}
+	switch l.Padding {
+	case "", "end":
+	default:
+		return &ParseError{Field: "http3.initial_layout.padding",
+			Msg: fmt.Sprintf("%q unsupported (want \"\"=上游默认 / \"end\"=PADDING 在包尾)", l.Padding)}
+	}
+	if l.Coalesce {
+		return &ParseError{Field: "http3.initial_layout.coalesce",
+			Msg: "占位字段已退役（从未生效过）；请改用 coalesce_min_size（0=默认 128，-1=禁用合并）"}
+	}
+	if l.CoalesceMinSize < -1 || l.CoalesceMinSize > 65535 {
+		return &ParseError{Field: "http3.initial_layout.coalesce_min_size",
+			Msg: fmt.Sprintf("%d out of range (want -1=禁用 / 0=默认 / 1..65535)", l.CoalesceMinSize)}
+	}
+	for i, f := range l.CryptoFragments {
+		if f == 0 {
+			return &ParseError{Field: fmt.Sprintf("http3.initial_layout.crypto_fragments[%d]", i),
+				Msg: "fragment size must be >= 1"}
+		}
+	}
+	return nil
 }
 
 func (d *Detail) validate() error {

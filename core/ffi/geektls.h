@@ -81,6 +81,26 @@ GEEDTLS_API int      gtls_client_close(uint64_t client);
  * （那几档由代理解析，local_address 仍然生效）。ip_version 与 local_address/resolve
  * 取值矛盾时在本函数就报 invalid_config。
  * 这三项没有接进 QUIC 拨号：force_http3 + 任一项 → 直接报 invalid（不静默换路径）。
+ * session_opts_json 的协议选择（G8，2026-09-30 起）：
+ *   "protocols": ["h1.1","h2"]  允许的协议集合（顺序无关）；**默认即此**（无 H3）。
+ *                               ["h1.1"] 只走 H1.1、["h2"] 只走 H2（对端不支持即失败，
+ *                               不静默回落）、["h3"] 会话级强制 H3。
+ *   "h3": true                  protocols 的便捷写法：在默认集合上加 "h3"。
+ *   h3=true 与 protocols 同时给出 ⇒ 建会话报错（不静默取其一）；h3=false 与 protocols
+ *   同给是常见写法（无额外意图），不拦；开了 h3 但预设无 http3 声明也报错。
+ *   请求级的 "force_http3" 语义不变（失败不回落）；默认会话下仍可用，只有会话显式
+ *   限定了 protocols 且不含 h3 时才冲突报错。
+ *
+ * 请求头顺序与身份自洽（G9，2026-09-30 起）：
+ *   "header_order": "preserve"  默认：按 profile.http1.header_order 归位（与旧行为
+ *                               逐字节相同）。"input" = 按调用方传入顺序；"random" =
+ *                               打乱（Host 仍在最前）。random 为了绕"顺序即信号"的
+ *                               检测，与真浏览器不符且破坏可复现性，回归测试别开。
+ *   "identity_sync": "auto"     默认：调用方自带 user-agent 与预设身份不一致时，把
+ *                               sec-ch-ua / sec-ch-ua-platform / sec-ch-ua-mobile 校正
+ *                               到该 UA，并在响应 warnings 里如实说明"TLS/JA3/JA4/H2
+ *                               仍是该预设"（要字节级一致请改用同平台变体预设）。
+ *                               "off" = 旧行为（不校正、不告警）。
  * tcp.mode=netstack 与 resolve 互相成全（用户态栈只吃 IPv4 字面量目标，钉位供给它，
  * 域名照旧上线）；但它的源地址由 TUN 拓扑固定，local_address 在本函数就报错而不是忽略。
  * ca_bundle 里的内容解析不出证书、或 client_cert/client_key 配不上对时，

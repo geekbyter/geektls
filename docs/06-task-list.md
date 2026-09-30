@@ -78,7 +78,7 @@
 - [x] **P4-T1 quic-go fork 集成**：bogdanfinn/quic-go-utls v1.0.10-utls（对齐 tls-client master）；`core/h3` 包，UDP loopback H3 echo 跑通 — 2d，依赖 P1
 - [x] **P4-T2 transport params 全控**（**降级**：值可控子集经 quic.Config——max_idle_timeout/initial_max_data/三个 stream 窗口(共值)/streams 数；顺序、max_udp_payload_size、非标参数不可控，需 fork internal/wire；逐项规定见 docs/p4-h3-capability.md，嗅探实证） — 3d，依赖 T1
 - [x] **P4-T3 H3 SETTINGS / 伪头序 / GREASE 帧**：AdditionalSettings(+顺序)/PseudoHeaderOrder/SendGreaseFrames/PriorityParam 全控 — 2d，依赖 T1
-- [x] **P4-T4 Initial datagram 布局**（**降级**：quic-go packet packer 无钩子，分片/PADDING/coalesce 不可控；实测证据（2×1280B datagram、CRYPTO 分片重组）与 Chrome 差异点记入 capability 文档，是否 deep fork 待 nginx 采集端量化后评估） — 3d，依赖 T2
+- [x] **P4-T4 Initial datagram 布局**（~~降级~~ **2026-09-30 第二轮补齐（vendor patch #8）**：PADDING 包内位置 / CRYPTO 分片表 / scrambling 开关 / coalesce 阈值全部经 `initial_layout` 落地，嗅探器字节级断言 + 真服务端中继实证（tests/e2e/quic_layout_test.go）；默认路径逐字节不变） — 3d，依赖 T2
 - [x] **P4-T5 行为层**：H2/H3 racing（raceH3H2，h2_race_ms 延迟并发）、Alt-Svc 会话级缓存（pytest 实测升级）、0-RTT 未接线（依赖会话复用，随 P7-T2） — 2d，依赖 T3
 - [x] **P4-T6 H3 验收**（替代裁判：无 nginx 环境）：tests/e2e 自研 QUIC Initial 解密嗅探器（RFC 9001），transport params 逐项断言全绿；nginx `$quic_fingerprint_*` 与 ja4plus-go pcap 交叉验证随 P1-T8 环境延后 — 2d，依赖 T4
 - [x] **P4 验收**：四层指纹同一 profile 对齐（QUIC 内层 ClientHello 已经 vendor fork patch 解决并字节级实证；Initial 布局保持降级标注——packer 层不可控）

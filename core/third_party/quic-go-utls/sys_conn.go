@@ -115,9 +115,10 @@ var _ rawConn = &basicConn{}
 
 func (c *basicConn) ReadPacket() (receivedPacket, error) {
 	buffer := getPacketBuffer()
-	// The packet size should not exceed protocol.MaxPacketBufferSize bytes
-	// If it does, we only read a truncated packet, which will then end up undecryptable
-	buffer.Data = buffer.Data[:protocol.MaxPacketBufferSize]
+	// geektls patch: reads use MaxIncomingPacketSize (1500) so that advertising a
+	// max_udp_payload_size larger than MaxPacketBufferSize can't silently
+	// truncate incoming datagrams (was protocol.MaxPacketBufferSize).
+	buffer.Data = buffer.Data[:protocol.MaxIncomingPacketSize]
 	n, addr, err := c.ReadFrom(buffer.Data)
 	if err != nil {
 		return receivedPacket{}, err

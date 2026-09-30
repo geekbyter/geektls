@@ -205,7 +205,58 @@ type Config struct {
 	// Added by geektls (see GEEKTLS_PATCHES.md).
 	TransportParamsOverride tls.TransportParameters
 
+	// InitialLayout controls the wire layout of the client's first flight of
+	// Initial packets: PADDING position inside the packet, CRYPTO frame
+	// fragmentation of the ClientHello, and the coalescing threshold.
+	// Nil = upstream default behavior (byte-identical to quic-go).
+	// Added by geektls (see GEEKTLS_PATCHES.md).
+	InitialLayout *InitialLayoutConfig
+
+	// MaxUDPPayloadSize, when non-zero, is the value advertised in the
+	// max_udp_payload_size transport parameter. The receive path always
+	// tolerates datagrams up to protocol.MaxIncomingPacketSize (1500),
+	// so advertising up to that value (e.g. Chrome's 1472) is safe.
+	// 0 = upstream default (protocol.MaxPacketBufferSize, 1452).
+	// Note: TransportParamsOverride replaces the marshaled parameters
+	// wholesale; set this field whenever the override blob declares a
+	// max_udp_payload_size > 1452, so behavior matches the wire.
+	// Added by geektls (see GEEKTLS_PATCHES.md).
+	MaxUDPPayloadSize uint16
+
+	// DatagramFrameSize, when non-zero, is the value advertised in the
+	// max_datagram_frame_size transport parameter AND the cap applied to
+	// received DATAGRAM frames (upstream hardcodes wire.MaxDatagramSize
+	// = 16383 for both). Must be >= 1200. 0 = upstream default.
+	// Added by geektls (see GEEKTLS_PATCHES.md).
+	DatagramFrameSize uint64
+
 	Tracer func(ctx context.Context, isClient bool, connID ConnectionID) qlogwriter.Trace
+}
+
+// InitialLayoutConfig controls how the client lays out its first flight of
+// Initial packets. Added by geektls (see GEEKTLS_PATCHES.md). The zero value
+// of every field preserves upstream behavior.
+type InitialLayoutConfig struct {
+	// PaddingEnd writes PADDING after all other frames in a padded packet
+	// (Chrome/quiche style: CRYPTO...PADDING). Upstream quic-go writes
+	// PADDING before the non-ACK frames (PADDING...CRYPTO).
+	PaddingEnd bool
+	// DisableClientHelloScrambling disables the SNI/ECH midpoint splitting of
+	// the ClientHello in the initial crypto stream (a per-connection
+	// equivalent of the QUIC_GO_DISABLE_CLIENTHELLO_SCRAMBLING env var).
+	DisableClientHelloScrambling bool
+	// CryptoFragments, when non-empty, splits the initial crypto stream
+	// (the ClientHello) into CRYPTO frames of exactly these payload sizes,
+	// consumed in order; data past the last entry fills packets naturally.
+	// A fragment larger than the space left in the current packet continues
+	// in the next packet. Implies DisableClientHelloScrambling.
+	CryptoFragments []uint32
+	// CoalesceMinSize overrides protocol.MinCoalescedPacketSize (128): a
+	// Handshake / 0-RTT packet is only coalesced into the same datagram when
+	// the space used so far leaves at least this much room. 0 = upstream
+	// default; a very large value (e.g. 65535) effectively disables
+	// coalescing.
+	CoalesceMinSize uint16
 }
 
 // ClientHelloInfo contains information about an incoming connection attempt.

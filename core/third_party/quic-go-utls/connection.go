@@ -338,7 +338,7 @@ var newConnection = func(
 		MaxUniStreamNum:                 protocol.StreamNum(s.config.MaxIncomingUniStreams),
 		MaxAckDelay:                     protocol.MaxAckDelayInclGranularity,
 		AckDelayExponent:                protocol.AckDelayExponent,
-		MaxUDPPayloadSize:               protocol.MaxPacketBufferSize,
+		MaxUDPPayloadSize:               protocol.ByteCount(s.config.maxUDPPayloadSize()), // geektls patch: was protocol.MaxPacketBufferSize
 		StatelessResetToken:             &statelessResetToken,
 		OriginalDestinationConnectionID: origDestConnID,
 		// For interoperability with quic-go versions before May 2023, this value must be set to a value
@@ -352,7 +352,7 @@ var newConnection = func(
 		EnableResetStreamAt:       conf.EnableStreamResetPartialDelivery,
 	}
 	if s.config.EnableDatagrams {
-		params.MaxDatagramFrameSize = wire.MaxDatagramSize
+		params.MaxDatagramFrameSize = s.config.maxDatagramFrameSize() // geektls patch: was wire.MaxDatagramSize
 	} else {
 		params.MaxDatagramFrameSize = protocol.InvalidByteCount
 	}
@@ -372,7 +372,11 @@ var newConnection = func(
 		s.version,
 	)
 	s.cryptoStreamHandler = cs
-	s.packer = newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, &s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	pkr := newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, &s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	if l := s.config.InitialLayout; l != nil { // geektls patch
+		pkr.applyInitialLayout(l)
+	}
+	s.packer = pkr
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
 	s.cryptoStreamManager = newCryptoStreamManager(s.initialStream, s.handshakeStream, s.oneRTTStream)
 	return &wrappedConn{Conn: s}
@@ -466,7 +470,7 @@ var newClientConnection = func(
 		MaxBidiStreamNum:               protocol.StreamNum(s.config.MaxIncomingStreams),
 		MaxUniStreamNum:                protocol.StreamNum(s.config.MaxIncomingUniStreams),
 		MaxAckDelay:                    protocol.MaxAckDelayInclGranularity,
-		MaxUDPPayloadSize:              protocol.MaxPacketBufferSize,
+		MaxUDPPayloadSize:              protocol.ByteCount(s.config.maxUDPPayloadSize()), // geektls patch: was protocol.MaxPacketBufferSize
 		AckDelayExponent:               protocol.AckDelayExponent,
 		// For interoperability with quic-go versions before May 2023, this value must be set to a value
 		// different from protocol.DefaultActiveConnectionIDLimit.
@@ -478,7 +482,7 @@ var newClientConnection = func(
 		EnableResetStreamAt:       conf.EnableStreamResetPartialDelivery,
 	}
 	if s.config.EnableDatagrams {
-		params.MaxDatagramFrameSize = wire.MaxDatagramSize
+		params.MaxDatagramFrameSize = s.config.maxDatagramFrameSize() // geektls patch: was wire.MaxDatagramSize
 	} else {
 		params.MaxDatagramFrameSize = protocol.InvalidByteCount
 	}
@@ -494,13 +498,17 @@ var newClientConnection = func(
 		s.qlogger,
 		logger,
 		s.version,
-		conf.ClientHelloSpec, // geektls patch
+		conf.ClientHelloSpec,         // geektls patch
 		conf.TransportParamsOverride, // geektls patch
 	)
 	s.cryptoStreamHandler = cs
 	s.cryptoStreamManager = newCryptoStreamManager(s.initialStream, s.handshakeStream, oneRTTStream)
 	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
-	s.packer = newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, &s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	pkr := newPacketPacker(srcConnID, s.connIDManager.Get, s.initialStream, s.handshakeStream, s.sentPacketHandler, s.retransmissionQueue, cs, s.framer, &s.receivedPacketHandler, s.datagramQueue, s.perspective)
+	if l := s.config.InitialLayout; l != nil { // geektls patch
+		pkr.applyInitialLayout(l)
+	}
+	s.packer = pkr
 	if len(tlsConf.ServerName) > 0 {
 		s.tokenStoreKey = tlsConf.ServerName
 	} else {
@@ -518,6 +526,9 @@ var newClientConnection = func(
 func (c *Conn) preSetup() {
 	c.largestRcvdAppData = protocol.InvalidPacketNumber
 	c.initialStream = newInitialCryptoStream(c.perspective == protocol.PerspectiveClient)
+	if l := c.config.InitialLayout; l != nil { // geektls patch
+		c.initialStream.applyInitialLayout(l)
+	}
 	c.handshakeStream = newCryptoStream()
 	c.sendQueue = newSendQueue(c.conn)
 	c.retransmissionQueue = newRetransmissionQueue()
@@ -2137,7 +2148,7 @@ func (c *Conn) handleAckFrame(frame *wire.AckFrame, encLevel protocol.Encryption
 }
 
 func (c *Conn) handleDatagramFrame(f *wire.DatagramFrame) error {
-	if f.Length(c.version) > wire.MaxDatagramSize {
+	if f.Length(c.version) > c.config.maxDatagramFrameSize() { // geektls patch: was wire.MaxDatagramSize
 		return &qerr.TransportError{
 			ErrorCode:    qerr.ProtocolViolation,
 			ErrorMessage: "DATAGRAM frame too large",

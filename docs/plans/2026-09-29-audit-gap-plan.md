@@ -32,7 +32,7 @@ $ git status --short              → 21 条 ??，含 ./ （整个 geektls 目�
 - parity 计划"阶段 0.1 = 0.1.5 打 tag 走 Actions"**当前不可执行**——没有 commit 就没有 tag，
   CI（`ci.yml`）**从未在本仓跑过一次**，所有"CI 守门"能力（四处版本一致、预设必须等于生成器产物）
   都还是纸面声明；
-- 任何重构（尤其 SC-1~SC-3 那种 2–3 周的大改）**没有回滚点**，364 预设的"逐比特不变"门禁
+- 任何重构（尤其 SC-1~SC-3 那种 2–3 周的大改）**没有回滚点**，368 预设的"逐比特不变"门禁
   失去了对比基线。
 
 **做法**：在 `D:/work/tls/geektls` 独立 `git init`（不要复用父仓），补一份本仓 `.gitignore`
@@ -562,7 +562,7 @@ parity 计划 G1 说"发 npm"，但没回答：`geektls.dll/.so/.dylib` 怎么�
 | 3 | A10 0-RTT / early data | — | ✅ 2026-09-30 结案为"协议侧不做、声明侧可控"（`core/tls/early_data_test.go` 实测 JA4 `t13d1517h2`→`t13d1518h2`；只带扩展 42 的 CH 必被标准服务端拒绝 ⇒ 不能做成会话开关） |
 
 **与既有门禁的衔接**：A4/A6/A7/A11 全部会动 FFI 或 profile schema ⇒ 必须守
-`docs/CONTRACT-FREEZE.md` 的"ABI 签名只增不改"+ **364 预设指纹输出逐比特不变**；
+`docs/CONTRACT-FREEZE.md` 的"ABI 签名只增不改"+ **368 预设指纹输出逐比特不变**；
 A7/A11 会改变**发出字节**（新增请求头 / 新增或去掉一帧），因此需要
 ①新增预设或在 preset 内显式声明，②`geektls.h`/ctypes/koffi/`index.d.ts` 四处同步，
 ③L2 nginx 采集端重跑一遍确认 JA3/JA4/Akamai 四段未受影响。

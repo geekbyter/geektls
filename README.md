@@ -4,6 +4,10 @@
 
 > 当前状态：**P0–P7 完成（一期收工）**。其中 **TLS/H2 已交付并经 E2 外部 oracle 验证**；**H3/QUIC：Chrome 149 H3 已完成 E1 真机采集**（QUIC 内层 JA4 与真机逐字符一致，详见功能矩阵），**Firefox/Safari H3 尚未实测**；**TCP 仅 TTL/MSS 可承诺**（window/window_scale/options 仅 Linux 探测模式，不影响真实连接）。P1-T8（nginx 采集端 L2 终审）**已通过**（7 预设 × 35 断言全绿，tests/e2e/nginx-l2/）；P6-T3（JA4TCP 验收）需真实二层网络，回环无意义仍待。精确现状见 [docs/01-fingerprint-dimensions.md](docs/01-fingerprint-dimensions.md) 与 [docs/capability-matrix.yml](docs/capability-matrix.yml)。
 
+# pypi
+
+- https://pypi.org/project/geektls/
+
 ## 目录
 
 - [功能矩阵](#功能矩阵)
@@ -32,8 +36,10 @@
 | 指纹入口：完整 profile / JA3 / JA4 / JA4R / ClientHello-hex + 自算 JA3/JA4 回读 | ✅ | FoxIO 官方向量 + 线上 round-trip；JA4 短哈希走内置预设反查（哈希不可逆） |
 | HTTP/2 帧层（SETTINGS 序/WINDOW_UPDATE（三态：默认/指定/不发）/priority/伪头序/首流号） | ✅ | tls.peet.ws Akamai 四段全 MATCH；三态与首流号另有原始帧断言（`TestH2FrameCaptureTriState`：帧有无 + 流号 + SETTINGS 全序） |
 | HTTP/3 + QUIC（SETTINGS/伪头序/GREASE 帧/内层 ClientHello 同 profile） | ✅（机制） | Chrome 149 H3 E1 真机采集完成（tests/e2e/e1_h3_test.go，证据 profiles/evidence/browsers/chrome_windows_h3.json）；QUIC 内层 JA4 与真机逐字符相同（钉在 quic_sniff_test.go）；transport params 顺序/非标参数经 T4-1 blob 直通可控；**Initial 布局仍不可控、quic_grease_frames 未验证、Firefox/Safari H3 未实测**（见能力矩阵） |
-| HTTP/2 HPACK 编码策略（chrome/firefox/safari/generic 四档，vendor fork fhttp） | ✅ **250/364 预设已带** | 逐字节块表示断言（索引/literal/Huffman/动表复用）；chrome 档有 QUICHE 源码级证据，firefox 档有 Firefox 59 字节级证据，safari 档为保守近似待 E1；工具与无法归族的内嵌浏览器**刻意留空**（见 docs/p2-h2-capability.md §覆盖面） |
-| H2/H3 racing + Alt-Svc | ✅ | 本地实测（含负缓存） |
+| HTTP/2 HPACK 编码策略（chrome/firefox/safari/generic 四档，vendor fork fhttp） | ✅ **253/368 预设已带** | 逐字节块表示断言（索引/literal/Huffman/动表复用）；chrome 档有 QUICHE 源码级证据，firefox 档有 Firefox 59 字节级证据，safari 档为保守近似待 E1；工具与无法归族的内嵌浏览器**刻意留空**（见 docs/p2-h2-capability.md §覆盖面） |
+| H2/H3 racing + Alt-Svc | ✅ **H3 默认关（`h3=True`/`protocols` 显式开）** | 协议选择用例 + 线上 ALPN 断言（`TestProtocolH1Only` 等）；`force_http3` 语义不变 |
+| 请求头顺序可控（preserve / input / random） | ✅（默认 preserve = 旧行为） | 原始 TCP 抓包逐行核对线上头序（含集合不变、Host 恒最前） |
+| 身份自洽（自带 UA ↔ 客户端提示） | ✅（`identity_sync="auto"`） | 冲突时 `sec-ch-ua*` 校正到调用方 UA + `warnings` 如实告警；TLS/H2 不伪造 |
 | 连接池（H2 多路复用/H1 keep-alive/H3 共享 transport，并发安全） | ✅ | go test -race 零竞争；echo 侧连接数断言 |
 | 流式上传（H1 chunked / H2 DATA，三语言绑定迭代器入参） | ✅ | 线上字节逐字节断言 |
 | 响应自动解压（gzip/deflate/br/zstd + 多编码链，流式同步生效） | ✅ | 六路径矩阵 + 跨压缩块边界流式断言 |
@@ -72,7 +78,7 @@ Python 一行自检：
 
 ```bash
 python -c "import geektls,json;print(json.dumps(geektls.version()));print(len(geektls.list_presets()),'presets')"
-# {"abi": 1, "core": "0.1.6", "utls": "refraction-networking/utls v1.8.2; bogdanfinn/utls v1.7.8-barnius; ..."} / 364 presets
+# {"abi": 1, "core": "0.1.7", "utls": "refraction-networking/utls v1.8.2; bogdanfinn/utls v1.7.8-barnius; ..."} / 368 presets
 ```
 
 > `version()["utls"]` 是**指纹栈溯源**：报告动态库里实际链接的 uTLS / fhttp / quic-go-utls
@@ -149,13 +155,136 @@ build/geektls request http://127.0.0.1:8000/ --ja4 t13d1516h2_8daaf6152771_02713
 - 退出码：`0` = 传输成功（含 4xx/5xx，curl 口径；加 `--fail` 让 4xx/5xx 返回 1）、
   `1` = 配置或传输错误（原因在 stderr）、`2` = 用法错误。
 
+## 协议选择 / 请求头顺序 / 身份自洽（默认值都是"最保守的那个"）
+
+三个开关，**默认行为与旧版完全一致**，需要时才开：
+
+| 关心的事 | 参数 | 默认 | 可选值 |
+|---|---|---|---|
+| 走哪个 HTTP 版本 | `protocols` / `h3` | `["h1.1","h2"]`（**不含 H3**） | `["h1.1"]` 只 H1.1 ｜ `["h2"]` 只 H2 ｜ `["h2","h3"]` 允许 H3 ｜ `["h3"]` 强制 H3；便捷写法 `h3=True` |
+| 请求头顺序 | `header_order` | `preserve`（按预设声明序） | `input`（按你给的顺序）｜ `random`（打乱） |
+| 自带 UA 与预设不一致 | `identity_sync` | `auto`（校正客户端提示 + 告警） | `off`（不校正） |
+
+**为什么 H3 默认关**：同一个 URL 走 H2 还是 H3 是可观测差异（协议入口、QUIC 侧指纹都不同），
+不该由"预设里带 http3 节"替用户决定；curl_cffi / requests 生态的默认也是 H2，H3 要显式开。
+以前只要预设带 `http3.enabled + h2_race_ms` 就自动竞速 H3，现在**必须** `h3=True` 或
+`protocols` 含 `"h3"`；请求级 `force_http3=True` 语义不变（失败不回落）。
+
+### 协议选择：Python
+
+```python
+from geektls import Session
+
+# 1) 默认（什么都不给）：h1.1 + h2，**不碰 H3** —— 与 curl_cffi / requests 同口径
+with Session(impersonate="chrome_154_windows") as s:
+    r = s.get("https://example.com/")
+    print(r.used_protocol, r.selfcheck["negotiated"]["alpn"])   # 例：h2 h2
+
+# 2) 只要 H1.1：ALPN 里不再 offer h2（对端偏好 h2 也只能给 http/1.1）
+with Session(impersonate="chrome_154_windows", protocols=["h1.1"]) as s:
+    print(s.get("https://example.com/").used_protocol)          # http/1.1
+
+# 3) 只要 H2：对端不支持 h2 时**直接失败**，不静默回落 H1（要的就是这个确定性）
+with Session(impersonate="chrome_154_windows", protocols=["h2"]) as s:
+    print(s.get("https://example.com/").used_protocol)          # h2
+
+# 4) 允许 H3（竞速/Alt-Svc 优先，失败落回 TCP）；h3=True 是便捷写法
+with Session(impersonate="chrome_154_windows", h3=True) as s:
+    print(s.get("https://example.com/").used_protocol)          # h3 或 h2（看谁先拿到响应头）
+
+# 5) 只走 H3（会话级强制，失败即报错，不回落）
+with Session(impersonate="chrome_154_windows", protocols=["h3"]) as s:
+    print(s.get("https://example.com/").used_protocol)          # h3
+
+# 6) 请求级强制（0.1.6 起语义不变：仍是"必须 H3"，但会话 protocols 显式排除 h3 时冲突报错）
+with Session(impersonate="chrome_154_windows") as s:
+    r = s.request("GET", "https://example.com/", force_http3=True)
+```
+
+要点：`h3=True` 与 `protocols=[...]` **不能同时给**（两种意图打架，直接报错，不静默取其一）；
+`h3=False` 与 `protocols` 同给不报错（常见写法，无额外意图）。开了 h3 但预设没有 `http3` 声明
+会在**建会话时**报错，而不是悄悄退回默认 QUIC 参数。
+
+### 协议选择：Node
+
+```js
+const { Session } = require('geektls');
+
+const s = new Session({ impersonate: 'chrome_154_windows' });                       // 默认 h1.1+h2
+const s1 = new Session({ impersonate: 'chrome_154_windows', protocols: ['h1.1'] }); // 只 H1.1
+const s2 = new Session({ impersonate: 'chrome_154_windows', h3: true });            // 允许 H3
+const s3 = new Session({ impersonate: 'chrome_154_windows', protocols: ['h3'] });   // 只 H3
+const r = await s.get('https://example.com/');
+console.log(r.usedProtocol, r.selfcheck?.negotiated?.alpn);
+```
+
+### 协议选择：CLI
+
+```bash
+build/geektls request https://example.com --protocols h1.1 --selfcheck   # 只 H1.1（ALPN 打 stderr）
+build/geektls request https://example.com --protocols h2                 # 只 H2
+build/geektls request https://example.com --h3                           # 允许 H3
+build/geektls request https://example.com --protocols h3                 # 只 H3
+build/geektls request https://example.com --http3                        # 请求级强制
+```
+
+### 请求头顺序：三档
+
+```python
+with Session(impersonate="chrome_154_windows") as s:
+    # 默认 preserve：按 profile.http1.header_order 归位（= 与 0.1.6 之前逐字节相同）
+    s.get(url)
+
+with Session(impersonate="chrome_154_windows", header_order="input") as s:
+    # 按**你传入字典的顺序**发（Host 仍在最前）；requests 用户自己排好序时用这个
+    s.get(url, headers={"accept-language": "en-US,en;q=0.9", "accept": "*/*"})
+
+with Session(impersonate="chrome_154_windows", header_order="random") as s:
+    # 每次请求打乱普通头顺序（Host 恒最前）；绕"顺序即信号"的检测用
+    s.get(url)
+```
+
+CLI 同理：`--header-order preserve|input|random`。
+
+**头序三档的取舍**：真浏览器的头序是固定的，`random` 是"对抗顺序检测"的手段而不是更真——
+所以默认 `preserve`，且它会破坏可复现性（回归/对拍时别开）。
+
+### 自带 UA 时的身份自洽
+
+```python
+WIN_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/161.0.0.0 Safari/537.36")
+
+# 预设是 macOS 形态，但你写 Windows UA ⇒ 默认 auto：sec-ch-ua*/platform/mobile 跟着校正
+with Session(impersonate="chrome_154_macos") as s:
+    r = s.get(url, headers={"user-agent": WIN_UA})
+    print(r.warnings)      # ["identity_sync: … TLS/JA3/JA4/H2 仍为该预设 …"]
+
+# 想要连 TLS 也一致：换同平台变体预设（它的 ClientHello 本来就不同），而不是靠改头
+with Session(impersonate="chrome_154_windows") as s:
+    s.get(url, headers={"user-agent": WIN_UA})   # TLS 与 UA 都是 Windows 形态
+
+# 不想要任何校正/告警：off（= 旧行为）
+with Session(impersonate="chrome_154_macos", identity_sync="off") as s:
+    s.get(url, headers={"user-agent": WIN_UA})
+```
+
+CLI：`--identity-sync auto|off`。
+
+**身份自洽的边界（如实说明）**：你自带 `user-agent` 时，`identity_sync="auto"` 会把
+`sec-ch-ua`（版本号）/`sec-ch-ua-platform`/`sec-ch-ua-mobile` 校正到该 UA，因为这几项与 UA
+同源、不一致是明显破绽。**但 TLS/JA3/JA4/H2 不会跟着变**——凭空改出来的指纹不属于任何真实
+浏览器，比不一致更糟。想要"UA 与 TLS 也一致"，正确做法是**换同平台变体预设**
+（`chrome_154` 的 `_windows` / `_macos` / `_android` 变体的 TLS 真的不同），库会把这句写进
+`r.warnings`。查变体：`geektls.list_presets()` 或 `geektls check-profile <名>`。
+
 ## 指纹怎么传：整体与局部
 
 `Session(...)` 的指纹入参**六选一**（互斥，同时给以靠前的为准，优先级按下列顺序）：
 
 | 入参 | 语义 | 保真度 | 备注 |
 |---|---|---|---|
-| `impersonate="chrome_150"` | 用内置预设（364 条） | 高（多数有 E1/E2 证据） | 名字是**全名**：`chrome_154_macos`、`chrome_154_windows`、`okhttp_3_12_12`…（没有裸 `chrome_154`） |
+| `impersonate="chrome_150_windows"` | 用内置预设（368 条） | 高（多数有 E1/E2 证据） | 名字是**全名**：`chrome_154_macos`、`chrome_154_windows`、`okhttp_3_12_12`…（没有裸 `chrome_154`） |
 | `profile={...}` | 自带**完整**指纹（profile JSON schema） | 完全按你给的来 | 也接受 **JSON 文本**（`profile='{"name":...}'`），免去 `json.loads` |
 | `ja3="771,4865-...-23,4588-29-23-24,0"` | 只给 JA3 | 有损：扩展只有 type，负载全缺 | 缺失部分按引擎默认补齐，`check_profile` 会逐条列出 `warnings` |
 | `ja4r="t13d1516h2_002f,..._..._..."` | 只给 JA4R（含 cipher/扩展/sig_algs 列表） | 中：列表有序化丢失（`extensions_sorted` 告警） | 想"逐字节复刻"用这个或完整 profile；带 ECH(65037) 时按 GREASE 近似并告警（`ech_assumed_grease`），因为 raw 串不含负载 |
@@ -187,10 +316,10 @@ print(geektls.check_profile("t13d1516h2_8daaf6152771_d8a2da3f94cd"))
 
 | 函数 | 签名 | 说明 |
 |---|---|---|
-| `version()` | `-> dict` | `{"abi":1,"core":"0.1.6","utls":"<指纹栈版本串>"}`；启动时可用它断言 ABI 匹配，`utls` 用于溯源（见上文） |
+| `version()` | `-> dict` | `{"abi":1,"core":"0.1.7","utls":"<指纹栈版本串>"}`；启动时可用它断言 ABI 匹配，`utls` 用于溯源（见上文） |
 | `init(options=None)` | `-> None` | 幂等初始化钩子（当前无全局状态，留作后续） |
 | `last_error()` | `-> dict` | 最近一次失败的结构化错误（`code`/`message`/`op`） |
-| `list_presets()` | `-> list[str]` | 全部内置预设名（排序，364 条） |
+| `list_presets()` | `-> list[str]` | 全部内置预设名（排序，368 条；返回**规范名**，旧名是别名） |
 | `describe_preset(name)` | `-> dict` | 预设**展开后的规范 JSON**（ciphers/扩展/H2/H3/身份头全展开） |
 | `check_profile(spec)` | `-> dict` | 离线自检：profile JSON / JA3 / JA4 / JA4R / hex → `{ja3,ja3_hash,ja4,wire_len,warnings}` |
 | `GeekTLSError` | 异常类 | 所有失败都是它；`.code` 结构化错误码（`invalid_config`/`request_failed`/…） |
@@ -225,6 +354,10 @@ Session(impersonate=None, *, profile=None, ja3=None, ja4=None, ja4r=None,
 | `max_redirects` | int | 重定向上限（默认 10；会话级与请求级都可用） |
 | `cookies` | dict / list[tuple] / str / `Cookies` / bool | dict 等形态 ⇒ 会话级 jar（每请求渲染成 `Cookie` 头，响应里的 `Set-Cookie` 自动并入）；`True`/`False` ⇒ 只开关引擎 jar |
 | `auth` | tuple / 对象 | `(user, password)` 或带 `username`/`user` + `password` 属性的对象 ⇒ HTTP Basic；自己传了 `Authorization` 头时以你的为准 |
+| `protocols` | list[str] | 允许的 HTTP 协议集合（顺序无关）：`"h1.1"` / `"h2"` / `"h3"`。**默认 `["h1.1","h2"]`，不含 H3**（与 curl_cffi 同口径）。只要 `["h1.1"]` ⇒ ALPN 收窄到 http/1.1；只要 `["h2"]` ⇒ 对端不支持就失败（不静默回落）；只要 `["h3"]` ⇒ 会话级强制 H3 |
+| `h3` | bool | `protocols` 的便捷写法：`True` = 默认集合加 `"h3"`（预设需带 http3 声明）。`h3=False` 与 `protocols` 同给不报错，`h3=True` 与 `protocols` 同给报错 |
+| `header_order` | str | 请求头顺序：`"preserve"`（默认，按 `profile.http1.header_order`）/ `"input"`（按你传入的顺序）/ `"random"`（打乱，Host 仍最前）。⚠️ random 与真浏览器不符且破坏可复现性 |
+| `identity_sync` | str | `"auto"`（默认）：你自带 `user-agent` 与预设身份不一致时，自动把 `sec-ch-ua` / `sec-ch-ua-platform` / `sec-ch-ua-mobile` 校正到该 UA，并在 `r.warnings` 里如实说明"TLS/H2 仍是该预设"；`"off"` = 不校正 |
 | `**options` | — | 其余按**引擎会话原名**透传（`proxy`/`proxy_from_env`/`timeout_ms`/`read_timeout_ms`/`redirect_max`/`insecure_skip_verify`/`auto_decompress`/`cookie_jar`/`ca_bundle`/`client_cert`/`client_key`/`resolve`/`local_address`/`ip_version`）；不在名单里的键绑定层直接 `ValueError` |
 
 | 方法 | 说明 |
@@ -515,7 +648,15 @@ with Session(impersonate="chrome_154_windows") as s:
 
 ## 预设体系
 
-- **数量与命名**：364 条，`core/profiles/builtin/<name>.json`，**文件名即预设名**（`chrome_154_windows`、`firefox_156_android`、`okhttp_3_12_12`、`curl_8_16_0`…）。**没有族级短名**，也没有别名匹配——`impersonate="chrome_154"` 会报 `preset not found`。
+- **数量与命名**：368 条，`core/profiles/builtin/<name>.json`，**文件名即预设名**，规范是
+  `<家族>_<版本>[_<变体>][_<平台>]`：`chrome_154_windows`、`firefox_156_android`、`okhttp_3_12_12`。
+  - **平台后缀能判定就必须写**（windows/macos/linux/android/ios），判不定的留空（工具/App 族）；
+  - **Safari 也带 `_macos`**——它同时有 macOS 与 iOS 形态（`safari_18_6_ios`），后缀只允许
+    `_macos` / `_ios`（已按此把 `safari_16` → `safari_16_macos`、`safari_18` → `safari_18_legacy_macos`）；
+  - **旧名是别名**：改名过的预设（`chrome_131/133/150`、`firefox_120/135` → `*_windows`；Safari 两条同上）旧名继续可用，
+    取到同一份形态；映射表只增不删，新代码用规范名。
+  - 仍然**没有族级短名/前缀匹配**：`impersonate="chrome_154"` 会报 `preset not found`，要写全名。
+  完整规范与理由见 [docs/03-profile-format.md](docs/03-profile-format.md) §3.1（守门测试 `core/profiles/naming_test.go`）。
 - **字段**：`tls.detail`（ciphers/扩展与负载/GREASE 策略）、`http2`（SETTINGS/`window_update`（三态）/伪头序/`first_stream_id`/`hpack_strategy`/`headers_priority`）、`http3`（transport params/inner hello 规约）、`identity`（导航头集合与顺序）、可选 `tcp`、`grade`、`source`。
 - **证据分级**（`grade` 字段，详见 [docs/09-alignment-and-superiority.md](docs/09-alignment-and-superiority.md)）：
   - 留空 = **本项目自测**（E1 真机抓包 / E1r 字段级实测 / E2 本机可复现）→ 参与 E1 级断言；
@@ -552,7 +693,7 @@ with Session(impersonate="chrome_154_windows") as s:
 
 | 项目 | 栈 / 语言 | TLS 指纹 | H2 帧 + 头序 | H2 HPACK 策略 | H3 / QUIC | 四层 TCP | WebSocket | 预设与证据 | 响应内自校验 |
 |---|---|---|---|---|---|---|---|---|---|
-| **geektls** | Go（c-shared）+ Python / Node / Go 绑定 | ✅ uTLS fork + E1 真机采集链路 | ✅ | ✅ **四档**（generic/chrome/firefox/safari），250/364 预设带值 | ✅ 内层 ClientHello 同 profile + transport params blob 直通；Initial 布局不可控（SC-3 解锁） | ✅ TTL/MSS/DF/window/wscale：setsockopt 三平台 + **netstack 档**（Linux root，gVisor 栈） | ✅ RFC 6455 + permessage-deflate（握手走指纹链路） | ✅ 364 条 `grade`/`source` 分级：30 自测 / 6 E2i / 8 E2i-u / 320 E3 | ✅ selfcheck + `check_profile` 五入参 |
+| **geektls** | Go（c-shared）+ Python / Node / Go 绑定 | ✅ uTLS fork + E1 真机采集链路 | ✅ | ✅ **四档**（generic/chrome/firefox/safari），253/368 预设带值 | ✅ 内层 ClientHello 同 profile + transport params blob 直通；Initial 布局不可控（SC-3 解锁） | ✅ TTL/MSS/DF/window/wscale：setsockopt 三平台 + **netstack 档**（Linux root，gVisor 栈） | ✅ RFC 6455 + permessage-deflate（握手走指纹链路） | ✅ 368 条 `grade`/`source` 分级：29 自测 / 6 E2i / 8 E2i-u / 325 E3 | ✅ selfcheck + `check_profile` 五入参 |
 | `bogdanfinn/tls-client`（`hrequests`、`noble-tls`、`tls-client-sharp` 等绑定） | Go `fhttp` + `utls` | ✅ | ✅ | — | ✅ | — | — | 自带 profile 集；**与本项目 E3 覆盖（320 条）无直接来源关系**——E3 的 `source` 逐条指向第三方快照 `profiles/evidence/thirdparty/tls_config-0.0.2`（`TestE3SourceTraceable` 守门），profile 组织形态是同类参照 | — |
 | `lexiforest/curl_cffi`（活跃）/ `lwthiker/curl-impersonate`（原始） | libcurl 补丁 + BoringSSL / NSS | ✅ | ✅ | — | ✅（curl_cffi 新版起） | ❌（libcurl 无 TCP 指纹面） | ✅ | 内置画像 + 自定义指纹；社区节奏最快 | — |
 | `Danny-Dasilva/CycleTLS`、`cycletls_python` | Go `utls` + `fhttp` + `quic-go` | ✅（JA3 可配置） | ✅（fhttp 头序） | — | ✅ | — | ✅ | profile 清单；socks4/5/5h | — |
@@ -581,7 +722,7 @@ with Session(impersonate="chrome_154_windows") as s:
 2. **证据分级**：`grade`（30 自测 / 6 E2i / 8 E2i-u / 320 E3）+ `source` 守门 + E1 真机采集链路 + 语料回归 + 外部 oracle 周检；同类普遍只给一份清单，不区分实测与转写。
 3. **响应内自校验**：本次握手实际发出的 JA3 / JA4 / 扩展序 / GREASE 值直接从响应取，可当回归断言；`check_profile` 支持五种入参离线自检。
 4. **三语言同引擎**：Python / Node / Go 共用同一 C ABI，跨语言 JA4 三方全等，不需要为每种语言重写指纹栈。
-5. **预设结构**：364 条按 `grade` 分层（30 自测可参与严格断言 + 6 E2i / 8 E2i-u 谱系内插 + 320 E3 导入），覆盖浏览器 / App / 工具 / 代理等 29 族，含跨平台同版本一致性断言（`chrome_152` / `chrome_154` 在 macOS / Android / Windows 上 JA4 逐字符相同）。
+5. **预设结构**：368 条按 `grade` 分层（29 自测可参与严格断言 + 6 E2i / 8 E2i-u 谱系内插 + 325 E3 导入），覆盖浏览器 / App / 工具 / 代理等 29 族，含跨平台同版本一致性断言（`chrome_152` / `chrome_154` 在 macOS / Android / Windows 上 JA4 逐字符相同）。
 6. **部署形态**：Go 实现、CGO 只用于构建动态库，产物是单文件动态库 + 平台 wheel，无需 libcurl 补丁链。
 7. **自主化路线**：指纹相关代码路径正向 100% 自有推进（uTLS / fhttp / quic-go-utls 内化裁枝四阶段，见 [docs/plans/2026-09-29-self-contained-roadmap.md](docs/plans/2026-09-29-self-contained-roadmap.md)）；密码学原语（circl / brotli / zstd）按行业共识保留成熟实现，不自写。
 8. **能力面补齐**：WebSocket（wss / ws，握手走指纹链路）+ **明文 `http://`** + Python asyncio + 四编码自动解压 + **命令行入口** + requests 语义面（cookie jar / timeout 元组 / auth / 重定向开关 / 表单编码），与 CycleTLS / curl_cffi / noble-tls 的能力清单逐项对齐（逐库对照见 [docs/10-ecosystem-comparison.md](docs/10-ecosystem-comparison.md)）。
@@ -607,7 +748,7 @@ firefox 档对齐 Firefox 59 抓包（字节级），safari 档为保守近似�
 **自主化进度**（[docs/plans/2026-09-29-self-contained-roadmap.md](docs/plans/2026-09-29-self-contained-roadmap.md)）：
 边界声明与依赖清单已完成；`gvisor.dev/gvisor`（netstack 档）已引入；`core/internal/` 目前只有
 `registry` ⇒ **SC-1（uTLS 内化改写）/ SC-2（fhttp 裁枝内化）/ SC-3（quic-go-utls 内化）均未开始**，
-"指纹路径 100% 自有"的终态尚未达成。不变量：ABI 签名只增不改、364 预设指纹输出逐比特不变、
+"指纹路径 100% 自有"的终态尚未达成。不变量：ABI 签名只增不改、368 预设指纹输出逐比特不变、
 每阶段全量回归 + L2 nginx 终审。
 
 **能力对齐现状与追赶排期**（差距清单 + 关闭判据 + 明确不做的事）见

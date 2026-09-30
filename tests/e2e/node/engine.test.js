@@ -63,9 +63,12 @@ test('module-level helpers share a default session', async () => {
 
 test('list/describe presets', () => {
   const names = geektls.listPresets();
-  assert.ok(names.includes('chrome_133'));
+  // listPresets 只给**规范名**（2026-09-30 命名统一：浏览器族必须带平台后缀）
+  assert.ok(names.includes('chrome_133_windows'));
+  // 旧名是别名：describe 旧名与规范名取到同一形态
   const d = geektls.describePreset('chrome_133');
-  assert.equal(d.name, 'chrome_133');
+  assert.equal(d.name, 'chrome_133_windows');
+  assert.deepEqual(geektls.describePreset('chrome_133_windows'), d);
   // describe 输出直接喂 check_profile（期望值闭环）
   const chk = geektls.checkProfile(d);
   assert.ok(chk.ja4.startsWith('t13d'));

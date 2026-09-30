@@ -1,5 +1,8 @@
 """P1-T8 probe：7 预设逐个打 nginx /ngf-debug（localhost，带 SNI），完整落盘 JSON。
 输出到 probe_matrix.json，供 verify_l2.py 断言设计参考。非测试文件。
+
+2026-09-30 命名统一：预设名改用规范名；`safari_18` 的旧形态已删除，这里直接探
+`safari_18_macos`（旧名仍可用，是别名 → 同一条形态）。
 """
 import json
 import os
@@ -10,8 +13,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "bi
 import geektls
 
 URL = "https://localhost:8443/ngf-debug"
-PRESETS = ["chrome_131", "chrome_133", "chrome_150", "firefox_120", "firefox_135",
-           "safari_16", "safari_18"]
+PRESETS = ["chrome_131_windows", "chrome_133_windows", "chrome_150_windows",
+           "firefox_120_windows", "firefox_135_windows",
+           "safari_16_macos", "safari_18_macos"]
 
 
 def main():

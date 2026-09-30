@@ -37,7 +37,10 @@
 **自算回读**：core 内置 JA3/JA4 **计算**器（仅这两个，BSD 许可范围内），构造完 ClientHello 后自算并与用户期望值比对，不等发包就报错。
 
 > **身份一致性（T2-1，2026-09-24 已交付）**：`identity` 节把 UA/UA-CH/默认头绑定进 profile，engine 统一注入（用户头优先），fp oracle 硬断言常规头全等。
-> **待补（见方案 T-2/T-3）**：无 profile 生成器（手写转录）；identity 取值与 `chrome_150/firefox_135/safari_18` 三个预设仍是 E4 构造，待 E1 真浏览器基准升级。
+> **待补（见方案 T-2/T-3）**：无 profile 生成器（手写转录）；identity 取值与
+> `chrome_150_windows` / `firefox_135_windows` 两个预设仍是 E4 构造，待 E1 真浏览器基准升级。
+> （原列的 `safari_18` 已在 2026-09-30 处理：那条无实测来源的形态被删除，旧名 `safari_18`
+> 现为别名 → 实测导航形态 `safari_18_macos`。）
 
 ## 2. HTTP/2 层（Akamai 指纹四段）
 
@@ -60,11 +63,11 @@
 | 1 | QUIC version（含 version_information 参数） | A | ✅ | 本地（RFC 9001 嗅探） | nginx 端 `$quic_fingerprint_version` |
 | 2 | QUIC transport params 12+ 项及顺序 | A | ✅（T4-1 blob 直通，`transport_params_raw`，2026-09-24） | 本地嗅探（顺序+值硬断言） | 顺序/非标/GREASE 位置全控（vendor patch #7）；已知流控键值自动映射回 `quic.Config` 保证行为一致 |
 | 3 | 非标 transport params（google_connection_options 等） | A | ✅（同 T4-1，任意 id + hex 值） | 本地嗅探（硬断言） | `TestQUICTransportParamsRaw` 实证 |
-| 4 | Initial datagram 布局：分片、PADDING 位置、乱序 | A | ❌ | — | quic-go packet packer 无钩子（P4-T4 降级）；**行业共性**（lexiforest 的 `ngtcp2.patch` 也不提供该钩子），**结案不投入**（D5，T4-6） |
+| 4 | Initial datagram 布局：分片、PADDING 位置、乱序 | A | ✅（patch #8，2026-09-30：`initial_layout` 的 padding/disable_scramble/crypto_fragments/coalesce_min_size） | 本地嗅探（字节级硬断言 + 真服务端中继） | 此前判"packer 无钩子、结案不投入"——vendor fork 后钩子自建；`tests/e2e/quic_layout_test.go` 实证 |
 | 5 | QUIC GREASE 帧 | A | ✅（`SendGreaseFrames`） | 未验证 | 实现已接线，E2 验证待阶段 4（H3-3） |
 | 6 | H3 SETTINGS 帧各 id:value 及顺序 | A | ✅（`AdditionalSettings`+`Order`） | E4（预设值），本地嗅探 | `$http3_fingerprint_settings`；4 预设 H3 为空（H3-2） |
 | 7 | H3 伪头顺序 | A | ✅（`PseudoHeaderOrder`） | E4 | `$http3_fingerprint_pseudo_headers`；强于 lexiforest（其 nghttp3.patch 无此项） |
-| 8 | 0-RTT / 会话恢复 | C | ❌ 协议侧不做（A10 结案） | — | 前提是 QUIC 会话缓存，spec 模式下 StoreSession 为 no-op 且无可补导出面（docs/06 P7-T2）；指纹侧的 early_data(42) 声明已可控，见 TLS 维度表 17 与 `core/tls/early_data_test.go` |
+| 8 | 0-RTT / 会话恢复 | C | ❌ 协议侧不做（A10 结案；2026-09-30 fork 内重新取证：缺环在 bogdanfinn/utls——`newUQUICConn` 不复制 `EnableSessionEvents`（u_quic.go:31 vs quic.go:191），UQUICConn 无 `StoreSession` 方法 ⇒ 无 QUICStoreSession/QUICResumeSession 事件，票据 Extra 里的 transport params 存不进、恢复不出；补齐 = vendor 第三个 fork） | — | 指纹侧的 early_data(42) 声明已可控，见 TLS 维度表 17 与 `core/tls/early_data_test.go` |
 | 9 | H2/H3 protocol racing（Chrome 300ms 偏好 H2） | C | ✅（`raceH3H2`+`h2_race_ms`） | 本地实测 | |
 | 10 | Alt-Svc 升级缓存行为 | C | ✅（会话级缓存） | pytest 实测 | |
 

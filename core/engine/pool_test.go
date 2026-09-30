@@ -103,7 +103,7 @@ func poolSession(t *testing.T, preset string, poolOn bool) *Session {
 }
 
 // TestPoolH2SingleHandshake：默认开池——同 origin N 个请求只握手一次
-//（H2 多路复用，复用连接不发新 ClientHello）。
+// （H2 多路复用，复用连接不发新 ClientHello）。
 func TestPoolH2SingleHandshake(t *testing.T) {
 	cs := startCountingServer(t)
 	s := poolSession(t, "chrome_133", true)

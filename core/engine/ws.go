@@ -158,7 +158,9 @@ func (s *Session) DialWS(wr *WSRequest) (*WSConn, error) {
 		}
 		identHeaders = append(identHeaders, kv)
 	}
-	headers = append(headers, s.applyIdentity(identHeaders)...)
+	// G9：WS 握手同样过身份自洽（告警无处承载，丢弃——WSConn 没有 warnings 字段）
+	ident, _ := s.applyIdentity(identHeaders)
+	headers = append(headers, ident...)
 	headers = append(headers, [2]string{"sec-websocket-version", "13"})
 	headers = append(headers, [2]string{"sec-websocket-key", wsKey})
 	headers = append(headers, extHeaders...) // 扩展声明固定在 key 之后（Chrome 序）
@@ -173,7 +175,7 @@ func (s *Session) DialWS(wr *WSRequest) (*WSConn, error) {
 		seen[k] = true
 		dedup = append(dedup, kv)
 	}
-	ordered := orderH1Headers(s.profile, dedup, u)
+	ordered := s.orderH1Headers(s.profile, dedup, u)
 
 	path := u.RequestURI()
 	if path == "" {

@@ -20,14 +20,14 @@
 |---|---|---|---|
 | TLS 逐字段 + 多入参（profile/JA3/JA4/JA4R/hex） | ✅ 六入口 + 自洽归一 | 均无 hex 或无私有 | **独有** |
 | H2 帧层（SETTINGS 序/伪头序/priority/`window_update` 三态/首流号） | ✅ Akamai 四段 MATCH + 原始帧断言 | specter（+帧时序记录） | 对等；"不发连接级 WINDOW_UPDATE"与"首请求流号"两档同行文档未见 |
-| H2 HPACK 编码策略 | ✅ 四档（250/364 预设带值） | 无 | **独有** |
+| H2 HPACK 编码策略 | ✅ 四档（253/368 预设带值） | 无 | **独有** |
 | H3/QUIC（内层 ClientHello 同 profile） | ✅ + TP blob 直通 | impersonator / specter | 对等（Initial 布局落后，见 G3） |
 | 四层 TCP | ✅ TTL/MSS/DF/window/wscale（setsockopt 三平台 + netstack Linux root，P6-T3 ja4tcp 全 MATCH） | httpcloak（仅声明 TTL/MSS/Window） | **领先** |
 | WebSocket | ✅ RFC 6455（握手走指纹链路） | CycleTLS/curl_cffi/specter/wreq-js/cyCronet | 对等 |
 | Python async | ✅ 线程池实现（如实标注） | cyCronet/curl_cffi（原生异步） | 对等（形态差） |
 | 响应自动解压 | ✅ 四编码 + 多重链 | 全行业标配 | 对等 |
 | 代理 | ✅ HTTP CONNECT + SOCKS5(+h) 带鉴权 | CycleTLS/cyCronet/tls-client | 对等 |
-| 预设规模与证据 | ✅ 364 条 29 族 + `grade`/`source` 分级 | noble-tls 76 条（无分级） | **大幅领先** |
+| 预设规模与证据 | ✅ 368 条 29 族 + `grade`/`source` 分级 | noble-tls 76 条（无分级） | **大幅领先** |
 | 响应内自校验 | ✅ selfcheck + `check_profile` 五入参 | 无人（specter 仅 pcap 材料） | **独有** |
 | 多语言同引擎 | Python ✅ / Node ⚠️ / Go ⚠️ | tls-client（Go+绑定） | **落后（发布面，见 G1）** |
 | 明文 `http://` / `ws://` | ✅ 已支持（H1；无 TLS ⇒ selfcheck 零值） | requests/curl_cffi/cyCronet 均支持 | **已对齐（G5，2026-09-30）** |
@@ -78,7 +78,7 @@
 12. **SC-3** quic-go-utls 内化（2 周）⇒ **关闭 G3**（Initial 布局可控）+ **G9**；
 13. **SC-4** 收尾（3 天）：依赖收敛、LICENSES.md 两层结构、README 对比表刷新，然后发 0.2.0（三语言齐发）。
 
-**门禁（每阶段必过）**：ABI 签名只增不改 · 364 预设指纹输出逐比特不变 · 全量回归 +
+**门禁（每阶段必过）**：ABI 签名只增不改 · 368 预设指纹输出逐比特不变 · 全量回归 +
 L2 nginx 终审 + 外部 oracle 周检。
 
 ## 4. 明确不做（省得反复讨论）

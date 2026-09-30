@@ -29,7 +29,7 @@ func (s *Session) doH1(e *poolEntry, req *Request, u *url.URL, headers [][2]stri
 	var w strings.Builder
 	fmt.Fprintf(&w, "%s %s HTTP/1.1\r\n", req.Method, path)
 
-	headers = orderH1Headers(s.profile, headers, u)
+	headers = s.orderH1Headers(s.profile, headers, u)
 
 	hasContentLength := false
 	for _, kv := range headers {

@@ -38,8 +38,9 @@
    = G11 实测形状，也即引擎默认发出的 "1:1:0:256"），数据与行为现已一致。
 6. geektls 引擎不发送 describe 中 type 41 的空 pre_shared_key 占位扩展
    （selfcheck 扩展序列同样不含）；type 21 padding 按真实浏览器语义条件发送
-   （ClientHello 已达 512 字节边界时省略——safari_18 省略、safari_16 发送，
-   两侧 selfcheck 与 nginx 采集一致），属引擎既定行为，断言丢弃项不出此集合。
+   （ClientHello 已达 512 字节边界时省略），属引擎既定行为，断言丢弃项不出此集合。
+   2026-09-30：原举例的 `safari_18`（旧形态，已删除）与 `safari_16` 的差异不再适用，
+   预设名统一改为规范名（旧名是别名）。
 """
 
 import base64
@@ -52,8 +53,9 @@ import pytest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 TARGET = os.environ.get("GEEKTLS_NGINX_L2_URL", "https://localhost:8443/ngf-debug")
-PRESETS = ["chrome_131", "chrome_133", "chrome_150",
-           "firefox_120", "firefox_135", "safari_16", "safari_18"]
+PRESETS = ["chrome_131_windows", "chrome_133_windows", "chrome_150_windows",
+           "firefox_120_windows", "firefox_135_windows",
+           "safari_16_macos", "safari_18_macos"]
 
 # 采集端（该 OpenSSL 构建）不认识的扩展：见模块docstring第 1 条。
 OPENSSL_UNKNOWN_EXTS = {34, 65037, 17613}

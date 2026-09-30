@@ -324,10 +324,13 @@ def test_h3_forced(echo_server):
 
 
 def test_h3_alt_svc_upgrade(echo_server):
-    """Alt-Svc 学习：首个请求走 h2 并学到 h3 能力，第二个请求升级 H3。"""
+    """Alt-Svc 学习：首个请求走 h2 并学到 h3 能力，第二个请求升级 H3。
+
+    注意：G8 起 H3 必须显式开启（protocols / h3=True），默认集合只有 h1.1+h2。
+    """
     _ensure_lib()
     from geektls import Session
-    with Session(profile=_profile_without_ech(), insecure_skip_verify=True) as s:
+    with Session(profile=_profile_without_ech(), insecure_skip_verify=True, h3=True) as s:
         r1 = s.get(echo_server + "/echo")
         assert r1.used_protocol == "h2"  # 首访无 Alt-Svc 记录
         r1.close()
