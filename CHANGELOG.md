@@ -19,6 +19,11 @@
 
 ### 修复
 
+- **npm 首发 E422（provenance 仓库校验）**：`bindings/nodejs/package.json` 缺
+  `repository` 字段 ⇒ `npm publish --provenance` 被 registry 拒绝
+  （`Failed to validate repository information: package.json: "repository.url" is ""`）。
+  补 `repository`（git+https://github.com/geekbyter/geektls.git，directory 指向
+  bindings/nodejs）与 `homepage`/`bugs`——provenance 要求包声明的仓库与构建来源一致。
 - **oracle-nightly 的 crosslang job 必红（workflow 步骤顺序 bug）**：
   `TestCrossLangConsistency` 的 node selfcheck `require('koffi')`，但 `npm install`
   排在它**之后**的 "Node binding tests" 步骤里——runner 干净环境（node_modules 被
