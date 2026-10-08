@@ -34,6 +34,9 @@ on:
 permissions:
   contents: read
   issues: write
+  # report job 要用 `gh run view --log-failed` 抓失败日志：缺 actions:read 时
+  # GitHub API 返回 403，issue 里只剩"(取不到失败日志)"（issue #1 就是这么空的）。
+  actions: read
 
 concurrency:
   group: oracle-nightly
@@ -151,6 +154,13 @@ jobs:
         working-directory: tests/e2e
         shell: bash
         run: go build -o "../../build/echo-server$(go env GOEXE)" ./cmd/echo-server
+
+      # crosslang 的 node selfcheck require('koffi')——必须先装依赖再跑测试。
+      # 此前 npm install 排在下面的 "Node binding tests" 里 ⇒ selfcheck 找不到
+      # koffi，本 job 在 runner 上必红（Cannot find module 'koffi'，issue #1）。
+      - name: Install node deps (for crosslang selfcheck)
+        working-directory: bindings/nodejs
+        run: npm install --no-audit --no-fund
 
       - name: Install pytest
         run: python -m pip install --quiet pytest

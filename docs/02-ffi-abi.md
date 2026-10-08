@@ -218,7 +218,7 @@ console.log(r.selfcheck);
 
 ### Go（`bindings/golang`）
 
-不走 FFI，`import "github.com/geektls/core"` 的薄封装，暴露 `http.RoundTripper` 兼容接口：
+不走 FFI，`import "github.com/geekbyter/geektls/bindings/golang"`（包名 `geektls`）的薄封装，暴露 `http.RoundTripper` 兼容接口：
 
 ```go
 rt, _ := gbt.NewRoundTripper(gbt.Preset("chrome_150"))

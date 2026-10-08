@@ -3,6 +3,48 @@
 本项目遵循语义化版本（版本号规则与"四处单一事实源"见 [docs/versioning.md](docs/versioning.md)）。
 更早的发布过程记录见 [docs/plans/2026-09-28-pypi-release-plan.md](docs/plans/2026-09-28-pypi-release-plan.md) §8.5/§8.6。
 
+## Unreleased
+
+### 新增
+
+- **npm 发布流水线（release-npm.yml）**：三平台 runner（ubuntu/windows/macos）各自
+  构建 c-shared 动态库（Go 的 c-shared 不能交叉编译），汇总进 bindings/nodejs 后
+  `npm publish --provenance`（包页 Verified 徽章，需 secret `NPM_TOKEN`）。
+  触发：push `npm/v*` tag 即发布；workflow_dispatch **默认只组包跑 npm pack 自检、
+  不发布**（npm 不可撤回）。双守门：package.json version 必须与 tag 一致；pack 清单
+  必须含三平台库 + LICENSE/LICENSES.md + 入口。平台覆盖（第一版）：Windows x64 /
+  Linux x64 / macOS Apple Silicon；**Intel Mac 暂不支持**（按架构分发需改 index.js
+  库名选择，P7 落地），各 README 已如实标注。新增 `bindings/nodejs/README.md`
+  （npm 包页描述：平台矩阵 + 示例）。
+
+### 修复
+
+- **oracle-nightly 的 crosslang job 必红（workflow 步骤顺序 bug）**：
+  `TestCrossLangConsistency` 的 node selfcheck `require('koffi')`，但 `npm install`
+  排在它**之后**的 "Node binding tests" 步骤里——runner 干净环境（node_modules 被
+  .gitignore 排除、从未入库）⇒ selfcheck 必然 `Cannot find module 'koffi'` → exit 1。
+  用 v0.1.8 tag tarball 本地干净复现实锤；同代码在装好依赖的目录里全绿
+  （crosslang PASS / pytest 35 passed / node 18）。修：把 `npm install` 提到
+  crosslang 测试之前（幂等，后续 npm test 步骤保留）。
+- **oracle-nightly 的 report job 拿不到失败日志**：workflow `permissions` 缺
+  `actions: read`，`gh run view --log-failed` 被 403（issue #1 的"(取不到失败日志)"）。
+  修：permissions 补 `actions: read`。
+
+### 文档
+
+- 修正 Go 模块路径遗留（0.1.8 迁移漏改的对外文档）：README 安装节 `go get` 仍指
+  旧路径 `github.com/geektls/core`（公网 404），改为
+  `github.com/geekbyter/geektls/core@v0.1.8`；Go 快速上手示例与「Go API 参考」里
+  绑定层路径同批改为 `github.com/geekbyter/geektls/bindings/golang`（顺带标明包名
+  为 `geektls`，import 建议别名 `gtls`）；docs/00-architecture.md 目录树注释、
+  docs/02-ffi-abi.md 的 Go 绑定 import 同批修正；`bindings/python/README.md`
+  （wheel 长描述源，构建时从根 README 拷贝）同步为最新根 README——下次发版，
+  PyPI 页面上的错误 `go get` 一并消失。
+- 新增模块级 README：`core/README.md`、`bindings/golang/README.md`。缘由：pkg.go.dev
+  的模块页 Overview 与**搜索摘要取模块根目录的 README**（子目录模块不会向上借用仓库
+  根的），此前 `.../core` 页面零安装说明、搜索摘要干瘪、排名靠后。随下一个 tag
+  （`core/v0.1.9`）抓取后生效。
+
 ## 0.1.8（2026-09-30）
 
 ### 新增

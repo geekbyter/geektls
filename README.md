@@ -55,8 +55,8 @@
 
 ```bash
 pip install geektls          # Python（manylinux_2_28 x86_64/aarch64、macOS 11.0+ arm64/x86_64、Windows x64，动态库随 wheel 分发）
-npm install geektls          # Node.js（⚠️ 尚未发布到 npm，当前请用仓库内 bindings/nodejs）
-go get github.com/geektls/core   # Go（⚠️ 模块尚未推送到公网仓库，当前用本地 replace）
+npm install geektls          # Node.js（Windows x64 / Linux x64 / macOS Apple Silicon；⚠️ Intel Mac 暂不支持）
+go get github.com/geekbyter/geektls/core@v0.1.8   # Go（monorepo 子目录模块；pkg.go.dev/github.com/geekbyter/geektls/core）
 ```
 
 已发布到 PyPI 的 wheel（0.1.5 起）覆盖五平台：**manylinux_2_28 x86_64 / aarch64、macosx_11_0 arm64 / x86_64、win_amd64**
@@ -118,7 +118,7 @@ for await (const chunk of r.iterContent()) { ... }   // 需要流式时才迭代
 s.close();
 ```
 
-**Go**（`import "github.com/geektls/golang"`）：
+**Go**（`import gtls "github.com/geekbyter/geektls/bindings/golang"`；包名 `geektls`）：
 
 ```go
 // 引擎直连（要用到响应便捷方法时走这条；只要 net/http 习惯可用上面的 RoundTripper 形态）
@@ -469,14 +469,14 @@ const { Session, version, listPresets, describePreset, checkProfile,
 
 ## Go API 参考
 
-两条路：**绑定层**（`github.com/geektls/golang`，`http.Client`/`RoundTripper` 形态）与**引擎直连**（`core/engine`，能力最全）。
+两条路：**绑定层**（`github.com/geekbyter/geektls/bindings/golang`，`http.Client`/`RoundTripper` 形态）与**引擎直连**（`core/engine`，能力最全）。
 
 | 包 | 关键 API | 说明 |
 |---|---|---|
 | `core/profiles` | `List()` / `Get(name)` / `Describe(name)` / `FromJA3` / `FromJA4R` / `FromClientHelloHex` / `NormalizeForReplay` / `Parse` | 预设与指纹入口（含上面说的自洽归一） |
 | `core/tls` | `CompileDetail` / `ComputeJA3` / `ComputeJA4` / `JA3Hash` / `CheckProfile` / `ResolveJA4Preset` | 编译、自算、离线自检、JA4 反查 |
 | `core/engine` | `NewSession(profile, SessionOptions)` → `Do(*Request)` → `*Response`（`StatusCode/OK/Reason/Header/Text/JSON/IterBytes/Close`）；`DialWS(*WSRequest)` → `*WSConn`（`Send/Recv/Close`，`WSRequest.Compress` 开 permessage-deflate） | 引擎直连；支持 H2/H3 racing、Alt-Svc、代理、流式、wss |
-| `github.com/geektls/golang` | `NewSession(preset, *Options)` → `Do/Get` / `DialWS(*WSRequest)` → `*WSConn` / `Close()`；`NewRoundTripper(preset, *Options)` | 绑定层（不走 FFI，直接 import core）；`WSRequest`/`WSConn` 是 engine 类型的别名，不再包一层以免漂移 |
+| `github.com/geekbyter/geektls/bindings/golang`（包名 `geektls`） | `NewSession(preset, *Options)` → `Do/Get` / `DialWS(*WSRequest)` → `*WSConn` / `Close()`；`NewRoundTripper(preset, *Options)` | 绑定层（不走 FFI，直接 import core）；`WSRequest`/`WSConn` 是 engine 类型的别名，不再包一层以免漂移 |
 | `core/ffi` | `gtls_*` C ABI（见 [core/ffi/geektls.h](core/ffi/geektls.h)） | Python/Node 绑定的底座；`gtls_client_new` 的 `config_json` 支持 `impersonate/profile/ja3/ja4/ja4r/clienthello_hex` |
 
 ## 使用场景

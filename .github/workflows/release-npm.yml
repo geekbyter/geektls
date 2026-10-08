@@ -1,0 +1,155 @@
+name: release-npm
+
+# npm 发布流水线（与 release-pypi.yml 对应）：三平台 runner 各自构建 c-shared
+# 动态库（Go 的 c-shared 不能交叉编译 ⇒ 必须在对应平台构建），汇总进
+# bindings/nodejs 后 npm publish。
+#
+# 触发：
+#   - push tag `npm/v*`   → 构建 + 发布（正式发版用）
+#   - workflow_dispatch   → 默认只"组包 + npm pack 自检"不发布（npm 发布后
+#     不可撤回，误发只能 deprecate）；inputs.publish=true 才真发。
+#
+# 需要 secret：NPM_TOKEN（npmjs.com → Access Tokens → Generate（Publish 权限））。
+#
+# 平台覆盖（第一版）：Windows x64 / Linux x64 / macOS Apple Silicon (arm64)。
+# ⚠️ Intel Mac 暂不支持：macos-latest 是 Apple Silicon；按架构分发需要改
+#    index.js 的库名选择（拼 process.arch），属于 P7 的活——README 已如实标注。
+
+on:
+  push:
+    tags:
+      - 'npm/v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '手动触发时是否真的 publish（默认 false = 只组包自检）'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: nodejs-lib-linux
+          - os: windows-latest
+            artifact: nodejs-lib-windows
+          - os: macos-latest
+            artifact: nodejs-lib-macos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: core/go.sum
+
+      # c-shared 在 Windows 上需要 gcc + make（与 ci.yml / oracle-nightly 的
+      # crosslang job 同一套；windows runner 不预装 make）。
+      - name: Install toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y --no-progress make mingw
+          Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
+          Update-SessionEnvironment
+          Add-Content $env:GITHUB_PATH (Split-Path (Get-Command gcc).Source)
+
+      - name: Build core (c-shared)
+        run: make build
+
+      - name: Collect dynamic library
+        shell: bash
+        run: |
+          set -eu
+          case "${{ runner.os }}" in
+            Linux)  lib=libgeektls.so ;;
+            macOS)  lib=libgeektls.dylib ;;
+            Windows) lib=geektls.dll ;;
+            *) echo "::error::未知平台"; exit 1 ;;
+          esac
+          test -f "build/$lib" || { echo "::error::build/$lib 不存在（make build 失败？）"; exit 1; }
+          mkdir -p out
+          cp "build/$lib" "out/$lib"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    name: assemble & publish
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # npm provenance（包页 Verified 徽章）需要 OIDC。
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nodejs-lib-*
+          path: artifacts/
+
+      # 组包：三平台库 + 许可文件。npm 只自动带包根 LICENSE；LICENSES.md 必须落在
+      # 包目录（package.json 的 files 列表已含两者）。
+      - name: Assemble package directory
+        shell: bash
+        run: |
+          set -eu
+          cp artifacts/nodejs-lib-linux/libgeektls.so    bindings/nodejs/
+          cp artifacts/nodejs-lib-macos/libgeektls.dylib bindings/nodejs/
+          cp artifacts/nodejs-lib-windows/geektls.dll    bindings/nodejs/
+          cp LICENSE LICENSES.md bindings/nodejs/
+          ls -la bindings/nodejs/
+
+      # tag 必须与 package.json 版本一致（防"tag 打了、内容还是旧版本"）。
+      - name: Version must match tag
+        if: startsWith(github.ref, 'refs/tags/npm/v')
+        shell: bash
+        run: |
+          set -eu
+          want="${GITHUB_REF_NAME#npm/v}"
+          got=$(node -p "require('./bindings/nodejs/package.json').version")
+          if [ "$got" != "$want" ]; then
+            echo "::error::package.json version ($got) ≠ tag ($want)——先同步版本源再打 npm/v* tag"
+            exit 1
+          fi
+
+      # 发布自检：npm pack 清单必须包含三平台库、许可与入口（缺任何一件都不发）。
+      - name: Pack & verify contents
+        shell: bash
+        working-directory: bindings/nodejs
+        run: |
+          set -eu
+          npm pack --dry-run > /tmp/pack.log 2>&1 || { cat /tmp/pack.log; exit 1; }
+          cat /tmp/pack.log
+          for f in libgeektls.so libgeektls.dylib geektls.dll LICENSE LICENSES.md index.js index.d.ts package.json; do
+            grep -q "$f" /tmp/pack.log || { echo "::error::包里缺 $f"; exit 1; }
+          done
+          echo "包内容自检通过"
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/npm/v') || github.event.inputs.publish == 'true'
+        shell: bash
+        working-directory: bindings/nodejs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public

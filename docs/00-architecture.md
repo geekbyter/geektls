@@ -30,7 +30,7 @@ geektls 需要一个能**逐字节控制 ClientHello** 的 TLS 栈、能控制�
 geektls/
 ├── README.md
 ├── docs/                        # 本文档所在
-├── core/                        # Go module: github.com/geektls/core
+├── core/                        # Go module: github.com/geekbyter/geektls/core
 │   ├── profiles/                # 预设注册表 + JSON profile 解析 + JA3/JA4R/hex 输入
 │   ├── tls/                     # uTLS fork 封装：ClientHello 构造、GREASE、ECH、自算 JA3/JA4
 │   ├── h2/                      # fhttp fork 封装：SETTINGS/伪头序/priority/window
