@@ -3,7 +3,7 @@
 本项目遵循语义化版本（版本号规则与"四处单一事实源"见 [docs/versioning.md](docs/versioning.md)）。
 更早的发布过程记录见 [docs/plans/2026-09-28-pypi-release-plan.md](docs/plans/2026-09-28-pypi-release-plan.md) §8.5/§8.6。
 
-## Unreleased
+## 0.1.9（2026-10-09）
 
 ### 新增
 
