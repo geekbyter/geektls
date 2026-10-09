@@ -65,8 +65,12 @@ jobs:
           V: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          grep -q '^## Unreleased' CHANGELOG.md || {
-            echo "::error::CHANGELOG.md 没有 '## Unreleased' 段——先把本次内容写进去再发版"; exit 1; }
+          # 守门：CHANGELOG 需有 '## Unreleased' 段（正常路径）；或**已归并到本
+          # 版本**（`## $V（…）`——重跑场景：上次运行已完成归并提交、但后续步骤
+          # 失败，此时不应要求再写一遍）。
+          if ! grep -q '^## Unreleased' CHANGELOG.md && ! grep -q "^## ${V//./\\.}（" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 既无 '## Unreleased' 段、也无 '## $V（…）' 归并段——先把本次内容写进去再发版"; exit 1
+          fi
 
           sed -i "s/\(Core = \)\"[^\"]*\"/\1\"$V\"/" core/version/version.go
           sed -i "s/^version = \"[^\"]*\"/version = \"$V\"/" bindings/python/pyproject.toml
@@ -101,8 +105,13 @@ jobs:
             git push origin HEAD:main
           fi
 
-          git tag "v$V" "core/v$V" "bindings/golang/v$V" "npm/v$V"
-          git push origin "v$V" "core/v$V" "bindings/golang/v$V" "npm/v$V"
+          # ⚠️ `git tag` 一次只能建**一个** tag——写成多参数会 `fatal: too many
+          # arguments`（2026-10-09 首次发布踩坑：push 已成功、tag 全没建）。
+          for t in "v$V" "core/v$V" "bindings/golang/v$V" "npm/v$V"; do
+            git tag "$t"
+          done
+          # --atomic：四个 tag 要么全推、要么全不推（避免半推状态卡住重跑）。
+          git push origin --atomic "v$V" "core/v$V" "bindings/golang/v$V" "npm/v$V"
           echo "tag 已推送：v$V / core/v$V / bindings/golang/v$V / npm/v$V"
 
       - name: 建 GitHub Release
