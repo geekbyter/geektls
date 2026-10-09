@@ -244,6 +244,15 @@ GEEDTLS_API char *gtls_describe_preset(const char *name);
  */
 GEEDTLS_API char *gtls_check_profile(const char *profile_json_or_ja3_or_ja4r);
 
+/*
+ * pcap/pcapng 抓包 → E1p 指纹记录（v0.2.0；与 CLI import-pcap 同一解析核）。
+ * 输入 JSON：{"path"|"data_b64", "name"?, "source_base"?, "ua"?,
+ *            "stream"?, "all"?, "tcp_only"?}（path 优先，data_b64 兜底）。
+ * 输出 JSON：{"records":[E1p 记录...], "skipped":["<流> → <原因>", ...]}。
+ * Records 为空 = 全部流被拒（原因见 skipped，不是 error）。
+ */
+GEEDTLS_API char *gtls_import_pcap(const char *input_json);
+
 #ifdef __cplusplus
 }
 #endif

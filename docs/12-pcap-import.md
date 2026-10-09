@@ -107,6 +107,44 @@ geektls import-pcap --pcap a.pcapng [--stream N|--all] [--tcp-only]
 - **CI 预设守门（可选后接）**：E1p 记录要进 `ci.yml` 的 `-record` 逗号清单才参与
   逐字节门禁（生成器只自动吃内嵌 hex 标本；该 job 只在 Linux runner 上跑）。
 
+### §6.1 三语言绑定直导入（v0.2.0，同一解析核）
+
+解析核已下沉为 **`core/pcapimport`**（CLI `import-pcap` 与绑定共用）；FFI 新增
+`gtls_import_pcap`（加性第 24 个导出，见 CONTRACT-FREEZE #3）。三语言等价入口：
+
+```python
+# Python
+res = geektls.import_pcap("chrome.pcapng", ua="Mozilla/5.0 …")
+rec = res["records"][0]
+with geektls.Session(clienthello_hex=rec["clienthello_hex"]) as s:
+    r = s.get("https://tls.peet.ws/api/all")   # r.selfcheck 比对 JA4
+```
+
+```js
+// Node
+const res = geektls.importPcap({ path: "chrome.pcapng", ua: "Mozilla/5.0 …" });
+const rec = res.records[0];
+const client = new geektls.Session({ clienthello_hex: rec.clienthello_hex });
+```
+
+```go
+// Go（绑定层薄封装；也可直接 import core/pcapimport）
+res, err := geektls.ImportPcap("chrome.pcapng", &geektls.PcapOptions{UA: "Mozilla/5.0 …"})
+s, _, err := geektls.NewSessionFromClientHelloHex(res.Records[0].ClientHelloHex, nil)
+```
+
+- 返回形状统一：`{"records": [...], "skipped": ["<流> → <原因>", ...]}`；
+  records 为空 = 全部流被拒（不是 error）。
+- 记录含 `sni`（server_name(0) 扩展提取——pcap 本身没有"域名"概念，同名/异名
+  多流靠它区分）与 `warnings`（目前只有 `missing_ua`：不补 UA 的记录不能进
+  gen-profiles 预设链，TLS 面装载不受影响）。
+- **主路径就两步**：`import_pcap(文件, ua=…)` → `Session(clienthello_hex=…)`；
+  hex 在返回值与参数间传递，不必手动复制（格式细节见 §3）。
+- Go 侧 `NewSessionFromClientHelloHex / NewSessionFromJA3 / NewSessionFromJA4R`
+  为 v0.2.0 新增（与 Python/Node 的 clienthello_hex/ja3/ja4r 装载口径对齐）。
+- 绑定测试：`tests/e2e/python/test_import_pcap.py`、`tests/e2e/node/import_pcap.test.js`、
+  `bindings/golang/pcap_test.go`（合成 pcap 字节，零外部依赖）。
+
 ## 7. 待办
 
 | # | 事项 | 判据 |

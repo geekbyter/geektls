@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/geekbyter/geektls/core/engine"
+	pcapimport "github.com/geekbyter/geektls/core/pcapimport"
 	"github.com/geekbyter/geektls/core/profiles"
 	"github.com/geekbyter/geektls/core/version"
 )
@@ -221,4 +224,83 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		Request:       req,
 		ContentLength: -1,
 	}, nil
+}
+
+// --- pcap 直导入（v0.2.0：与 CLI import-pcap / Python / Node 同一解析核） ---
+
+// PcapOptions 控制 ImportPcap/ImportPcapBytes。零值合法（Stream=1）。
+type PcapOptions struct {
+	// Name 是记录名；空 = 文件名去扩展（Bytes 入口 = SourceBase，再空 = "pcap"）。
+	Name string
+	// UA 由调用方补（HTTP 头在 TLS 隧道内，pcap 明文看不到）。给了它，记录带
+	// http2.regular_headers 的 user-agent，可直接喂 tests/e2e/cmd/gen-profiles。
+	UA string
+	// Stream 取第几条可导出的流（1-based；All=true 时忽略）。
+	Stream int
+	// All 导出全部可导出的流。
+	All bool
+	// TCPOnly 不要求 ClientHello，只导 TCP 形态（SYN/TTL/窗口/选项序）。
+	TCPOnly bool
+}
+
+// ImportPcap 读取 pcap/pcapng 文件并提取 E1p 指纹记录。Records 为空时
+// Skipped 说明每条流被拒的原因（resumption / 缺 SYN / 抓包缺口 / 无 CH）。
+// 记录的 name/source 默认取文件名（与 CLI 同口径）；Record.ClientHelloHex
+// 可直接喂 NewSessionFromClientHelloHex。
+func ImportPcap(path string, opts *PcapOptions) (*pcapimport.Result, error) {
+	if path == "" {
+		return nil, fmt.Errorf("pcap path is empty")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return ImportPcapBytes(data, opts, filepath.Base(path))
+}
+
+// ImportPcapBytes 是 ImportPcap 的字节版（抓包不落盘的场景，如从网络/内存来）。
+// sourceBase 为 source 字段用的文件基名（空 = "pcap"）。
+func ImportPcapBytes(data []byte, opts *PcapOptions, sourceBase string) (*pcapimport.Result, error) {
+	o := pcapimport.Options{SourceBase: sourceBase}
+	if opts != nil {
+		o.Name = opts.Name
+		o.UA = opts.UA
+		o.Stream = opts.Stream
+		o.All = opts.All
+		o.TCPOnly = opts.TCPOnly
+	}
+	return pcapimport.Import(data, o)
+}
+
+// NewSessionFromClientHelloHex 以 ClientHello record 原始字节的 hex 建会话
+// （无损路径：扩展按线上顺序保留、未知扩展透传；随机项经 NormalizeForReplay
+// 按浏览器语义重生成——不会把"那一次"冻进会话）。TLS 面复现；TCP 面要用
+// profile/预设路径（tcp 节）。
+func NewSessionFromClientHelloHex(hex string, opts *Options) (*Session, []profiles.Warning, error) {
+	p, warns, err := profiles.FromClientHelloHex(hex)
+	if err != nil {
+		return nil, warns, err
+	}
+	s, err := NewSessionFromProfile(p, opts)
+	return s, warns, err
+}
+
+// NewSessionFromJA3 以 JA3 串建会话（语义同 CLI --ja3）。
+func NewSessionFromJA3(ja3 string, opts *Options) (*Session, []profiles.Warning, error) {
+	p, warns, err := profiles.FromJA3(ja3)
+	if err != nil {
+		return nil, warns, err
+	}
+	s, err := NewSessionFromProfile(p, opts)
+	return s, warns, err
+}
+
+// NewSessionFromJA4R 以 JA4R 串建会话（语义同 CLI --ja4r）。
+func NewSessionFromJA4R(ja4r string, opts *Options) (*Session, []profiles.Warning, error) {
+	p, warns, err := profiles.FromJA4R(ja4r)
+	if err != nil {
+		return nil, warns, err
+	}
+	s, err := NewSessionFromProfile(p, opts)
+	return s, warns, err
 }

@@ -102,6 +102,14 @@ const gtls_ws_close = lib.func('int gtls_ws_close(uint64_t ws, int code)');
 const gtls_list_presets = lib.func('GtlsStr gtls_list_presets(void)');
 const gtls_describe_preset = lib.func('GtlsStr gtls_describe_preset(const char *name)');
 const gtls_check_profile = lib.func('GtlsStr gtls_check_profile(const char *input)');
+// v0.2.0：ABI 追加符号，绑定比库新时查不到就 null（importPcap 调用时才报错，
+// 不在 require 阶段拒绝整个绑定），与 gtls_error_of 的可缺省口径一致。
+let gtls_import_pcap = null;
+try {
+  gtls_import_pcap = lib.func('GtlsStr gtls_import_pcap(const char *input)');
+} catch {
+  gtls_import_pcap = null;
+}
 
 class GeekTLSError extends Error {
   constructor(code, message) {
@@ -176,6 +184,38 @@ function describePreset(name) {
 /** 离线构造 ClientHello 自校验（profile JSON / ja3 / ja4 / ja4r / hex 入参）。 */
 function checkProfile(input) {
   const raw = gtls_check_profile(typeof input === 'string' ? input : JSON.stringify(input));
+  if (raw == null) raiseLastError();
+  return JSON.parse(raw);
+}
+
+/**
+ * pcap / pcapng 抓包 → E1p 指纹记录（v0.2.0，与 CLI import-pcap 同一解析核）。
+ *
+ *   const res = geektls.importPcap({ path: 'chrome.pcapng', ua: 'Mozilla/5.0 …' });
+ *   const rec = res.records[0];
+ *   const client = new geektls.Session({ clienthello_hex: rec.clienthello_hex });
+ *
+ * @param {object} opts {path|data(Buffer), stream=1, all=false, tcpOnly=false,
+ *                      ua, name, sourceBase}
+ * @returns {{records: object[], skipped: string[]}} records 为空 = 全部流被拒
+ *   （原因见 skipped，不抛异常）。
+ */
+function importPcap(opts = {}) {
+  const payload = {
+    stream: opts.stream ?? 1,
+    all: !!opts.all,
+    tcp_only: !!opts.tcpOnly,
+  };
+  if (opts.path) payload.path = String(opts.path);
+  else if (opts.data) payload.data_b64 = Buffer.from(opts.data).toString('base64');
+  else throw new GeekTLSError('invalid_argument', 'importPcap needs path or data');
+  if (opts.ua) payload.ua = opts.ua;
+  if (opts.name) payload.name = opts.name;
+  if (opts.sourceBase) payload.source_base = opts.sourceBase;
+  if (!gtls_import_pcap) {
+    throw new GeekTLSError('unsupported', 'gtls_import_pcap not available: 动态库版本过旧（需 >= 0.2.0）');
+  }
+  const raw = gtls_import_pcap(JSON.stringify(payload));
   if (raw == null) raiseLastError();
   return JSON.parse(raw);
 }
@@ -855,6 +895,7 @@ module.exports = {
   listPresets,
   describePreset,
   checkProfile,
+  importPcap,
   GeekTLSError,
   // 模块级快捷 API（requests 风格，共享默认会话）
   defaultSession,

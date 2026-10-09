@@ -12,12 +12,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime"
 	"strings"
 	"unsafe"
 
 	"github.com/geekbyter/geektls/core/engine"
 	"github.com/geekbyter/geektls/core/internal/registry"
+	pcapimport "github.com/geekbyter/geektls/core/pcapimport"
 	"github.com/geekbyter/geektls/core/profiles"
 	tlscore "github.com/geekbyter/geektls/core/tls"
 	"github.com/geekbyter/geektls/core/version"
@@ -664,6 +666,83 @@ func gtls_check_profile(profileJSONOrJA3OrJA4R *C.char) (ret *C.char) {
 	b, err := json.Marshal(result)
 	if err != nil {
 		setLastError("internal", "marshal check result: %v", err)
+		return nil
+	}
+	return C.CString(string(b))
+}
+
+//export gtls_import_pcap
+func gtls_import_pcap(input *C.char) (ret *C.char) {
+	defer lockThread()()
+	defer guardCString(&ret)
+	clearLastError()
+
+	raw := goString(input)
+	if raw == "" {
+		setLastError("invalid_argument", "input must not be empty")
+		return nil
+	}
+	var req struct {
+		Path       string `json:"path"`
+		DataB64    string `json:"data_b64"`
+		Name       string `json:"name"`
+		SourceBase string `json:"source_base"`
+		UA         string `json:"ua"`
+		Stream     int    `json:"stream"`
+		All        bool   `json:"all"`
+		TCPOnly    bool   `json:"tcp_only"`
+	}
+	if err := json.Unmarshal([]byte(raw), &req); err != nil {
+		setLastError("invalid_argument", "bad input json: %v", err)
+		return nil
+	}
+	var data []byte
+	switch {
+	case req.Path != "":
+		b, err := os.ReadFile(req.Path)
+		if err != nil {
+			setLastError("io_error", "read %s: %v", req.Path, err)
+			return nil
+		}
+		data = b
+	case req.DataB64 != "":
+		b, err := base64.StdEncoding.DecodeString(req.DataB64)
+		if err != nil {
+			setLastError("invalid_argument", "bad data_b64: %v", err)
+			return nil
+		}
+		data = b
+	default:
+		setLastError("invalid_argument", "input needs path or data_b64")
+		return nil
+	}
+	res, err := pcapimport.Import(data, pcapimport.Options{
+		Name:       req.Name,
+		SourceBase: req.SourceBase,
+		UA:         req.UA,
+		Stream:     req.Stream,
+		All:        req.All,
+		TCPOnly:    req.TCPOnly,
+	})
+	if err != nil {
+		setLastError("import_pcap_failed", "%v", err)
+		return nil
+	}
+	// nil slice 会 marshal 成 null：契约口径 records/skipped 恒为数组。
+	records := res.Records
+	if records == nil {
+		records = []*pcapimport.Record{}
+	}
+	skipped := res.Skipped
+	if skipped == nil {
+		skipped = []string{}
+	}
+	b, err := json.Marshal(struct {
+		Records []*pcapimport.Record `json:"records"`
+		Skipped []string             `json:"skipped"`
+	}{records, skipped})
+	if err != nil {
+		setLastError("internal", "marshal import result: %v", err)
 		return nil
 	}
 	return C.CString(string(b))

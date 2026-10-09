@@ -66,6 +66,7 @@ __all__ = [
     "list_presets",
     "describe_preset",
     "check_profile",
+    "import_pcap",
     "GeekTLSError",
     "HTTPError",
     "Timeout",
@@ -157,6 +158,46 @@ def describe_preset(name: str) -> dict:
 def check_profile(spec: str) -> dict:
     """校验 profile JSON / JA3 / JA4R 串；返回结构与告警（不发起连接）。"""
     v = _ffi.take_json(_ffi.lib.gtls_check_profile(spec.encode()))
+    if v is None:
+        _check_error()
+    return v
+
+
+def import_pcap(path: str = None, *, data: bytes = None, stream: int = 1,
+                all_streams: bool = False, tcp_only: bool = False,
+                ua: str = None, name: str = None,
+                source_base: str = None) -> dict:
+    """pcap / pcapng 抓包 → E1p 指纹记录（v0.2.0，与 CLI import-pcap 同一解析核）。
+
+        res = geektls.import_pcap("chrome.pcapng", ua="Mozilla/5.0 …")
+        rec = res["records"][0]
+        with geektls.Session(clienthello_hex=rec["clienthello_hex"]) as s:
+            r = s.get("https://tls.peet.ws/api/all")
+
+    - ``path`` 或 ``data``（字节）二选一给一个；
+    - ``stream`` 取第几条可导出的流（1-based）；``all_streams=True`` 导出全部；
+    - ``ua`` 由调用方补（HTTP 头在 TLS 隧道内，明文 pcap 看不到）；给了它，
+      记录可直接进 gen-profiles 生成预设；
+    - ``tcp_only=True`` 不要求 ClientHello，只导 TCP 形态；
+    - 返回 ``{"records": [记录...], "skipped": ["<流> → <原因>", ...]}``；
+      records 为空 = 全部流被拒（原因见 skipped，不抛异常）。
+    - 记录字段：kind/grade/source/clienthello_hex/ja3/ja3_hash/ja4/tcp{...}/
+      http2.regular_headers；clienthello_hex 可直接喂 Session(clienthello_hex=…)。
+    """
+    payload = {"stream": stream, "all": bool(all_streams), "tcp_only": bool(tcp_only)}
+    if path:
+        payload["path"] = str(path)
+    elif data is not None:
+        payload["data_b64"] = base64.b64encode(bytes(data)).decode()
+    else:
+        raise ValueError("import_pcap 需要 path 或 data 之一")
+    if ua:
+        payload["ua"] = ua
+    if name:
+        payload["name"] = name
+    if source_base:
+        payload["source_base"] = source_base
+    v = _ffi.take_json(_ffi.lib.gtls_import_pcap(_json.dumps(payload).encode()))
     if v is None:
         _check_error()
     return v

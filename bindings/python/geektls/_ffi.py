@@ -132,6 +132,12 @@ lib.gtls_describe_preset.argtypes = [ctypes.c_char_p]
 lib.gtls_check_profile.restype = ctypes.c_void_p
 lib.gtls_check_profile.argtypes = [ctypes.c_char_p]
 
+# v0.2.0：pcap/pcapng → E1p 指纹记录（与 CLI import-pcap 同一解析核）。
+# 可缺省（同 gtls_error_of 口径）：加载失败的旧动态库上 import_pcap 调用时报错。
+if hasattr(lib, "gtls_import_pcap"):
+    lib.gtls_import_pcap.restype = ctypes.c_void_p
+    lib.gtls_import_pcap.argtypes = [ctypes.c_char_p]
+
 
 def take_string(ptr):
     """读取并释放 core 返回的 char*；NULL 返回 None。"""

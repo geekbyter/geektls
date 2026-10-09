@@ -3,6 +3,27 @@
 本项目遵循语义化版本（版本号规则与"四处单一事实源"见 [docs/versioning.md](docs/versioning.md)）。
 更早的发布过程记录见 [docs/plans/2026-09-28-pypi-release-plan.md](docs/plans/2026-09-28-pypi-release-plan.md) §8.5/§8.6。
 
+## Unreleased
+
+### 新增
+
+- pcap 直导入（三语言绑定）：CLI import-pcap 解析核下沉为 core/pcapimport
+  （CLI 变薄壳，行为与输出零变化，旧测试零改动全绿）；FFI 新增 gtls_import_pcap
+  （加性第 24 个导出，path 优先/data_b64 兜底，CONTRACT-FREEZE #3 已登记）。
+  Python geektls.import_pcap(path 或 data)、Node geektls.importPcap(opts)、
+  Go geektls.ImportPcap/ImportPcapBytes——输出统一 records/skipped 数组，
+  本地实测全绿（Python 4 例 / Node 3 例 / Go 2 例）。
+- **pcap 记录增益（讨论收口轮）**：记录新增 `sni`（server_name(0) 扩展提取，
+  同名/异名多流靠它区分）与 `warnings`（未传 UA 记 `missing_ua`——不能进预设链
+  显性化，TLS 面装载不受影响）；README×3 重构为"**import_pcap → Session 两步
+  直通**"主路径（hex 在变量间传递、不必手抄；`clienthello_hex` 独立入口一笔带过）。
+- Go 绑定便捷参数：NewSessionFromClientHelloHex / NewSessionFromJA3 /
+  NewSessionFromJA4R（透传 core 构造 + NormalizeForReplay；warnings 返回）——
+  此前 Go 是三语言里唯一缺自带指纹入口的。
+- 文档：docs/12 6.1 节、三个绑定 README、v0.2.0/v0.2.1 plan；ja4plus 交叉
+  验收顺延 v0.2.1 T-E。
+
+
 ## 0.1.9（2026-10-09）
 
 ### 新增

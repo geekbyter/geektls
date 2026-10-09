@@ -202,6 +202,17 @@ declare module 'geektls' {
   export function listPresets(): string[];
   export function describePreset(name: string): object;
   export function checkProfile(input: string | object): object;
+  /** v0.2.0: pcap/pcapng -> E1p records（与 CLI import-pcap 同核）。records 空 = 全拒（见 skipped）。 */
+  export function importPcap(opts: {
+    path?: string;
+    data?: Buffer | Uint8Array;
+    stream?: number;
+    all?: boolean;
+    tcpOnly?: boolean;
+    ua?: string;
+    name?: string;
+    sourceBase?: string;
+  }): { records: object[]; skipped: string[] };
 
   /** 模块级共享默认会话：首次调用可传 Session options 配置，之后只读 */
   export function defaultSession(options?: object): Session;
