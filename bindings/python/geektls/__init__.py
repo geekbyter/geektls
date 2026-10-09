@@ -85,7 +85,7 @@ __all__ = [
 
 # 包版本与动态库版本是**两个**版本（见 docs/versioning.md）：包内库与包版本锁死，
 # 运行时再用 version() 核对 ABI 主版本。
-__version__ = "0.1.9"
+__version__ = "0.2.0"
 
 EXPECTED_ABI = 1
 

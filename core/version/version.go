@@ -12,7 +12,7 @@ const (
 	// ABI 是 C ABI 主版本号，只增不改；破坏性变更升号（docs/02-ffi-abi.md §4）。
 	ABI = 1
 	// Core 是 core 语义版本。
-	Core = "0.1.9"
+	Core = "0.2.0"
 )
 
 // stackModules 是"指纹栈"依赖（顺序即报告顺序）。语义见 UTLSVersion。
