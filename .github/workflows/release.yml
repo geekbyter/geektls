@@ -200,4 +200,5 @@ jobs:
     with:
       ref: main
       version: ${{ inputs.version }}
+      publish: 'true'
     secrets: inherit

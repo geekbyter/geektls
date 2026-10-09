@@ -39,6 +39,11 @@ on:
         required: false
         type: string
         default: ''
+      publish:
+        description: '是否真的发布（总控调用传 true；不传 = 只组包自检）'
+        required: false
+        type: string
+        default: 'false'
 
 permissions:
   contents: read
@@ -184,7 +189,12 @@ jobs:
           echo "包内容自检通过"
 
       - name: Publish
-        if: startsWith(github.ref, 'refs/tags/npm/v') || github.event.inputs.publish == 'true' || github.event_name == 'workflow_call'
+        # ⚠️ 不能用 github.event_name == 'workflow_call' 判断"被总控调用"：reusable
+        # workflow 里 github context 属于**调用方**（事件是 workflow_dispatch），
+        # 该条件永不成立 ⇒ 总控调用时此步骤会被静默跳过（2026-10-09 v0.2.0 实录：
+        # job 全绿但 registry 无 0.2.0）。统一用 inputs.publish（dispatch 表单与
+        # workflow_call 的 with 都可传）。
+        if: startsWith(github.ref, 'refs/tags/npm/v') || inputs.publish == 'true'
         shell: bash
         working-directory: bindings/nodejs
         env:
