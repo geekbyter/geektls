@@ -127,8 +127,11 @@ jobs:
       # 本 workflow 名），`npm publish` 会优先用 OIDC 并忽略 NODE_AUTH_TOKEN；
       # 迁移期 NPM_TOKEN 保留为回退（未配置 Trusted Publisher 时照旧可用）。
       # 判据：下一次 npm 发版（npm/v*）无 secret 参与也成功。
+      # ⚠️ 钉 `npm@11` 而非 `@latest`（2026-10-09 发布踩坑）：npm@12 的 engines
+      # 要求 Node ^22.22.2 || ^24.15.0 || >=26，node 20 runner 直接 EBADENGINE；
+      # npm 11（最新已 ≥11.5.1）既满足 trusted publishing 又兼容 node 20。
       - name: Upgrade npm (trusted publishing needs >= 11.5.1)
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - uses: actions/download-artifact@v4
         with:
