@@ -2,9 +2,9 @@
 
 ## 版本号
 
-- **core/bindings 统一语义化版本**：`0.1.8`（当前）。
+- **core/bindings 统一语义化版本**：`0.1.9`（当前）。
 - **四处**单一事实源（发布时四处必须同步；升级流程见 docs/maintenance.md）：
-  - core：`core/version/version.go`（`Core = "0.1.8"`，`gtls_version()` 输出）
+  - core：`core/version/version.go`（`Core = "0.1.9"`，`gtls_version()` 输出）
   - Python：`bindings/python/pyproject.toml`（`version`）
   - Node：`bindings/nodejs/package.json`（`version`）
   - Python 包内：`bindings/python/geektls/__init__.py`（`__version__`）
@@ -17,7 +17,7 @@
 
 - **ABI 只增不改**（docs/02-ffi-abi.md §4）：新增函数追加到函数表尾部；
   不删不改签名。破坏性变更升 `abi` 号，旧函数保留一个周期。
-- 当前 `abi = 1`，与包版本 `0.1.8` 无锁定关系——abi 升位只在 ABI 破坏时发生。
+- 当前 `abi = 1`，与包版本 `0.1.9` 无锁定关系——abi 升位只在 ABI 破坏时发生。
 - **绑定启动核对 abi**：三语言绑定的 `version()` 已断言 `abi == EXPECTED_ABI`
   （不匹配报清晰错误——这是 noble-tls 用户最常见的坑，动态库与包错配）。
 - **core 版本核对**：绑定在 `version()` 里同时回读 `core` 字段；建议上层应用
@@ -61,6 +61,42 @@
   保证"显式指定优先于包内"，便于开发者替换动态库调试。
 - 禁止混用"包 A 的绑定 + 包 B 的动态库"：abi 校验在启动时拦截。
 
+## 发布流程（推荐：一键总控，2026-10-08 起）
+
+**日常两条规则 + 发版一个动作**（全在 GitHub 界面，无本地命令）：
+
+1. **平时**：面向用户的变更写进 `CHANGELOG.md` 的 `## Unreleased` 段；代码 push 到 main
+   （CI 照常跑测试，不发任何渠道）。
+2. **发版**：**Actions → release → Run workflow → 填版本号**（如 `0.1.9`，不带 v）。
+   该 workflow 自动完成全部动作：
+   - 四处版本源同步（`core/version.go` / `pyproject.toml` / `package.json` / `__init__.py`）
+     + `## Unreleased` 归并为 `## <版本>（日期）`；
+   - 提交 + 推送 main；打并推送**四个 tag**：`vX`（PyPI 流水线触发口）、`core/vX`、
+     `bindings/golang/vX`（**Go module：tag 即发布**）、`npm/vX`（npm 流水线触发口）；
+   - 三平台 smoke（c-shared 构建 + 三语言冒烟）作为发布门槛；
+   - **PyPI**（5 平台 wheel）与 **npm**（3 平台动态库 + publish）——经 `workflow_call`
+     直接调用（⚠️ GITHUB_TOKEN 推的 tag **不会**触发其它 workflow（GitHub 防递归），
+     所以总控显式调用，而非等 tag 连锁）；
+   - 建 GitHub Release 页面。
+
+**发布后自动生效，无需任何操作**：
+- **Go module**：1–3 分钟后 `go get github.com/geekbyter/geektls/core@vX` 可用；
+  **pkg.go.dev 自动刷新文档**（`https://pkg.go.dev/github.com/geekbyter/geektls/core`、
+  `.../bindings/golang`）——**Go 没有"发布"动作，打对 tag 即发布**。
+- **PyPI**：`pip install geektls==X`；**npm**：`npm install geektls@X`。
+
+**手动打 tag 仍可用**（tag 连锁触发：`vX`→PyPI、`npm/vX`→npm、
+`core/vX`+`bindings/golang/vX`→Go），但**版本源必须提前同步**（release-pypi 有
+"四处一致 + 与 tag 匹配"校验，不一致会红）。
+
+**会拦住发布的三个点（自查）**：
+1. CHANGELOG 缺 `## Unreleased` 段 ⇒ 总控第一步报错（先写 CHANGELOG）；
+2. 四个 tag 任一已存在 ⇒ 报错（版本号不可重发；错发只能新版本 `retract`/deprecate）；
+3. 主仓若开了保护分支 / 要求 PR ⇒ 需允许 GitHub Actions 直接 push main，否则 prepare 失败。
+
+**secrets 依赖**：`PYPI_API_TOKEN`、`NPM_TOKEN`（均可经 npm Trusted Publishing /
+PyPI 可信发布商迁移为 OIDC 免 token；未迁移时照旧可用）。
+
 ## 各渠道发布物
 
 | 渠道 | 形态 | 状态 |
@@ -81,7 +117,7 @@
 
 **不发 sdist**：从源码构建需要 Go 工具链 + C 编译器（失败率高），因此只发布 wheel；
 不支持的平台由绑定在加载库时给出明确报错。
-| npm | tgz（geektls-0.1.8.tgz，含动态库） | 本地构建+安装验证通过；上传待账号 |
+| npm | tgz（geektls-0.1.9.tgz，含动态库） | 本地构建+安装验证通过；上传待账号 |
 | Go module | 见下：**当前 go.mod 发不出去** | 需先对齐 module path + 解决两个 vendor fork |
 
 ## Go module 发布（2026-09-30 第二次修订：发布形态已落地）
@@ -129,22 +165,22 @@
    ```
 2. **打 tag（顺序：被依赖的先生效；这次只需要两个）**：
    ```bash
-   git tag core/v0.1.8 && git push origin core/v0.1.8                       # 先 core
-   git tag bindings/golang/v0.1.8 && git push origin bindings/golang/v0.1.8
+   git tag core/v0.1.9 && git push origin core/v0.1.9                       # 先 core
+   git tag bindings/golang/v0.1.9 && git push origin bindings/golang/v0.1.9
    ```
-   **Go 只认 tag，不看分支**；子目录 module 的 tag 必须带子目录前缀（`core/v0.1.8`
-   解析的就是仓内 `core/`）。仓库根的 `v0.1.8` tag 是 PyPI 流水线的开关，照打不误——
+   **Go 只认 tag，不看分支**；子目录 module 的 tag 必须带子目录前缀（`core/v0.1.9`
+   解析的就是仓内 `core/`）。仓库根的 `v0.1.9` tag 是 PyPI 流水线的开关，照打不误——
    它对 Go 无害（根没有 go.mod，不会形成可用的根模块）。
 3. **发布后验证（照抄；首次抓取 1–3 分钟）**：
    ```bash
-   curl -s https://proxy.golang.org/github.com/geekbyter/geektls/core/@v/list   # 应列出 v0.1.8
+   curl -s https://proxy.golang.org/github.com/geekbyter/geektls/core/@v/list   # 应列出 v0.1.9
    cd "$(mktemp -d)" && go mod init t
-   go get github.com/geekbyter/geektls/core@v0.1.8 && go build ./...            # 真消费者验收
+   go get github.com/geekbyter/geektls/core@v0.1.9 && go build ./...            # 真消费者验收
    go list -m -versions github.com/geekbyter/geektls/core
    ```
    用**默认**的 `GOSUMDB` 跑一遍（确认 sum.golang.org 能收录，而不是靠 GOPRIVATE 绕）。
 4. **撤回机制**：发错不能删——在新版本的 go.mod 里 `retract v0.1.8` 并在 tag 的 release
    note 说明；消费者 `go get -u` 会看到提示。
 5. **大版本**：core 若升到 v2，module path **必须**带 `/v2` 后缀（语义化导入版本规则）。
-⚠️ `bindings/golang/go.mod`：`require github.com/geekbyter/geektls/core v0.1.8`（fork 依赖
+⚠️ `bindings/golang/go.mod`：`require github.com/geekbyter/geektls/core v0.1.9`（fork 依赖
 由 core 传递，不必重复 require）；本地开发用的 `replace => ../../core` 保留即可（消费者忽略）。

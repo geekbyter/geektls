@@ -65,18 +65,20 @@ jobs:
             bindings/golang/go.sum
             tests/smoke/go.sum
 
-      # TestExternalOracle（TLS 面）+ TestExternalOracleH2（Akamai 帧串）。
-      # 这两条是 -tags external 的"回读对拍"，也是 README 里 MATCH 列的出处。
-      # ASSERT=1：MATCH/DIFF 平时只打印（V-3），nightly 里 DIFF 必须判红——
-      # 否则这一轮只证明"握手打得通"，证明不了实测结论没过期。
-      - name: TLS + H2 oracle
+      # TestExternalOracle（TLS 面）+ TestExternalOracleH2（Akamai 帧串）+
+      # TestExternalOracleH3（T2.2：强制 h3 回读 QUIC 内层 JA4）。
+      # 前两条是 README 里 MATCH 列的出处。ASSERT=1：MATCH/DIFF 平时只打印
+      # （V-3），nightly 里 DIFF 必须判红——否则这一轮只证明"握手打得通"，
+      # 证明不了实测结论没过期。H3 条先跑本地环回预检再打外网：出网 UDP 被挡
+      # 时按 skip 处理（不误红），CI runner 上正常出网则应真回读对拍。
+      - name: TLS + H2 + H3 oracle
         working-directory: tests/e2e
         env:
           GEEKTLS_ORACLE_ASSERT: '1'
         run: |
           set -eu
           go test -tags external . -v -timeout 30m \
-            -run 'TestExternalOracle$|TestExternalOracleH2'
+            -run 'TestExternalOracle$|TestExternalOracleH2|TestExternalOracleH3'
 
       # 真 ECH（cloudflare-ech.com）+ DNS-over-UDP 取 HTTPS 记录。
       # 服务端不发 ECH 配置时测试自己 skip（策略变了不算我们红）。
@@ -276,4 +278,31 @@ jobs:
             echo "已评论到既有 issue #$existing"
           else
             gh issue create --label nightly-oracle --title "$title" --body-file body.md
+          fi
+
+  # ── 全绿时自动关闭遗留的 nightly issue（与上面 report 的"开/评论"对称，形成闭环：
+  # 失败自动开、修复后自动关，不再需要人工处理 issue 生命周期）──────────────────
+  # 条件：schedule 触发且无失败。h3/nginx job 未配仓库变量时被 skip——skipped 不算
+  # failure（`!failure()` 为真），不会挡住关闭。
+  close-issue-on-success:
+    name: close nightly issue on success
+    needs: [oracle, crosslang, h3-browser-e1, nginx-l2]
+    if: ${{ github.event_name == 'schedule' && !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Close open nightly issue if all green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          existing=$(gh issue list -R "$GITHUB_REPOSITORY" --label nightly-oracle \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" -R "$GITHUB_REPOSITORY" \
+              --comment "本轮 nightly 全绿（$(date -u +%F)），自动关闭。"
+            echo "已关闭 issue #$existing"
+          else
+            echo "无 open 的 nightly issue，无需操作"
           fi

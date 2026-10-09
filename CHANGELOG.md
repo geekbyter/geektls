@@ -7,6 +7,48 @@
 
 ### 新增
 
+- **新鲜度收尾：chrome_155 / firefox_157 预设入库（E3）**：用户提供 2026-10-08
+  的 `tls.peet.ws/api/all` 实机记录（两条）⇒ 按外部记录导入流程落地
+  `chrome_155_windows` / `firefox_157_windows`（证据快照
+  `profiles/evidence/thirdparty/peet.ws-2026-10-08.json`，`source` 可溯源）。
+  核对：JA4 逐字符一致（chrome 155 = `…cb7bf5808d99`，c 段与 154 相同；
+  firefox 157 = `…3cbfd9057e0d`，且 **ja3_hash 亦逐字符一致**）、akamai md5 双
+  MATCH。`preset_freshness` 由 2 族落后转**全绿**（chrome 155 / firefox 157 均
+  OK）。计数同步：**370 条**（29 自测 / 6 E2i / 8 E2i-u / **327 E3**；HPACK
+  255/370）。如实登记：Firefox 157 记录的 ECH 头为 aead=1（与 docs/07 G13
+  「aead=3」旧结论不符，待 T5.1 复采裁定）；Chrome 155 的 accept 新增
+  `image/jxl`（照抄）；Chrome 155 无 QUIC 抓包（http3 节按家族继承
+  chrome_154_windows）。
+- **H3 外部 oracle 回读（nightly）**：oracle job 新增 `TestExternalOracleH3`
+  （`//go:build external`）——强制 h3（不回落）打 `tls.peet.ws/api/all`，从服务端
+  视角回读 QUIC 内层 JA4 与 selfcheck 对拍（三重证据：force 档不回落 + 回读 ja4
+  为 q 变体（QUIC 专属不变量）+ 两侧逐字符一致，ASSERT=1 硬断言）。归因防误红：
+  先跑本地环回 H3 预检——本地失败 = 栈问题（红），本地通过而外部不可达 = 出网
+  UDP 被挡或端点不支持 h3（skip + 警示）。至此验证链补上 H3 面唯一空白格
+  （此前 H3 证据多为 local/E4）；子集内无 http3 节的预设打印跳过。
+- **H3 请求的 selfcheck（QUIC 内层 ClientHello 的 JA3/JA4）**：`h3=True` /
+  `protocols=["h3"]` 的响应此前 `selfcheck` 为空（"报告本连接实际发出的指纹"
+  在 H3 面缺失）。现在按 `clampSpecForQUIC` 裁剪后的内层 spec 自算并填充：
+  JA4 为 **QUIC 变体**（首字符 `q`，与真机 E1 口径一致）、JA3/JA3Hash、扩展序
+  双份、GREASE 标记、SNI 上链标志（IP 字面量目标报 `i`，与 TCP 面同语义）。
+  如实边界：`negotiated` 不填（QUIC 握手状态在 quic-go-utls 内部、无导出面）；
+  `ja3_match`/`ja4_match` 不填（内层形态经裁剪，与 profile 的 TCP 期望值不可比）。
+  实现：`core/h3.SpecForJA4`（bogdan→refraction 的逐类型机械镜像，零形态决策——
+  裁剪已由 clampSpecForQUIC 完成）+ engine 按当次 host 计算（共享 transport
+  复用下报告稳定）；SelfCheck 结构体同构 ⇒ **ABI 不动、三语言绑定免改**。
+  测试 `core/engine/h3_selfcheck_test.go`（q13i/q13d 两态、与独立自算逐字符一致、
+  复用稳定）。
+- **`geektls import-pcap`：抓包 → 指纹复刻闭环**（Wireshark/tcpdump 的 pcap/pcapng
+  直吃）：提取 ClientHello 与 TCP SYN 形态，落成 E1p 记录（`clienthello_hex` + `tcp` 节
+  + 自算 JA3/JA4），可 `check-profile` / `--clienthello-hex` 装载重放；补 `--ua` 后
+  可直接进 `gen-profiles` 生成预设（生成器接受 `kind=e1p_pcap`）。**纯 Go 最小解析**
+  （只做字节级搬运，不做字段级 TLS 汇编——tshark 非必需；容器覆盖 pcap classic /
+  pcapng，链路层 Ethernet+VLAN / Linux cooked v1v2 / raw IP，IPv4/IPv6）。拒绝项照
+  docs/12 §4：resumption（非空 PSK(41)）/ 缺 SYN / 抓包缺口 / CH 跨 record。
+  自验（本机）：真实 Chrome 149 CH（1751B）切 3 段**乱序** → `clienthello_hex`
+  **逐字节一致** → gen-profiles 直吃 → 生成物 tls 节与 builtin **逐字段一致**。
+  实现口径修正（tshark 驱动 → 纯 Go）与边界已如实更新到 docs/12 §6。
+  测试 `core/cmd/geektls/importpcap_test.go` 全离线（合成帧/双容器/乱序/四类拒绝）。
 - **npm 发布流水线（release-npm.yml）**：三平台 runner（ubuntu/windows/macos）各自
   构建 c-shared 动态库（Go 的 c-shared 不能交叉编译），汇总进 bindings/nodejs 后
   `npm publish --provenance`（包页 Verified 徽章，需 secret `NPM_TOKEN`）。
@@ -16,9 +58,51 @@
   Linux x64 / macOS Apple Silicon；**Intel Mac 暂不支持**（按架构分发需改 index.js
   库名选择，P7 落地），各 README 已如实标注。新增 `bindings/nodejs/README.md`
   （npm 包页描述：平台矩阵 + 示例）。
+- **发布总控（release.yml）**：Actions → release → 填版本号，一键完成全部发布动作——
+  四处版本源同步 + CHANGELOG 归并（`## Unreleased` → `## <版本>（日期）`）+ 提交推送 +
+  四个 tag（`v*` / `core/v*` / `bindings/golang/v*` / `npm/v*`）+ 发布前 smoke 门槛
+  （三平台 c-shared + 三语言冒烟）+ 复用 release-pypi / release-npm 发布（`workflow_call`，
+  避开"GITHUB_TOKEN 推 tag 不触发连锁"）+ 建 GitHub Release。两子流水线的 tag 触发
+  保留（手动打 tag 仍可发）。发版前检查：tag 未被占用、CHANGELOG 有 `## Unreleased`。
+- **oracle-nightly 全绿自动关闭 issue**：与既有"失败自动开/评论"对称成闭环——nightly
+  修复后不再需要人工关闭遗留 issue（`close-issue-on-success` job，skipped 的 h3/nginx
+  job 不算失败）。
 
 ### 修复
 
+- **依赖安全（govulncheck 首跑量化并归零）**：core 全仓扫描发现 1 个被调用漏洞
+  GO-2026-4550（cloudflare/circl 的 secp384r1 CombinedMult 计算错误，调用链经
+  utls fork 的 ML-DSA 验证路径）——升级 `github.com/cloudflare/circl`
+  v1.6.2 → v1.6.3（修复版）后复查 **0 affected**；剩 2 个"被依赖模块含、代码
+  未调用"项记为基线噪音。当前噪音量低，具备进 CI 条件。
+- **H3-7 残余落库 + GREASE 帧生成侧钉住（T2.3/T2.4）**：
+  ① `max_datagram_frame_size=65536` / `max_udp_payload_size=1472` 按 E1 实测
+  （`profiles/evidence/browsers/chrome_windows_h3.json`）经 `transportParamsToQUICConfig`
+  映射（后者依赖 vendor patch #9 的接收缓冲解耦；越界值进 unsupported 清单、
+  不静默写坏值）+ 6 个 Chromium 预设（chrome_149/154_windows、chrome_154_macos、
+  chrome_150_windows、edge_153_windows、opera_122_windows）落库；测试
+  `core/h3/transport_params_test.go`。残余（私有参数 0x11/0x3128、参数顺序、
+  max_ack_delay 多发）需 `transport_params_raw` blob，其与连接级参数的冲突规则
+  待 fork 决策。
+  ② `h3.quic_grease_frames` 生成侧钉住（`http3/grease_frame_test.go`：RFC 9114
+  §7.2.8 的 `0x1f*N+0x21` 形态 / 空载荷 / 序列化恰好两个 varint；当前固定
+  N=1000000000 如实标注、无实据不臆改随机化），matrix evidence unverified → local；
+  E2（真机 H3 控制流对拍）待采集链路扩展（现 E1 仅到 QUIC 握手层）。
+- **0-RTT 收尾：`TestQUICZeroRTT` 转绿（此前 Skip）**。真根因在客户端 fork 的
+  locked 会话分支：`MarshalClientHello` 时 PSK 扩展只写**占位 binder**，真 binder
+  要由 uTLS 的 `uApplyPatch`/`PatchBuiltHello` 打进已 marshal 的 Raw——locked 分支
+  绕过了它 ⇒ 线上 binder 是占位值 ⇒ 服务端 `hmac.Equal` 失败 ⇒ 服务端"开
+  early_data + 装 0-RTT 读密钥"的分支（handshake_server_tls13.go 442）永不执行 ⇒
+  `Used0RTT` 恒假、0-RTT 数据只能经 1-RTT 重传到达（0.1.8 时"剩服务端 QUIC 层
+  Used0RTT 记账"的判断停在现象层）。修：binder 重算后补 `updateBinders()` +
+  `setPskToUConn()`（= uApplyPatch 的等价收尾）；另把 spec 的
+  quic_transport_parameters(57) 裸字节回写 msg 字段（uTLS 把 TP 注入注释为
+  "not ready yet"——msg 层用于 binder 输入与 `transcriptMsg(hello)` 的 transcript
+  一致性）。三层断言全绿（0.06s）：client/server `Used0RTT=true` + 线上 0-RTT
+  长头包 + echo 数据面。同批清理：utls fork 与 `crypto_setup.go` 的 8 处
+  `GEEKTLS-DEBUG` 现场标记（+ `runtime/debug` 残留 import）；新建
+  `core/third_party/utls-bogdanfinn/GEEKTLS_PATCHES.md`（该 fork 的首份 patch 文档，
+  4 个 patch 的动机/位置/证据）。
 - **npm 首发 E422（provenance 仓库校验）**：`bindings/nodejs/package.json` 缺
   `repository` 字段 ⇒ `npm publish --provenance` 被 registry 拒绝
   （`Failed to validate repository information: package.json: "repository.url" is ""`）。
@@ -34,6 +118,59 @@
 - **oracle-nightly 的 report job 拿不到失败日志**：workflow `permissions` 缺
   `actions: read`，`gh run view --log-failed` 被 403（issue #1 的"(取不到失败日志)"）。
   修：permissions 补 `actions: read`。
+
+### 变更
+
+- **上游族补齐：导入生成落地（T5.5 收官；24 条整族预设入库）**：把 T5.5 前两步盘出的
+  "整族缺失 24 条"全部导入为 E3 预设——`cloudscraper`、`confirmed_*`(2)、`mesh_*`(6)、
+  `mms_*`(4)、`nike_*`(2)、`okhttp4_android_7..13`(7)、`zalando_*`(2)。实现：
+  `tests/e2e/cmd/import-tlsclient -emit`——桥程序**真编译**上游快照并逐类型转换
+  spec→`profiles.Extension`（新增 RenegotiationInfo(65281)、UtlsPadding（用函数指针
+  相等**验证** BoringPaddingStyle，不假设）、GREASE 零值等映射）；`_const` 由 AST 解析
+  上游 `profiles.go` 取得，快照 `profiles/evidence/thirdparty/tls-client-master.json`
+  供 provenance 守门追溯。证据纪律：同名跳过、PSK 变体跳过、缺 HTTP/2 不臆造；
+  声明 TLS1.3 而无 41 的上游条目补空占位（18 条，逐条登记，防 uTLS 复用 panic）。
+  守门三连全绿（`TestPresetProvenance` / `TestE3SourceTraceable` / e2e
+  `TestH2FrameCapture`）。计数同步：**394 条**（29 自测 / 6 E2i / 8 E2i-u /
+  **351 E3**；HPACK 255/394）。
+- **上游差集盘点（T5.5 第二步）+ ECH GREASE 形状分族（T5.1 实现侧）**：
+  ① `tests/e2e/cmd/import-tlsclient`——**编译式提取器**（快照源码 → 临时 module →
+  真实调用 `GetClientHelloSpec()`；AST 路线不可行——SpecFactory 是函数字面量，
+  静态求值做不到）。差集报告：83 条注册中 56 条提取成功（27 条失败均为"无
+  SpecFactory 且 in-tree fork 的 parrot 未覆盖的老版本"）；**整族缺失 24 条
+  （全部可提取）**、**同族缺口 59 条**（PSK 变体 15 按约定跳过；chrome 系多为
+  "平台后缀命名差异"非真缺口，报告内置 `≈` 模糊命中提示）。结论与复现命令入
+  docs/08 §E；导入生成（spec→detail 转换）留作下一步。
+  ② **GREASE ECH 形状分族（2026-10-08 四样本裁定收口）**：`tls.detail` 的 65037
+  支持 `ech.grease_shape`（缺省/`chrome` = BoringSSL 形状；`firefox` = 候选
+  kdf=1/aead∈{1,3} 每连接随机 + 线上长度 {240,400} 每连接随机——Firefox 157 四样本
+  两维独立，**推翻旧 G13"固定 aead=3、非随机"**）；TCP 编译（候选集构造）、QUIC
+  内层合成（`pickEchGreaseShape` 随机挑 + `echGreasePayload` 按线长集）、
+  `SpecToBogdan` 保形状三处同步；未知形状编译期报错（不静默退回 Chrome）。
+  `firefox_157_windows` 预设已填 `grease_shape: firefox`（实测级）；其余 firefox
+  预设待逐版本采样。测试 `core/tls/ech_grease_test.go` + `core/h3/ech_test.go`
+  （含随机性采样断言与真实预设编译冒烟）。G13 文档同步修订。
+- **上游 profiles 完整入库（T5.5 第一步）**：`bogdanfinn/tls-client@master` 的
+  `profiles/` **整个目录**重抓入库
+  （`profiles/evidence/thirdparty/tls-client-master-profiles/`，7 文件；
+  旧的两个单文件快照已被该目录取代）——docs/08 §E「整族补齐」的开工前置
+  （"先把目录整个抓下来"）达成；剩余：导入器的 Go 源码解析入口与差集结论。
+- **govulncheck 进 CI（T4.2 收尾）**：ci.yml 新增 `vulncheck` job（Linux 单跑、
+  阻塞门禁）——首扫即命中的 GO-2026-4550 已随 circl v1.6.3 升级归零，当前噪音
+  低（0 affected + 2 个"模块含但代码未调用"）。
+- **npm 发布迁移预备（Trusted Publishing）**：release-npm.yml 增加"升级 npm
+  ≥ 11.5.1"步骤（node 20 自带 npm 10 不支持 OIDC）；NPM_TOKEN 保留为迁移期回退
+  ——npm 侧配置 Trusted Publisher（GitHub Actions → geekbyter/geektls →
+  release-npm.yml）后 OIDC 自动优先接管，判据 = 下次 `npm/v*` 发版无 secret 参与。
+- 工程卫生：`bindings/golang` 的 pkg.go.dev 收录已触发（
+  `go list -m github.com/geekbyter/geektls/bindings/golang@v0.1.8` 解析成功）；
+  `.gitignore` 的 smoke 产物条目与 `bindings/nodejs` 的 package.json 注释均已在
+  早前更新，本轮复核无欠账。
+- **CI 结构调整**：smoke（c-shared 构建 + 三语言冒烟）从 ci.yml 迁至 release.yml——
+  它是"发布前验证"，不适合每次 push 都跑；push/PR 的日常 CI 只跑离线测试与守门
+  （不再每次构建动态库）。ci.yml 的 smoke job 删除。
+- `release-pypi.yml` / `release-npm.yml` 增加 `workflow_call`（含显式 `ref` 输入），
+  供发布总控复用；原 tag 触发与 dispatch 行为不变（向后兼容）。
 
 ### 文档
 

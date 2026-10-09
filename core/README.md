@@ -57,8 +57,8 @@ func main() {
 ## CLI（免编译试用）
 
 ```bash
-go run github.com/geekbyter/geektls/core/cmd/geektls@v0.1.8 version
-go run github.com/geekbyter/geektls/core/cmd/geektls@v0.1.8 check-profile chrome_154_windows
+go run github.com/geekbyter/geektls/core/cmd/geektls@v0.1.9 version
+go run github.com/geekbyter/geektls/core/cmd/geektls@v0.1.9 check-profile chrome_154_windows
 ```
 
 ## 许可

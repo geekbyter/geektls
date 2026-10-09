@@ -73,30 +73,45 @@ check_profile(裸 hex) ✅
 "tap 合成 pcap"与真实 Wireshark 抓包在 CH 字节上等价；真实 pcap 里还会有 IP/TCP 头
 （那正是要导入的 tcp 节 ✓）。
 
-## 6. 落地设计（`import-pcap`，待排期）
+## 6. 落地实现（`import-pcap`，2026-10-08 落地）
 
-```
-geektls import-pcap --pcap a.pcapng [--keylog sslkeys.log] [--stream N|--all]
-                    [--tcp-only] -o out.e1.json
+```bash
+geektls import-pcap --pcap a.pcapng [--stream N|--all] [--tcp-only]
+                    [--ua "<UA 串>"] [--name 记录名] -o out.e1.json
 ```
 
-- 解析：优先驱动 **tshark**（`-Y tls.handshake.type==1 -T json`；有 keylog 时
-  `-o tls.keylog_file:<f>` 解密 H2）——**不自研 TLS 汇编**，汇编是 tshark 的强项；
-  TCP 选项/TTL 从 SYN 包取（`tcp.flags.syn==1 && tcp.ack==0`）。
-- 输出：**与 E1 记录同 schema**（`evidence/browsers/*.json` 同款）⇒ 直接进
-  `gen-profiles`（preset 内 `grade`/`source` 由记录字段决定）；但"CI 预设守门"要生效
-  还需两步：把记录路径加进 `ci.yml` 的 `-record` 逗号清单（生成器只自动吃内嵌 hex 标本，
-  E1/pcap 记录是显式列表），且该 job 只在 Linux runner 上跑。
-  `grade` 记 **E1p（pcap 线上抓包）**，`source=pcap:<file>#<stream>#<ts>`。
-- 校验：装载 → 重放 → 与原 pcap 对拍（JA4/JA4R/扩展序/SETTINGS）——
-  本文件 §5 就是这个闭环的命令行版。
-- 拒绝项：resumption/0-RTT 流、跨连接混抓、缺 SYN 的流（tcp 节无法导出）。
+**实现口径修正（相对本节初版设计）**：初版计划"驱动 tshark、不自研 TLS 汇编"。
+落地改为**纯 Go 最小解析**——① tshark 不是随处可用（本机/CI 都要额外装），而这里
+需要的只是"字节级搬运"：按 seq 重组 TCP 流、定位 `16 03 0x` record、取完整握手
+消息——**不是**初版反对的那种字段级 TLS 汇编；② 换来离线可用、本机可测、CI 零额外
+依赖。字段级深解（keylog 解密补 H2 面）仍按 §7-2 留作后续支线。
+
+- **容器**：pcap classic 与 pcapng（Wireshark 默认）；链路层 Ethernet（含 VLAN 单/多层）、
+  Linux cooked v1/v2（tcpdump -i any）、raw IP；IPv4/IPv6；其余链路类型明确报错。
+- **`--ua`**：pcap 明文里看不到 HTTP 头（在 TLS 隧道内），UA 由调用方补；
+  **给了 UA 的记录可直接进 `gen-profiles`**（kind=e1p_pcap，生成器 2026-10-08 起接受）。
+  没给 UA 只作记录用（`check-profile` / `--clienthello-hex` 装载自检可用，不进预设链）。
+- **输出**：与 E1 记录同 schema；`kind=e1p_pcap`、`grade=E1p`、
+  `source=pcap:<file>#<stream>`；`tcp` 节（ttl/mss/window_size/window_scale/
+  options_order/df）与 profile.tcp 的观测字段对齐（options_order 的名字与
+  `core/tcp/raw_linux.go` 的 optionsFor 一致：mss/sack/ts/nop/ws）。
+- **拒绝项**（照 §4）：resumption（CH 带非空 PSK(41)）、缺 SYN、抓包缺口（宁缺毋滥）、
+  CH 跨 record（罕见形态明确报错）。
+- **自验（2026-10-08，本机）**：真实 Chrome 149 CH（1751B）切 3 段**乱序** →
+  `import-pcap` → `clienthello_hex` **逐字节一致**、tcp 节完整、自算
+  JA4=`t13d1516h2_8daaf6152771_d8a2da3f94cd` → `gen-profiles` 直吃 →
+  生成物 `chrome_149_windows.json` 的 **tls 节与 builtin 逐字段一致**
+  （差 http2 节——pcap 明文看不到，如实为边界）。
+- **测试**：`core/cmd/geektls/importpcap_test.go`（合成帧/双容器/乱序重组/四类拒绝/
+  `--ua`/`--all`/`--tcp-only`，全离线、不依赖真实 pcap）。
+- **CI 预设守门（可选后接）**：E1p 记录要进 `ci.yml` 的 `-record` 逗号清单才参与
+  逐字节门禁（生成器只自动吃内嵌 hex 标本；该 job 只在 Linux runner 上跑）。
 
 ## 7. 待办
 
 | # | 事项 | 判据 |
 |---|---|---|
-| 1 | `import-pcap` MVP（仅 TLS+TCP，tshark 驱动） | 一份真实浏览器 pcap → E1 记录 → gen-profiles → 预设装载重放与原 pcap 逐字段一致 |
+| 1 | ✅ `import-pcap` MVP（2026-10-08 落地：纯 Go 最小解析，见 §6） | 合成真 CH 的真实闭环已测（§6 自验：CH 逐字节 + tls 节逐字段）；**真机 pcap 的现场闭环待一次采样**（Wireshark 存一份 → 同样的两条命令） |
 | 2 | keylog 解密支线（H2 SETTINGS/WU/伪头序） | 与 nginx 采集端对同一会话的 H2 面对拍一致（补 `pseudo_header_order` 的 E4 空位） |
 | 3 | QUIC Initial 支线 | tshark 解 Initial → transport params 装载 → 与 e1_h3 记录对拍 |
 | 4 | 与"浏览器过、代码不过"的诊断流程挂钩 | 文档化排查顺序：先 pcap diff（TCP/TLS）→ keylog diff（H2）→ 再 IP/行为面 |

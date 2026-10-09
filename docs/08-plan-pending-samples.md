@@ -24,8 +24,10 @@
 ## E. 从上游/网络补齐缺失族（2026-09-28 盘点，待开工）
 
 **盘点方法**：抓上游 `bogdanfinn/tls-client@master` 的 `profiles/` 全部源码（快照入库
-`profiles/evidence/thirdparty/tls-client-master-profiles-*.go`：47 个 `ClientProfile` 定义 +
-83 条注册），与 builtin 的 362 条做族/条目差集。
+`profiles/evidence/thirdparty/tls-client-master-profiles/`：**完整 7 文件**
+（profiles.go / internal_browser_profiles.go / internal_custom_profiles.go /
+contributed_browser_profiles.go / contributed_custom_profiles.go / extension_data.go /
+grease.go，2026-10-08 重抓；此前的两个单文件快照已被该目录取代），与 builtin 做族/条目差集。
 
 | 缺口 | 上游条目 | 说明 |
 |---|---|---|
@@ -44,6 +46,25 @@
    `profiles.go` 的映射表里**只是引用**，定义在不 dump 的文件里；
    `Mms*`/`Cloudscraper` 两份 dump 里**一次都没出现**。真要整族补齐，第一步是
    把上游 `profiles/` 目录整个抓下来入库，而不是先写 AST 解析。
+   → **2026-10-08 已完成**：① 整目录入库（`profiles/evidence/thirdparty/tls-client-master-profiles/`，7 文件）；
+   ② **不做 AST 解析**——快照源码对我们的 in-tree fork **直接编译通过**（探针验证），
+   改为**编译式提取器** `tests/e2e/cmd/import-tlsclient`（临时 module 里真实调用
+   `GetClientHelloSpec()`）。**差集结论**：83 条注册中 56 条提取成功（27 条失败
+   均为"无 SpecFactory 且 in-tree fork 的 parrot 未覆盖该老版本"，报
+   `please implement this method`）；vs builtin 370：
+   - **整族缺失 24 条（全部可提取）**：`cloudscraper`(1)、`confirmed`(2)、`mesh`(6)、
+     `mms`(4)、`nike`(2)、`zalando`(2)、`okhttp4_android_7..13`(7)——okhttp4 族前缀与
+     既有 `okhttp_3_*` 不同（机械分族算"整族"，语义上是同族新版本）；
+   - **同族缺口 59 条** = PSK 变体 15（按约定跳过）+ 无 spec 工厂 27（老版本，
+     其中 12 条 builtin 有平台后缀版本，如 `chrome_105` ≈ `chrome_105_macos`）+
+     可提取的 `brave_146` / `chrome_117..152` / `firefox_117..148` /
+     `safari_ios_17_0..26_0`（chrome 系全部有 `≈` 平台后缀命中 ⇒ 实为命名差异）。
+   - 复现：`cd tests/e2e && go run ./cmd/import-tlsclient [-json out.json]`。
+   → **2026-10-08 已完成导入生成**：24 条整族缺失**全部入库**为 E3 预设
+   （`-emit`：桥程序真编译 + 逐类型转换 spec→detail + `_const` AST 解析 + 快照
+   `tls-client-master.json` 供 provenance 守门追溯）；三项守门全绿（provenance、
+   source 追溯、e2e H2 帧抓取）。其余缺口保持现状——同族 59 条里带 `≈` 的实为
+   命名差异（已覆盖），无 spec 工厂的 27 条上游自身不可提取。
 2. ~~`import-tlsconfig` 把 `source` 写死为 `"tls_config-0.0.2/" + c.Const`~~
    **已修（2026-09-30，A13-a）**：`convert` 改收 `source` 参数，CLI 加 `-source`
    （默认前缀与被替换掉的写死字面量逐字符相同 ⇒ 再次导入产生的 `source` 不变；

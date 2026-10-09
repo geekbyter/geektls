@@ -34,6 +34,7 @@ const usage = `geektls — TLS/HTTP 指纹工具（命令行）
   geektls describe <预设名>
   geektls check-profile <预设名 | ja3:… | ja4:… | ja4r:… | {"ja3":…} | hex>  [--json]
   geektls request <url> [选项]
+  geektls import-pcap --pcap <文件> [选项]   从 Wireshark/tcpdump 抓包提取指纹（E1p 记录）
 
 request 选项：
   --profile <名>                        内置预设（默认 chrome_133）
@@ -87,6 +88,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdCheckProfile(args[1:], stdout, stderr)
 	case "request":
 		return cmdRequest(args[1:], stdout, stderr)
+	case "import-pcap":
+		return cmdImportPcap(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

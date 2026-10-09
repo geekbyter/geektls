@@ -122,6 +122,16 @@ type Extension struct {
 type ECHConfig struct {
 	Mode          string `json:"mode"`                      // "grease" / "real"
 	ConfigListHex string `json:"config_list_hex,omitempty"` // mode=real 必填
+
+	// GreaseShape（T5.1，仅 mode=grease）：GREASE ECH 的 kdf/aead 形状分族。
+	//   - 缺省 / "chrome" = BoringSSL 形状（kdf=HKDF_SHA256、aead=AES_128_GCM，
+	//     GREASE 填充 144/176/208/240）；
+	//   - "firefox" = Firefox 形状（kdf=HKDF_SHA256、aead=CHACHA20_POLY1305(=3)
+	//     ——docs/07 G13 两次独立抓包一致、非随机；填充长度分布待复采钉住，
+	//     当前与 Chrome 同档）。
+	// 未知值在编译期报错（不静默退回 Chrome 形状——形状错误会直接暴露在
+	// 65037 线上字节里）。
+	GreaseShape string `json:"grease_shape,omitempty"`
 }
 
 // --- 以下各节 P1 只解析不生效 ---

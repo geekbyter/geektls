@@ -22,6 +22,15 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  # 供发布总控（release.yml）复用：版本同步后直接调用，不依赖 tag 连锁触发
+  #（GITHUB_TOKEN 推的 tag 不会触发其它 workflow）。tag 触发保留，手动打 tag 也能发。
+  workflow_call:
+    inputs:
+      ref:
+        description: '检出并发布的 ref（总控调用传 main；tag/dispatch 触发留空）'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -58,6 +67,9 @@ jobs:
             goarch: amd64
     steps:
       - uses: actions/checkout@v4
+        with:
+          # tag 触发时 github.ref 即 tag；总控调用时显式传 main（拿 bump 后的 commit）。
+          ref: ${{ inputs.ref || github.ref }}
 
       - uses: actions/setup-go@v5
         with:
@@ -259,6 +271,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true

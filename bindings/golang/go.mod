@@ -3,13 +3,13 @@ module github.com/geekbyter/geektls/bindings/golang
 go 1.26.3
 
 require (
-	github.com/geekbyter/geektls/core v0.1.8
+	github.com/geekbyter/geektls/core v0.1.9
 	golang.org/x/net v0.59.0
 )
 
 require (
 	github.com/andybalholm/brotli v1.2.0 // indirect
-	github.com/cloudflare/circl v1.6.2 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect

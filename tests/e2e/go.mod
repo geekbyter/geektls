@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/andybalholm/brotli v1.2.4
 	github.com/geekbyter/geektls/bindings/golang v0.0.0-00010101000000-000000000000
-	github.com/geekbyter/geektls/core v0.1.8
+	github.com/geekbyter/geektls/core v0.1.9
 	github.com/gospider007/fp v0.0.0-20260922022940-11a30e1428c9
 	github.com/gospider007/gtls v0.0.0-20260922022900-37560707587c
 	github.com/gospider007/ja3 v0.0.0-20260922022812-54ae551bd740
@@ -22,7 +22,7 @@ require (
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
 	github.com/caddyserver/certmagic v0.25.4 // indirect
 	github.com/caddyserver/zerossl v0.1.5 // indirect
-	github.com/cloudflare/circl v1.6.2 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/gaukas/clienthellod v0.4.2 // indirect

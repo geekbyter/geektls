@@ -450,11 +450,6 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			}
 			earlyTrafficSecret := hs.earlySecret.ClientEarlyTrafficSecret(transcript)
 			c.quicSetReadSecret(QUICEncryptionLevelEarly, hs.suite.id, earlyTrafficSecret)
-		} else if c.quic != nil && i == 0 {
-			println("GEEKTLS-DEBUG 服务端 EE 未开 early_data: helloEarly=", hs.clientHello.earlyData,
-				"ticketEarly=", sessionState.EarlyData,
-				"ticketSuite=", int(sessionState.cipherSuite), "suite=", int(hs.suite.id),
-				"ticketALPN=", sessionState.alpnProtocol, "clientProto=", c.clientProtocol)
 		}
 
 		c.didResume = true

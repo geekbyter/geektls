@@ -1,0 +1,105 @@
+{
+  "name": "mesh_android_2",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "0xc02b",
+        "0xc02c",
+        "0xcca9",
+        "0xc02f",
+        "0xc030",
+        "0xcca8",
+        "0xc009",
+        "0xc00a",
+        "0xc013",
+        "0xc014",
+        "0x009c",
+        "0x009d",
+        "0x002f",
+        "0x0035"
+      ],
+      "extensions": [
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 35
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0403",
+            "0x0804",
+            "0x0401",
+            "0x0503",
+            "0x0805",
+            "0x0501",
+            "0x0806",
+            "0x0601",
+            "0x0201"
+          ]
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": "AA=="
+        },
+        {
+          "type": 10,
+          "groups": [
+            "0x001d",
+            "0x0017",
+            "0x0018"
+          ]
+        }
+      ]
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        1,
+        65536
+      ],
+      [
+        3,
+        1000
+      ],
+      [
+        4,
+        6291456
+      ],
+      [
+        6,
+        262144
+      ]
+    ],
+    "window_update": 15663105,
+    "pseudo_header_order": [
+      "m",
+      "a",
+      "s",
+      "p"
+    ]
+  },
+  "grade": "E3",
+  "source": "tls-client-master/MeshAndroid2"
+}

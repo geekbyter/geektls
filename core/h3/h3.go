@@ -40,6 +40,21 @@ func transportParamsToQUICConfig(tp map[string]uint64, cfg *quic.Config) []strin
 			cfg.MaxIncomingStreams = int64(v)
 		case "initial_max_streams_uni":
 			cfg.MaxIncomingUniStreams = int64(v)
+		case "max_udp_payload_size":
+			// RFC 9000 §18.2 合法范围 1200..65527；真机 Chrome 149 实测 1472
+			// （E1，profiles/evidence/browsers/chrome_windows_h3.json）。越界
+			// 走 unsupported 清单（不静默写坏值）。0 = 上游默认（1452 口径）。
+			if v < 1200 || v > 65527 {
+				unsupported = append(unsupported, k)
+				continue
+			}
+			cfg.MaxUDPPayloadSize = uint16(v)
+		case "max_datagram_frame_size":
+			// 真机 Chrome 149 实测 65536（E1）。0/缺省 = 上游默认
+			// wire.MaxDatagramSize（16383，2 字节 varint 上限口径）。
+			if v > 0 {
+				cfg.DatagramFrameSize = v
+			}
 		case "initial_max_stream_data_bidi_local",
 			"initial_max_stream_data_bidi_remote",
 			"initial_max_stream_data_uni":
@@ -317,9 +332,12 @@ func clampSpecForQUIC(spec *utlsb.ClientHelloSpec, h3p *profiles.HTTP3Profile) {
 			out = append(out, e)
 		case *utlsb.GREASEEncryptedClientHelloExtension:
 			// bogdanfinn/utls 的 ECH 负载生成在 QUIC 下静默失败（依赖 TCP
-			// record 层）；但 Chrome 的 QUIC hello 同样带 ECH GREASE——
-			// 直接按线上格式合成等效 payload（见 echGreasePayload）。
-			out = append(out, &utlsb.GenericExtension{Id: 65037, Data: echGreasePayload()})
+			// record 层）；但真机的 QUIC hello 同样带 ECH GREASE——直接按
+			// 线上格式合成等效 payload（见 echGreasePayload）。T5.1：形状
+			// 每连接从扩展对象候选集随机挑（Chrome 单候选；Firefox 两候选
+			// aead∈{1,3} + 线长 {240,400}，见 pickEchGreaseShape）。
+			kdf, aead, lens := pickEchGreaseShape(ext)
+			out = append(out, &utlsb.GenericExtension{Id: 65037, Data: echGreasePayload(kdf, aead, lens)})
 		case *utlsb.GenericExtension:
 			switch {
 			case ext.Id == 57:
@@ -407,20 +425,47 @@ func clampSpecForQUIC(spec *utlsb.ClientHelloSpec, h3p *profiles.HTTP3Profile) {
 
 func isGreaseUint16H3(v uint16) bool { return v>>8 == v&0xff && v&0xf == 0xa }
 
-// echGreasePayload 合成 ECH GREASE 负载，结构对齐真实浏览器（Chrome/Edge 抓包实证）：
+// pickEchGreaseShape 挑本连接的 GREASE ECH 形状（T5.1）：候选套件随机挑一个
+// （Chrome 单候选 ⇒ 等价固定；Firefox 两候选 {aead=1}/{aead=3}，2026-10-08
+// 四样本 2:2）；线长候选 = CandidatePayloadLens 每项 +16（uTLS 惯例：候选是
+// 明文长度，线上 = +16）。零值回落 Chrome 口径（保底不崩）。
+func pickEchGreaseShape(ext *utlsb.GREASEEncryptedClientHelloExtension) (kdf, aead uint16, lens []int) {
+	kdf, aead = 0x0001, 0x0001
+	lens = []int{144, 176, 208, 240}
+	if n := len(ext.CandidateCipherSuites); n > 0 {
+		seed := make([]byte, 1)
+		if _, err := rand.Read(seed); err != nil {
+			seed[0] = 0
+		}
+		cs := ext.CandidateCipherSuites[int(seed[0])%n]
+		kdf, aead = uint16(cs.KdfId), uint16(cs.AeadId)
+	}
+	if n := len(ext.CandidatePayloadLens); n > 0 {
+		lens = make([]int, 0, n)
+		for _, l := range ext.CandidatePayloadLens {
+			lens = append(lens, int(l)+16)
+		}
+	}
+	return
+}
+
+// echGreasePayload 合成 ECH GREASE 负载，结构对齐真实浏览器（抓包实证）：
 //
-//	outer(0x00) | kdf HKDF-SHA256(0x0001) | aead AES-128-GCM(0x0001) |
-//	config_id(1B 随机) | enc_len(0x0020) | enc(32B 随机) | payload_len | payload(随机)
+//	outer(0x00) | kdf | aead | config_id(1B 随机) | enc_len(0x0020) |
+//	enc(32B 随机) | payload_len | payload(随机)
 //
-// 总长 = 42 + payloadLen；payloadLen 从 Chrome 的候选集 {144,176,208,240} 随机取
-// （抓包实测 176，总长 218）。
-func echGreasePayload() []byte {
-	payloadLens := []int{144, 176, 208, 240}
+// 总长 = 42 + payloadLen；payloadLen 从 lens（线上长度候选集，见
+// pickEchGreaseShape）随机取。Chrome 149 实测 176（{144,176,208,240} 之一）；
+// Firefox 157 实测 {240,400}（2026-10-08 四样本 2:2，与 aead 独立）。
+func echGreasePayload(kdf, aead uint16, lens []int) []byte {
+	if len(lens) == 0 {
+		lens = []int{144, 176, 208, 240}
+	}
 	seed := make([]byte, 1)
 	if _, err := rand.Read(seed); err != nil {
 		seed[0] = 0
 	}
-	payloadLen := payloadLens[int(seed[0])%len(payloadLens)]
+	payloadLen := lens[int(seed[0])%len(lens)]
 
 	configID := make([]byte, 1)
 	enc := make([]byte, 32)
@@ -430,9 +475,9 @@ func echGreasePayload() []byte {
 	rand.Read(payload)
 
 	out := []byte{
-		0x00,       // outer: client hello
-		0x00, 0x01, // kdf_id: HKDF-SHA256
-		0x00, 0x01, // aead_id: AES-128-GCM
+		0x00, // outer: client hello
+		byte(kdf >> 8), byte(kdf),
+		byte(aead >> 8), byte(aead),
 		configID[0], // config_id（GREASE 随机）
 		0x00, 0x20,  // enc_len = 32
 	}

@@ -36,7 +36,7 @@
 | 指纹入口：完整 profile / JA3 / JA4 / JA4R / ClientHello-hex + 自算 JA3/JA4 回读 | ✅ | FoxIO 官方向量 + 线上 round-trip；JA4 短哈希走内置预设反查（哈希不可逆） |
 | HTTP/2 帧层（SETTINGS 序/WINDOW_UPDATE（三态：默认/指定/不发）/priority/伪头序/首流号） | ✅ | tls.peet.ws Akamai 四段全 MATCH；三态与首流号另有原始帧断言（`TestH2FrameCaptureTriState`：帧有无 + 流号 + SETTINGS 全序） |
 | HTTP/3 + QUIC（SETTINGS/伪头序/GREASE 帧/内层 ClientHello 同 profile） | ✅（机制） | Chrome 149 H3 E1 真机采集完成（tests/e2e/e1_h3_test.go，证据 profiles/evidence/browsers/chrome_windows_h3.json）；QUIC 内层 JA4 与真机逐字符相同（钉在 quic_sniff_test.go）；transport params 顺序/非标参数经 T4-1 blob 直通可控；**Initial 布局仍不可控、quic_grease_frames 未验证、Firefox/Safari H3 未实测**（见能力矩阵） |
-| HTTP/2 HPACK 编码策略（chrome/firefox/safari/generic 四档，vendor fork fhttp） | ✅ **253/368 预设已带** | 逐字节块表示断言（索引/literal/Huffman/动表复用）；chrome 档有 QUICHE 源码级证据，firefox 档有 Firefox 59 字节级证据，safari 档为保守近似待 E1；工具与无法归族的内嵌浏览器**刻意留空**（见 docs/p2-h2-capability.md §覆盖面） |
+| HTTP/2 HPACK 编码策略（chrome/firefox/safari/generic 四档，vendor fork fhttp） | ✅ **255/394 预设已带** | 逐字节块表示断言（索引/literal/Huffman/动表复用）；chrome 档有 QUICHE 源码级证据，firefox 档有 Firefox 59 字节级证据，safari 档为保守近似待 E1；工具与无法归族的内嵌浏览器**刻意留空**（见 docs/p2-h2-capability.md §覆盖面） |
 | H2/H3 racing + Alt-Svc | ✅ **H3 默认关（`h3=True`/`protocols` 显式开）** | 协议选择用例 + 线上 ALPN 断言（`TestProtocolH1Only` 等）；`force_http3` 语义不变 |
 | 请求头顺序可控（preserve / input / random） | ✅（默认 preserve = 旧行为） | 原始 TCP 抓包逐行核对线上头序（含集合不变、Host 恒最前） |
 | 身份自洽（自带 UA ↔ 客户端提示） | ✅（`identity_sync="auto"`） | 冲突时 `sec-ch-ua*` 校正到调用方 UA + `warnings` 如实告警；TLS/H2 不伪造 |
@@ -56,7 +56,7 @@
 ```bash
 pip install geektls          # Python（manylinux_2_28 x86_64/aarch64、macOS 11.0+ arm64/x86_64、Windows x64，动态库随 wheel 分发）
 npm install geektls          # Node.js（Windows x64 / Linux x64 / macOS Apple Silicon；⚠️ Intel Mac 暂不支持）
-go get github.com/geekbyter/geektls/core@v0.1.8   # Go（monorepo 子目录模块；pkg.go.dev/github.com/geekbyter/geektls/core）
+go get github.com/geekbyter/geektls/core@v0.1.9   # Go（monorepo 子目录模块；pkg.go.dev/github.com/geekbyter/geektls/core）
 ```
 
 已发布到 PyPI 的 wheel（0.1.5 起）覆盖五平台：**manylinux_2_28 x86_64 / aarch64、macosx_11_0 arm64 / x86_64、win_amd64**
@@ -78,7 +78,7 @@ Python 一行自检：
 
 ```bash
 python -c "import geektls,json;print(json.dumps(geektls.version()));print(len(geektls.list_presets()),'presets')"
-# {"abi": 1, "core": "0.1.8", "utls": "refraction-networking/utls v1.8.2; bogdanfinn/utls v1.7.8-barnius; ..."} / 368 presets
+# {"abi": 1, "core": "0.1.9", "utls": "refraction-networking/utls v1.8.2; bogdanfinn/utls v1.7.8-barnius; ..."} / 394 presets
 ```
 
 > `version()["utls"]` 是**指纹栈溯源**：报告动态库里实际链接的 uTLS / fhttp / quic-go-utls
@@ -154,6 +154,29 @@ build/geektls request http://127.0.0.1:8000/ --ja4 t13d1516h2_8daaf6152771_02713
 - `--selfcheck` 把"本次握手实际发出的 JA3/JA4"打到 **stderr** ⇒ stdout 只放正文，可直接管道或重定向；
 - 退出码：`0` = 传输成功（含 4xx/5xx，curl 口径；加 `--fail` 让 4xx/5xx 返回 1）、
   `1` = 配置或传输错误（原因在 stderr）、`2` = 用法错误。
+
+### 从抓包复刻指纹（`import-pcap`）
+
+Wireshark/tcpdump 存下的抓包可以直接变成可复用的指纹——**不需要 tshark、不需要解密**：
+
+```bash
+# 1) 提取：pcap/pcapng → E1p 记录（clienthello_hex + TCP 形态 + 自算 JA3/JA4）
+build/geektls import-pcap --pcap chrome.pcapng --ua "$UA" -o fp.json
+#    --ua 从浏览器/别处抄来（HTTP 头在 TLS 隧道里，明文抓包看不到）；
+#    给了它，记录可直接进预设生成链：gen-profiles -record fp.json -out ./presets
+
+# 2) 装载重放：用抓包里的 ClientHello 原样发请求（指纹逐字节复现）
+HEX=$(python -c 'import json;print(json.load(open("fp.json"))["clienthello_hex"])')
+build/geektls request https://tls.peet.ws/api/all --clienthello-hex "$HEX" --selfcheck
+
+# 3) 离线自检（不联网）
+build/geektls check-profile "$HEX"
+```
+
+要点：只采**首访 fresh 连接**——resumption（带 PSK binder）会被明确拒绝；
+TCP 节（TTL/MSS/窗口/选项序）一并导出，可手填进发布预设的 `tcp` 节；
+支持 pcapng（Wireshark 默认）与 pcap classic，`tcpdump -i any` 的 cooked 头也认。
+设计与边界见 [docs/12-pcap-import.md](docs/12-pcap-import.md)。
 
 ## 协议选择 / 请求头顺序 / 身份自洽（默认值都是"最保守的那个"）
 
@@ -284,7 +307,7 @@ CLI：`--identity-sync auto|off`。
 
 | 入参 | 语义 | 保真度 | 备注 |
 |---|---|---|---|
-| `impersonate="chrome_150_windows"` | 用内置预设（368 条） | 高（多数有 E1/E2 证据） | 名字是**全名**：`chrome_154_macos`、`chrome_154_windows`、`okhttp_3_12_12`…（没有裸 `chrome_154`） |
+| `impersonate="chrome_150_windows"` | 用内置预设（394 条） | 高（多数有 E1/E2 证据） | 名字是**全名**：`chrome_154_macos`、`chrome_154_windows`、`okhttp_3_12_12`…（没有裸 `chrome_154`） |
 | `profile={...}` | 自带**完整**指纹（profile JSON schema） | 完全按你给的来 | 也接受 **JSON 文本**（`profile='{"name":...}'`），免去 `json.loads` |
 | `ja3="771,4865-...-23,4588-29-23-24,0"` | 只给 JA3 | 有损：扩展只有 type，负载全缺 | 缺失部分按引擎默认补齐，`check_profile` 会逐条列出 `warnings` |
 | `ja4r="t13d1516h2_002f,..._..._..."` | 只给 JA4R（含 cipher/扩展/sig_algs 列表） | 中：列表有序化丢失（`extensions_sorted` 告警） | 想"逐字节复刻"用这个或完整 profile；带 ECH(65037) 时按 GREASE 近似并告警（`ech_assumed_grease`），因为 raw 串不含负载 |
@@ -316,10 +339,10 @@ print(geektls.check_profile("t13d1516h2_8daaf6152771_d8a2da3f94cd"))
 
 | 函数 | 签名 | 说明 |
 |---|---|---|
-| `version()` | `-> dict` | `{"abi":1,"core":"0.1.8","utls":"<指纹栈版本串>"}`；启动时可用它断言 ABI 匹配，`utls` 用于溯源（见上文） |
+| `version()` | `-> dict` | `{"abi":1,"core":"0.1.9","utls":"<指纹栈版本串>"}`；启动时可用它断言 ABI 匹配，`utls` 用于溯源（见上文） |
 | `init(options=None)` | `-> None` | 幂等初始化钩子（当前无全局状态，留作后续） |
 | `last_error()` | `-> dict` | 最近一次失败的结构化错误（`code`/`message`/`op`） |
-| `list_presets()` | `-> list[str]` | 全部内置预设名（排序，368 条；返回**规范名**，旧名是别名） |
+| `list_presets()` | `-> list[str]` | 全部内置预设名（排序，394 条；返回**规范名**，旧名是别名） |
 | `describe_preset(name)` | `-> dict` | 预设**展开后的规范 JSON**（ciphers/扩展/H2/H3/身份头全展开） |
 | `check_profile(spec)` | `-> dict` | 离线自检：profile JSON / JA3 / JA4 / JA4R / hex → `{ja3,ja3_hash,ja4,wire_len,warnings}` |
 | `GeekTLSError` | 异常类 | 所有失败都是它；`.code` 结构化错误码（`invalid_config`/`request_failed`/…） |
@@ -693,7 +716,7 @@ with Session(impersonate="chrome_154_windows") as s:
 
 | 项目 | 栈 / 语言 | TLS 指纹 | H2 帧 + 头序 | H2 HPACK 策略 | H3 / QUIC | 四层 TCP | WebSocket | 预设与证据 | 响应内自校验 |
 |---|---|---|---|---|---|---|---|---|---|
-| **geektls** | Go（c-shared）+ Python / Node / Go 绑定 | ✅ uTLS fork + E1 真机采集链路 | ✅ | ✅ **四档**（generic/chrome/firefox/safari），253/368 预设带值 | ✅ 内层 ClientHello 同 profile + transport params blob 直通；Initial 布局不可控（SC-3 解锁） | ✅ TTL/MSS/DF/window/wscale：setsockopt 三平台 + **netstack 档**（Linux root，gVisor 栈） | ✅ RFC 6455 + permessage-deflate（握手走指纹链路） | ✅ 368 条 `grade`/`source` 分级：29 自测 / 6 E2i / 8 E2i-u / 325 E3 | ✅ selfcheck + `check_profile` 五入参 |
+| **geektls** | Go（c-shared）+ Python / Node / Go 绑定 | ✅ uTLS fork + E1 真机采集链路 | ✅ | ✅ **四档**（generic/chrome/firefox/safari），255/394 预设带值 | ✅ 内层 ClientHello 同 profile + transport params blob 直通；Initial 布局不可控（SC-3 解锁） | ✅ TTL/MSS/DF/window/wscale：setsockopt 三平台 + **netstack 档**（Linux root，gVisor 栈） | ✅ RFC 6455 + permessage-deflate（握手走指纹链路） | ✅ 394 条 `grade`/`source` 分级：29 自测 / 6 E2i / 8 E2i-u / 351 E3 | ✅ selfcheck + `check_profile` 五入参 |
 | `bogdanfinn/tls-client`（`hrequests`、`noble-tls`、`tls-client-sharp` 等绑定） | Go `fhttp` + `utls` | ✅ | ✅ | — | ✅ | — | — | 自带 profile 集；**与本项目 E3 覆盖（320 条）无直接来源关系**——E3 的 `source` 逐条指向第三方快照 `profiles/evidence/thirdparty/tls_config-0.0.2`（`TestE3SourceTraceable` 守门），profile 组织形态是同类参照 | — |
 | `lexiforest/curl_cffi`（活跃）/ `lwthiker/curl-impersonate`（原始） | libcurl 补丁 + BoringSSL / NSS | ✅ | ✅ | — | ✅（curl_cffi 新版起） | ❌（libcurl 无 TCP 指纹面） | ✅ | 内置画像 + 自定义指纹；社区节奏最快 | — |
 | `Danny-Dasilva/CycleTLS`、`cycletls_python` | Go `utls` + `fhttp` + `quic-go` | ✅（JA3 可配置） | ✅（fhttp 头序） | — | ✅ | — | ✅ | profile 清单；socks4/5/5h | — |
@@ -722,7 +745,7 @@ with Session(impersonate="chrome_154_windows") as s:
 2. **证据分级**：`grade`（30 自测 / 6 E2i / 8 E2i-u / 320 E3）+ `source` 守门 + E1 真机采集链路 + 语料回归 + 外部 oracle 周检；同类普遍只给一份清单，不区分实测与转写。
 3. **响应内自校验**：本次握手实际发出的 JA3 / JA4 / 扩展序 / GREASE 值直接从响应取，可当回归断言；`check_profile` 支持五种入参离线自检。
 4. **三语言同引擎**：Python / Node / Go 共用同一 C ABI，跨语言 JA4 三方全等，不需要为每种语言重写指纹栈。
-5. **预设结构**：368 条按 `grade` 分层（29 自测可参与严格断言 + 6 E2i / 8 E2i-u 谱系内插 + 325 E3 导入），覆盖浏览器 / App / 工具 / 代理等 29 族，含跨平台同版本一致性断言（`chrome_152` / `chrome_154` 在 macOS / Android / Windows 上 JA4 逐字符相同）。
+5. **预设结构**：394 条按 `grade` 分层（29 自测可参与严格断言 + 6 E2i / 8 E2i-u 谱系内插 + 351 E3 导入），覆盖浏览器 / App / 工具 / 代理等 29 族，含跨平台同版本一致性断言（`chrome_152` / `chrome_154` 在 macOS / Android / Windows 上 JA4 逐字符相同）。
 6. **部署形态**：Go 实现、CGO 只用于构建动态库，产物是单文件动态库 + 平台 wheel，无需 libcurl 补丁链。
 7. **自主化路线**：指纹相关代码路径正向 100% 自有推进（uTLS / fhttp / quic-go-utls 内化裁枝四阶段，见 [docs/plans/2026-09-29-self-contained-roadmap.md](docs/plans/2026-09-29-self-contained-roadmap.md)）；密码学原语（circl / brotli / zstd）按行业共识保留成熟实现，不自写。
 8. **能力面补齐**：WebSocket（wss / ws，握手走指纹链路）+ **明文 `http://`** + Python asyncio + 四编码自动解压 + **命令行入口** + requests 语义面（cookie jar / timeout 元组 / auth / 重定向开关 / 表单编码），与 CycleTLS / curl_cffi / noble-tls 的能力清单逐项对齐（逐库对照见 [docs/10-ecosystem-comparison.md](docs/10-ecosystem-comparison.md)）。
@@ -748,7 +771,7 @@ firefox 档对齐 Firefox 59 抓包（字节级），safari 档为保守近似�
 **自主化进度**（[docs/plans/2026-09-29-self-contained-roadmap.md](docs/plans/2026-09-29-self-contained-roadmap.md)）：
 边界声明与依赖清单已完成；`gvisor.dev/gvisor`（netstack 档）已引入；`core/internal/` 目前只有
 `registry` ⇒ **SC-1（uTLS 内化改写）/ SC-2（fhttp 裁枝内化）/ SC-3（quic-go-utls 内化）均未开始**，
-"指纹路径 100% 自有"的终态尚未达成。不变量：ABI 签名只增不改、368 预设指纹输出逐比特不变、
+"指纹路径 100% 自有"的终态尚未达成。不变量：ABI 签名只增不改、394 预设指纹输出逐比特不变、
 每阶段全量回归 + L2 nginx 终审。
 
 **能力对齐现状与追赶排期**（差距清单 + 关闭判据 + 明确不做的事）见

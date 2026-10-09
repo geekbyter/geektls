@@ -1,118 +1,42 @@
 package h3
 
-// Q2（2026-09-30）：transport_params_raw 的冲突规则——不许静默忽略。
-// 全部在 QUICConfigFromProfile（配置期）报错或映射回 quic.Config。
+// T2.4：transport params 值可控子集补全——max_udp_payload_size /
+// max_datagram_frame_size 经 quic.Config 映射生效（E1：Chrome 149/Windows 实测
+// 1472 / 65536，profiles/evidence/browsers/chrome_windows_h3.json）。
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/geekbyter/geektls/core/profiles"
+	quic "github.com/geekbyter/geektls/core/third_party/quic-go-utls"
 )
 
-func rawProfile(t *testing.T, raw [][]any) *profiles.Profile {
-	t.Helper()
-	p, err := profiles.Get("chrome_133")
+func TestTransportParamsUDPAndDatagram(t *testing.T) {
+	p, err := profiles.Get("chrome_149_windows")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.HTTP3 = &profiles.HTTP3Profile{Enabled: true, TransportParamsRaw: raw}
-	return p
-}
-
-// TestTransportParamsInitialSourceConnectionID（H3-7 闭环，patch #10）：
-// 0x0f(initial_source_connection_id) 的唯一合法形态是 **connection_id_length=0 时取空值**
-// （Chrome 实测形态——此时真实 SCID 也是空的，声明与行为一致）；SCID 非零时空值必须报错，
-// 因为"声明与真实 SCID 脱节"会被对端当协议错误。
-func TestTransportParamsInitialSourceConnectionID(t *testing.T) {
-	zero := 0
-	mk := func(scid *int) *profiles.Profile {
-		t.Helper()
-		p := rawProfile(t, [][]any{{15.0, "hex:"}}) // 0x0f，空值
-		p.HTTP3.ConnectionIDLength = scid
-		return p
-	}
-
-	qcfg, err := QUICConfigFromProfile(mk(&zero))
+	qcfg, err := QUICConfigFromProfile(p)
 	if err != nil {
-		t.Fatalf("connection_id_length=0 + 0x0f 空值应当合法（Chrome 形态）：%v", err)
+		t.Fatal(err)
 	}
-	if qcfg.TransportParamsOverride == nil {
-		t.Error("0x0f 空值没有进 TransportParamsOverride（等于没上 wire）")
+	if qcfg.MaxUDPPayloadSize != 1472 {
+		t.Errorf("MaxUDPPayloadSize = %d, want 1472（E1 实测）", qcfg.MaxUDPPayloadSize)
 	}
-
-	if _, err := QUICConfigFromProfile(mk(nil)); err == nil {
-		t.Error("SCID 非零（不设 = 上游默认 4）时 0x0f 空值应当报错：声明与真实 SCID 脱节")
-	}
-}
-
-func TestTransportParamsRawConflicts(t *testing.T) {
-	// 合法基线：Chrome 149 形态的已知键 + 私有参数 0x11/0x3128（hex 透传）
-	t.Run("chrome149全量形态可用", func(t *testing.T) {
-		p := rawProfile(t, [][]any{
-			{"grease", 7.0},
-			{8.0, 100.0}, {1.0, 30000.0}, {6.0, 6291456.0},
-			{9.0, 103.0}, {5.0, 6291456.0},
-			{17.0, "hex:000000012a3a9aea00000001"}, // 0x11 私有参数
-			{7.0, 6291456.0},
-			{12584.0, 3922.0}, // 0x3128 私有参数
-			{32.0, 65536.0},   // max_datagram_frame_size
-			{3.0, 1472.0},     // max_udp_payload_size（Chrome 真值）
-			{4.0, 15728640.0},
-		})
-		if _, err := QUICConfigFromProfile(p); err != nil {
-			t.Fatalf("Chrome 149 全量 blob 应当合法: %v", err)
-		}
-	})
-
-	t.Run("行为映射_0x03与0x20", func(t *testing.T) {
-		p := rawProfile(t, [][]any{{3.0, 1472.0}, {32.0, 65536.0}, {1.0, 30000.0}})
-		qcfg, err := QUICConfigFromProfile(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if qcfg.MaxUDPPayloadSize != 1472 {
-			t.Errorf("MaxUDPPayloadSize = %d, want 1472（patch #9 行为一致）", qcfg.MaxUDPPayloadSize)
-		}
-		if qcfg.DatagramFrameSize != 65536 {
-			t.Errorf("DatagramFrameSize = %d, want 65536", qcfg.DatagramFrameSize)
-		}
-	})
-
-	for _, tc := range []struct {
-		name string
-		raw  [][]any
-		want string
-	}{
-		{"服务端专属_0x00", [][]any{{0.0, "hex:0102"}}, "仅服务端"},
-		{"服务端专属_0x02", [][]any{{2.0, "hex:0102"}}, "仅服务端"},
-		{"服务端专属_0x0d", [][]any{{13.0, "hex:0102"}}, "仅服务端"},
-		{"服务端专属_0x10", [][]any{{16.0, "hex:0102"}}, "仅服务端"},
-		{"iscid_0x0f", [][]any{{15.0, "hex:"}}, "initial_source_connection_id"},
-		{"重复id", [][]any{{1.0, 100.0}, {1.0, 200.0}}, "重复"},
-		{"udp_payload_太小", [][]any{{3.0, 1199.0}}, "越界"},
-		{"udp_payload_超出接收缓冲", [][]any{{3.0, 1501.0}}, "越界"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := QUICConfigFromProfile(rawProfile(t, tc.raw))
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want 含 %q", err, tc.want)
-			}
-		})
+	if qcfg.DatagramFrameSize != 65536 {
+		t.Errorf("DatagramFrameSize = %d, want 65536（E1 实测）", qcfg.DatagramFrameSize)
 	}
 
-	t.Run("map与raw同设报错", func(t *testing.T) {
-		p, err := profiles.Get("chrome_133")
-		if err != nil {
-			t.Fatal(err)
-		}
-		p.HTTP3 = &profiles.HTTP3Profile{
-			Enabled:            true,
-			TransportParams:    map[string]uint64{"max_idle_timeout": 30000},
-			TransportParamsRaw: [][]any{{1.0, 30000.0}},
-		}
-		if _, err := QUICConfigFromProfile(p); err == nil || !strings.Contains(err.Error(), "互斥") {
-			t.Fatalf("err = %v, want 互斥报错", err)
-		}
-	})
+	// 越界 max_udp_payload_size（RFC 9000 §18.2 合法域 1200..65527）不静默写坏值：
+	// 走 unsupported 清单由调用方记录。
+	unsup := transportParamsToQUICConfig(
+		map[string]uint64{"max_udp_payload_size": 100}, &quic.Config{})
+	if len(unsup) != 1 || unsup[0] != "max_udp_payload_size" {
+		t.Errorf("越界应进 unsupported，got %v", unsup)
+	}
+	empty := &quic.Config{}
+	transportParamsToQUICConfig(map[string]uint64{}, empty)
+	if empty.MaxUDPPayloadSize != 0 {
+		t.Errorf("空 map 不应改配置，got %d", empty.MaxUDPPayloadSize)
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	utls "github.com/refraction-networking/utls"
+	utlsdicttls "github.com/refraction-networking/utls/dicttls"
 
 	"github.com/geekbyter/geektls/core/profiles"
 )
@@ -316,7 +317,27 @@ func compileExtension(e *profiles.Extension, rng *mrand.Rand) (utls.TLSExtension
 		}
 		switch e.ECH.Mode {
 		case "grease":
-			return utls.BoringGREASEECH(), nil
+			// T5.1：GREASE ECH 形状分族（2026-10-08 Firefox 157 四样本裁定）：
+			//   Chrome  = 单候选 {kdf=1, aead=AES_128_GCM(1)} + 线长 {144,176,208,240}；
+			//   Firefox = 候选 {kdf=1, aead∈{1,3}} 每连接随机挑（样本 2:2）+ 线长
+			//             {240,400} 随机（2:2，与 aead 独立，4 组合各出现一次）。
+			// utls 的 GREASE ECH 会把 CandidatePayloadLens 每项 +16 作为线上长度，
+			// 故 Firefox 候选填 {224,384}；候选套件由其 init "每连接随机挑一个"。
+			// 注意旧 G13 结论"固定 aead=3、非随机"由本批样本推翻（两次一致是巧合）。
+			switch e.ECH.GreaseShape {
+			case "", "chrome":
+				return utls.BoringGREASEECH(), nil
+			case "firefox":
+				return &utls.GREASEEncryptedClientHelloExtension{
+					CandidateCipherSuites: []utls.HPKESymmetricCipherSuite{
+						{KdfId: utlsdicttls.HKDF_SHA256, AeadId: utlsdicttls.AEAD_AES_128_GCM},
+						{KdfId: utlsdicttls.HKDF_SHA256, AeadId: utlsdicttls.AEAD_CHACHA20_POLY1305},
+					},
+					CandidatePayloadLens: []uint16{224, 384}, // +16 → 线上 {240,400}
+				}, nil
+			default:
+				return nil, fmt.Errorf("ech.grease_shape %q unsupported (want \"chrome\" or \"firefox\")", e.ECH.GreaseShape)
+			}
 		case "real":
 			// 真 ECH：扩展槽仍是 BoringGREASEECH 形态——config 里注入
 			// EncryptedClientHelloConfigList 后 uTLS 会在 marshal 时把它

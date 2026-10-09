@@ -29,3 +29,14 @@ node_modules/
 # 工作区杂项
 .work/
 *.tgz
+
+# tests/smoke 的构建产物（go build ./tests/smoke 输出，曾误入未跟踪列表）
+/tests/smoke/smoke
+/tests/smoke/smoke.exe
+
+# Go 构建产物（core/ffi.exe 曾出现在未跟踪列表）
+*.exe
+
+# Go build 输出（无扩展名二进制）
+/core/geektls
+/tests/e2e/e1-browser

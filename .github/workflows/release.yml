@@ -1,0 +1,194 @@
+# 一键发布总控（2026-10-08）。
+#
+# 用法：Actions → release → Run workflow → 填版本号（如 0.1.9，不带 v）。
+# 它做完全部动作，之后无需任何手工步骤：
+#   1) 四处版本源同步（core/version.go、pyproject.toml、package.json、__init__.py）
+#   2) CHANGELOG 的 `## Unreleased` 归并成 `## <版本>（日期）`
+#   3) 提交 + 推送；打并推送四个 tag：
+#      vX       → 语义标记（PyPI 流水线的历史触发口，保留兼容）
+#      core/vX  → Go module github.com/geekbyter/geektls/core 发布（tag 即发布）
+#      bindings/golang/vX → Go 绑定模块发布
+#      npm/vX   → 语义标记（npm 流水线的历史触发口，保留兼容）
+#   4) PyPI（5 平台 wheel）/ npm（3 平台动态库）—— 直接复用各自 workflow
+#      （workflow_call），不依赖 tag 连锁触发：
+#      ⚠️ 用 GITHUB_TOKEN 推的 tag **不会**触发其它 workflow（GitHub 防递归），
+#      所以这里用 reusable call 显式调用，而不是推 tag 等它自己跑。
+#   5) 发布前 smoke：三平台 c-shared + 三语言冒烟（原 ci.yml 的 smoke 迁到这里——
+#      它是"发布验证"，不适合每次 push 都跑）。
+#   6) 建 GitHub Release 页面。
+#
+# 需要 secrets：PYPI_API_TOKEN（release-pypi.yml 用）、NPM_TOKEN（release-npm.yml 用），
+# 经 `secrets: inherit` 透传。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 0.1.9，不带 v）'
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # 推 commit / tag / 建 Release
+  id-token: write   # npm provenance（透传给 release-npm.yml）
+
+jobs:
+  prepare:
+    name: bump & tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验版本号与 tag 可用性
+        shell: bash
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::版本号格式应为 x.y.z（收到 $V）"; exit 1
+          fi
+          git fetch --tags --quiet
+          for t in "v$V" "core/v$V" "bindings/golang/v$V" "npm/v$V"; do
+            if git ls-remote --tags origin "refs/tags/$t" | grep -q .; then
+              echo "::error::远端已存在 tag $t——先确认版本号（已发布过的版本不能重发）"; exit 1
+            fi
+          done
+          echo "版本 $V 可用 ✅"
+
+      - name: 同步四处版本源 + CHANGELOG 归并
+        shell: bash
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          grep -q '^## Unreleased' CHANGELOG.md || {
+            echo "::error::CHANGELOG.md 没有 '## Unreleased' 段——先把本次内容写进去再发版"; exit 1; }
+
+          sed -i "s/\(Core = \)\"[^\"]*\"/\1\"$V\"/" core/version/version.go
+          sed -i "s/^version = \"[^\"]*\"/version = \"$V\"/" bindings/python/pyproject.toml
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$V\"/" bindings/nodejs/package.json
+          sed -i "s/^__version__ = \"[^\"]*\"/__version__ = \"$V\"/" bindings/python/geektls/__init__.py
+          sed -i "0,/^## Unreleased$/s//## $V（$(date -u +%F)）/" CHANGELOG.md
+
+          echo "== 四处版本现状 =="
+          grep -h 'Core = ' core/version/version.go
+          grep -h '^version = ' bindings/python/pyproject.toml
+          grep -h '"version":' bindings/nodejs/package.json | head -1
+          grep -h '^__version__' bindings/python/geektls/__init__.py
+          echo "== CHANGELOG 顶部 =="
+          head -8 CHANGELOG.md
+
+      - name: 提交 + 推送 + 打 tag
+        shell: bash
+        env:
+          V: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          # 防御：若四处版本源已提前同步且 CHANGELOG 归并无差异，工作区可能无变化
+          #（此时 `git commit` 会以"nothing to commit"失败并中断发布）——跳过提交、
+          # 直接进入打 tag 环节；有变化则照常提交推送。
+          if git diff --cached --quiet; then
+            echo "工作区无变化（版本源已提前同步）——跳过提交，直接打 tag"
+          else
+            git commit -m "release: v$V（四处版本源 + CHANGELOG 归并）"
+            git push origin HEAD:main
+          fi
+
+          git tag "v$V" "core/v$V" "bindings/golang/v$V" "npm/v$V"
+          git push origin "v$V" "core/v$V" "bindings/golang/v$V" "npm/v$V"
+          echo "tag 已推送：v$V / core/v$V / bindings/golang/v$V / npm/v$V"
+
+      - name: 建 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ inputs.version }}
+        run: |
+          gh release create "v$V" \
+            --title "v$V" \
+            --notes "版本 $V。发布物：PyPI \`pip install geektls==$V\`；npm \`npm install geektls@$V\`；Go module \`go get github.com/geekbyter/geektls/core@v$V\`。详见 CHANGELOG.md。"
+
+  # 发布前验证（原 ci.yml 的 smoke 迁到这里）：三平台 c-shared 构建 + 三语言冒烟。
+  # 它是"发布门槛"，不是每次 push 的日常测试——日常测试在 ci.yml。
+  smoke:
+    name: smoke (${{ matrix.os }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main   # 拿 prepare 推送后的最新（bump 过的）代码
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27' # 需满足 tests/e2e/go.mod 的 1.27.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y --no-progress make mingw
+          Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
+          Update-SessionEnvironment
+          Add-Content $env:GITHUB_PATH (Split-Path (Get-Command gcc).Source)
+
+      - name: Install Node binding deps
+        working-directory: bindings/nodejs
+        run: npm install --no-audit --no-fund
+
+      - name: Build core (c-shared)
+        shell: bash
+        run: make build
+
+      - name: Smoke (Python / Node / Go)
+        shell: bash
+        run: |
+          set -e
+          case "$RUNNER_OS" in
+            Windows) GEEDTLS_LIB="$(cygpath -w "$PWD/build/geektls.dll")" ;;
+            macOS)   GEEDTLS_LIB="$PWD/build/libgeektls.dylib" ;;
+            *)       GEEDTLS_LIB="$PWD/build/libgeektls.so" ;;
+          esac
+          export GEEDTLS_LIB
+          python tests/smoke/smoke.py
+          node tests/smoke/smoke.js
+          (cd tests/smoke && go run .)
+
+  # PyPI：5 平台 wheel 构建 + 发布（复用原 release-pypi.yml）
+  pypi:
+    name: publish PyPI
+    needs: [prepare, smoke]
+    uses: ./.github/workflows/release-pypi.yml
+    with:
+      ref: main
+    secrets: inherit
+
+  # npm：3 平台动态库 + 发布（复用原 release-npm.yml）
+  npm:
+    name: publish npm
+    needs: [prepare, smoke]
+    uses: ./.github/workflows/release-npm.yml
+    with:
+      ref: main
+      version: ${{ inputs.version }}
+    secrets: inherit

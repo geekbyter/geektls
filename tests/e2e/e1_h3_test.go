@@ -144,12 +144,18 @@ func TestE1RealBrowserH3(t *testing.T) {
 	defer sniffer.Close()
 
 	// 3) 启动真实浏览器，强制该源走 QUIC。
+	url := "https://localhost:" + strconv.Itoa(port) + "/"
 	args := []string{
 		"--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
 		"--ignore-certificate-errors", "--enable-quic",
 		"--origin-to-force-quic-on=localhost:" + strconv.Itoa(port),
 		"--user-data-dir=" + t.TempDir(),
-		"https://localhost:" + strconv.Itoa(port) + "/",
+		url,
+	}
+	if isFirefoxBrowser(browser) {
+		// Firefox 适配（T5.3）：无 --origin-to-force-quic-on，改用隔离 profile +
+		// user.js 注入官方测试 pref（见 firefoxH3Args）。
+		args = firefoxH3Args(t, browser, port, url)
 	}
 	cmd := exec.Command(browser, args...)
 	if err := cmd.Start(); err != nil {
@@ -390,4 +396,80 @@ func browserVersionOf(path string) string {
 	}
 	sort.Strings(versions)
 	return versions[len(versions)-1]
+}
+
+// isFirefoxBrowser 按可执行名判断是否 Firefox（T5.3 的 Firefox 适配分支用）。
+func isFirefoxBrowser(path string) bool {
+	return strings.Contains(strings.ToLower(filepath.Base(path)), "firefox")
+}
+
+// firefoxH3Args 构造 Firefox 启动参数（T5.3）：隔离 profile + user.js 注入
+// 官方测试 pref `network.http.http3.alt-svc-mapping-for-testing`
+// （Firefox 专用：把 host:port 直接映射到 h3，替代 Chromium 的
+// --origin-to-force-quic-on；该 pref 由 Firefox 自身测试代码使用）。
+//
+// 从 WSL 启动 Windows 版 Firefox（.exe）时 -profile 必须是 **Windows 路径**：
+// 目录建在 Windows 侧临时目录（默认从 /mnt/c/Users/<user>/AppData/Local/Temp
+// 探测，可用 GEEKTLS_E1_H3_WIN_TMP 覆盖），再用 wslpath -w 转换。
+func firefoxH3Args(t *testing.T, browser string, port int, url string) []string {
+	t.Helper()
+
+	profDir := t.TempDir()
+	profArg := profDir
+	if strings.HasSuffix(strings.ToLower(browser), ".exe") {
+		base := os.Getenv("GEEKTLS_E1_H3_WIN_TMP")
+		if base == "" {
+			root := "/mnt/c/Users"
+			if entries, err := os.ReadDir(root); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() || e.Name() == "Public" || e.Name() == "Default" {
+						continue
+					}
+					p := filepath.Join(root, e.Name(), "AppData", "Local", "Temp")
+					if st, err := os.Stat(p); err != nil || !st.IsDir() {
+						continue
+					}
+					// 可写性检验：某些用户目录（沙箱账户等）存在但不可写。
+					if probe, err := os.MkdirTemp(p, ".geektls-probe-"); err == nil {
+						_ = os.Remove(probe)
+						base = p
+						break
+					}
+				}
+			}
+		}
+		if base == "" {
+			t.Fatalf("找不到 Windows 侧可写临时目录（可用 GEEKTLS_E1_H3_WIN_TMP 指定）")
+		}
+		wd, err := os.MkdirTemp(base, "geektls-ff-h3-")
+		if err != nil {
+			t.Fatalf("建 Windows 侧 profile 目录: %v", err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(wd) })
+		profDir, profArg = wd, wd
+		if out, err := exec.Command("wslpath", "-w", wd).Output(); err == nil {
+			profArg = strings.TrimSpace(string(out))
+		}
+	}
+
+	// 值格式（Firefox 源码 nsHttpHandler.cpp）：条目以 "," 分隔、host 与 Alt-Svc
+	// 值以第一个 ";" 分隔——即 "host;h3=:port"（**不是** host:port:alpn；后者是
+	// MOZ_FORCE_QUIC_ON 环境变量的语法）。仅 HTTPS 源生效。
+	userJS := fmt.Sprintf(`user_pref("network.http.http3.enable", true);
+user_pref("network.http.http3.alt-svc-mapping-for-testing", "localhost;h3=:%d");
+user_pref("network.trr.mode", 5);
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("toolkit.telemetry.enabled", false);
+user_pref("security.OCSP.enabled", 0);
+`, port)
+	if err := os.WriteFile(filepath.Join(profDir, "user.js"), []byte(userJS), 0o644); err != nil {
+		t.Fatalf("写 user.js: %v", err)
+	}
+
+	return []string{
+		"-headless", "-no-remote",
+		"-profile", profArg,
+		url,
+	}
 }

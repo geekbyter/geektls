@@ -187,6 +187,7 @@ type Session struct {
 	pool           *connPool
 	h3tr           *http3.Transport // 池开启时的共享 H3 transport（懒建；quic-go 内部按 host 复用 QUIC 连接）
 	h3mu           sync.Mutex
+	h3calc         *utls.ClientHelloSpec // QUIC 内层 spec 的 tlscore 自算镜像（T2.1，懒建；随 h3mu 保护）
 	closed         atomic.Bool
 }
 

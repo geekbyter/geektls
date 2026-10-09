@@ -1,11 +1,15 @@
 package e2e
 
-// T3 / 0-RTT 打通验证（2026-09-30，第三个 vendor fork：utls-bogdanfinn）。
+// T3 / 0-RTT 打通验证（2026-09-30 起，2026-10-08 收尾；第三个 vendor fork：
+// utls-bogdanfinn）。
 // 链路：服务端 Allow0RTT 发带 early-data 标志的票据 → UQUICConn 发
 // QUICStoreSession 事件（utls fork patch）→ crypto_setup 附 QUIC Extra
 // （对端 transport params）→ UQUICConn.StoreSession 入 ClientSessionCache →
 // 次连 uLoadSession → QUICResumeSession 事件恢复参数 + early_data →
-// 0-RTT sealer 安装 → packer 发 0-RTT 长头包。
+// binder 重算后由 PatchBuiltHello 把真 binder 打进已 marshal 的 Raw（收尾补的
+// 第四条 fork 修复：漏它则线上 binder 是占位值，服务端校验失败，
+// "开 early_data + 装 0-RTT 读密钥"的分支永不执行）→ 0-RTT sealer 安装 →
+// packer 发 0-RTT 长头包。
 //
 // 断言三层：
 //  1. 线上证据：次连 datagram 里出现 0-RTT 长头包（中继实抓）；
@@ -145,12 +149,11 @@ func dialEcho(t *testing.T, qcfg *quic.Config, cache utlsb.ClientSessionCache, a
 }
 
 func TestQUICZeroRTT(t *testing.T) {
-	// [0-RTT 收尾中 2026-09-30] 三条 utls fork 修复已落地（keyShareKeys 误杀检查 /
-	// ApplyPreset spec 污染 / locked 路径 early_data），链路已推进到：票据装载 ✓、
-	// early_data 上 wire ✓、服务端接受 0-RTT ✓、服务端收到流 ✓；剩 quic-go 服务端
-	// QUIC 层 Used0RTT 记账（接受后服务端不再发飞行包）。调试现场与下一步见
-	// 记忆 project_geektls_zerortt_debug；树中 GEEKTLS-DEBUG 打印为现场标记。
-	t.Skip("0-RTT 收尾中：握手/服务端接受已通，剩服务端 QUIC 层 Used0RTT 记账（不影响其余功能）")
+	// 2026-10-08 收尾：此前"剩服务端 QUIC 层 Used0RTT 记账"的判断是现象而非根因——
+	// 真根因在客户端 locked 分支：三条 fork 修复之外漏了 uTLS 的 PatchBuiltHello
+	// 收尾（线上 PSK binder 是占位值 ⇒ 服务端 hmac.Equal 失败 ⇒ 服务端"开
+	// early_data + 装 0-RTT 读密钥"的分支永不执行 ⇒ Used0RTT 恒假、0-RTT 数据只能
+	// 经 1-RTT 重传到达）。补上后本测试三层断言全绿，保活为 0-RTT 回归。
 	addr, serverUsed := zeroRTTServer(t)
 	relay := newRelaySniff(t, addr)
 

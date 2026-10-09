@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/andybalholm/brotli v1.2.0
-	github.com/cloudflare/circl v1.6.2
+	github.com/cloudflare/circl v1.6.3
 	github.com/klauspost/compress v1.18.2
 	github.com/quic-go/qpack v0.6.0
 	github.com/refraction-networking/utls v1.8.2

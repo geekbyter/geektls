@@ -11,10 +11,10 @@
 >
 > | 未勾项 | 当前状态 | 阻塞原因 |
 > |---|---|---|
-> | P0 验收（CI） | CI 骨架已写；发布流水线 release-pypi.yml 已实跑（0.1.4 五平台 wheel 已上 PyPI） | "3 OS × 3 语言冒烟矩阵全绿 + ABI 冻结评审"未正式关闭 |
+> | P0 验收（CI） | ✅ 已完成（2026-10-08 复盘）：CI 自 2026-09-30 起全绿（版本四处守门 / 跨平台编译 gate / 生成器一致性守门）；3 OS × 3 语言冒烟迁至 release.yml 发布链（2026-10-08） | — |
 > | P1-T8（nginx 采集端 L2 终审） | ✅ 已通过：7 预设 × nginx 采集端 diff 全绿（tests/e2e/nginx-l2/verify_l2.py，35 项断言） | — |
 > | P1 验收 | ✅ tls.peet.ws diff 全绿 + nginx 采集端 diff 全绿（P1-T8） | — |
-> | P3 验收 | 0.1.4 已发布 PyPI 五平台 | `pip install geektls` 后 e2e 矩阵回归未正式记录 |
+> | P3 验收 | ✅ 已完成（2026-10-08 复盘）：PyPI 五平台在发；release-pypi 的"干净 venv 安装 + version/预设枚举"为常规门禁，0.1.7/0.1.8 实测通过 | — |
 > | P6-T3（JA4TCP 验收） | ✅ 已通过（2026-09-29，netstack 档五分量 MATCH，verify_p6t3.py） | — |
 >
 > **二期阶段 5 登记（2026-09-28 第十轮）**：① per-origin 连接池落地并默认开启
@@ -40,7 +40,7 @@
 - [x] **P0-T5 c-shared 构建脚本**：Makefile，三平台（linux/macOS/Windows）产出 .so/.dylib/.dll — 0.5d，依赖 T4
 - [x] **P0-T6 三语言冒烟**：py(ctypes)/js(koffi)/go(native) 各调 `gtls_version` 拿同一 JSON — 1d，依赖 T5
 - [x] **P0-T7 CI 骨架**：GitHub Actions，3 OS × 3 语言矩阵跑冒烟（CI 文件已写，待推送 GitHub 后验证） — 0.5d，依赖 T6
-- [ ] **P0 验收**：CI 全绿，ABI 冻结评审通过
+- [x] **P0 验收**：CI 全绿，ABI 冻结评审通过（2026-10-08 复盘：CI 自 2026-09-30 起全绿；冒烟迁 release.yml 发布链）
 
 ## P1 — TLS 核心（3 周）★关键路径
 
@@ -71,7 +71,7 @@
 - [x] **P3-T3 handle 泄漏压测**：1 万请求回环实测 RSS 33.4→34.6MB（+1.1MB，≈0.12KB/req，GC 噪声级） — 1d，依赖 T2
 - [x] **P3-T4 e2e harness 产品化**：`tests/e2e/python/test_engine.py`（fixture 起 Go echo server 子进程；预设矩阵 × selfcheck + 重定向/cookie/流式/POST/错误路径，6 项全绿） — 2d，依赖 P1-T8（以本地回环替代 nginx）
 - [x] **P3-T5 PyPI 打包**：wheel 含 geektls.dll（package-data），干净 venv 安装后 import/version/list_presets 实测通过 — 1d，依赖 T2
-- [ ] **P3 验收**：`pip install geektls` 后跑通 e2e 矩阵
+- [x] **P3 验收**：`pip install geektls` 后跑通 e2e 矩阵（2026-10-08 复盘：release-pypi 干净 venv 安装门禁 + 0.1.7/0.1.8 实测通过）
 
 ## P4 — HTTP/3 + QUIC（3 周）
 

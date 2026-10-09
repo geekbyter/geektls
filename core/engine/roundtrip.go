@@ -364,13 +364,29 @@ func (r *connClosingReader) abort() error {
 	return nil
 }
 
-// selfCheck 用本次握手实际发出的 spec 自算 JA3/JA4；profile 来自 JA3/JA4R
-// 入口时与期望指纹比对。host 是本次拨号目标：IP 字面量（含 IPv6）时 uTLS
-// 与真 Chrome 一样在线上省略 SNI 扩展，而 spec 里的 SNI 只是 "auto" 占位，
-// 自算前从 spec 副本剔除，让 JA4 的 d/i 标志与扩展计数（及 JA3 扩展段）
-// 反映线上实情。uconn 非 nil 时附协商结果（cipher/版本/ALPN）。
+// selfCheck 是 TCP 面入口：用本次握手实际发出的 spec 自算 JA3/JA4；profile
+// 来自 JA3/JA4R 入口时与期望指纹比对。host 是本次拨号目标：IP 字面量（含
+// IPv6）时 uTLS 与真 Chrome 一样在线上省略 SNI 扩展，而 spec 里的 SNI 只是
+// "auto" 占位，自算前从 spec 副本剔除，让 JA4 的 d/i 标志与扩展计数（及 JA3
+// 扩展段）反映线上实情。uconn 非 nil 时附协商结果（cipher/版本/ALPN）。
 // 本函数在握手完成时调用一次，结果随连接走（连接池复用不重算）。
 func selfCheck(p *profiles.Profile, spec *utls.ClientHelloSpec, host string, uconn *utls.UConn) SelfCheck {
+	return buildSelfCheck(p, spec, host, uconn, false)
+}
+
+// selfCheckQUIC 是 H3/QUIC 面入口（T2.1）：同一套 spec 语义（SNI 归一 /
+// GREASE 标记 / 扩展序两份），JA4 换 QUIC 变体（首字符 q）。两处如实差异：
+//   - Negotiated 不填：QUIC 握手状态在 quic-go-utls 内部，无导出面；
+//   - JA3Match/JA4Match 不算：内层形态经 clampSpecForQUIC 裁剪，与 profile
+//     的 TCP 期望值本就不同，填 false 是误导（缺省即"不适用"）。
+//
+// 调用语义：每次 H3 请求按当次 host 计算（共享 transport 跨请求复用，但 SNI
+// 的 d/i 位与目标相关；纯 spec 计算，微秒级）。
+func selfCheckQUIC(p *profiles.Profile, spec *utls.ClientHelloSpec, host string) SelfCheck {
+	return buildSelfCheck(p, spec, host, nil, true)
+}
+
+func buildSelfCheck(p *profiles.Profile, spec *utls.ClientHelloSpec, host string, uconn *utls.UConn, quic bool) SelfCheck {
 	sniInSpec := false
 	for _, e := range spec.Extensions {
 		if _, ok := e.(*utls.SNIExtension); ok {
@@ -384,13 +400,17 @@ func selfCheck(p *profiles.Profile, spec *utls.ClientHelloSpec, host string, uco
 		calc = tlscore.SpecWithoutSNI(spec)
 	}
 
+	ja4 := tlscore.ComputeJA4(calc)
+	if quic {
+		ja4 = tlscore.ComputeJA4QUIC(calc)
+	}
 	ja3 := tlscore.ComputeJA3(calc)
 	wireExts, plainExts, grease := tlscore.WireView(calc)
 	sc := SelfCheck{
 		JA3:           ja3,
 		JA3Hash:       tlscore.JA3Hash(ja3),
 		JA3FullString: ja3,
-		JA4:           tlscore.ComputeJA4(calc),
+		JA4:           ja4,
 		SNISent:       sniSent,
 		Extensions:    plainExts,
 		WireExts:      wireExts,
@@ -404,14 +424,16 @@ func selfCheck(p *profiles.Profile, spec *utls.ClientHelloSpec, host string, uco
 			ALPN:    st.NegotiatedProtocol,
 		}
 	}
-	if p.TLS.JA3 != "" {
-		match := tlscore.JA3Hash(p.TLS.JA3) == sc.JA3Hash
-		sc.JA3Match = &match
-	}
-	if p.TLS.JA4R != "" {
-		if want, err := tlscore.HashJA4R(p.TLS.JA4R); err == nil {
-			match := want == sc.JA4
-			sc.JA4Match = &match
+	if !quic { // QUIC 面不比对（见 selfCheckQUIC 注释）
+		if p.TLS.JA3 != "" {
+			match := tlscore.JA3Hash(p.TLS.JA3) == sc.JA3Hash
+			sc.JA3Match = &match
+		}
+		if p.TLS.JA4R != "" {
+			if want, err := tlscore.HashJA4R(p.TLS.JA4R); err == nil {
+				match := want == sc.JA4
+				sc.JA4Match = &match
+			}
 		}
 	}
 	return sc

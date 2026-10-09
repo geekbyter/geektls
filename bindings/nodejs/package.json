@@ -1,6 +1,6 @@
 {
   "name": "geektls",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Multi-language TLS/HTTP fingerprint impersonation library (Node.js binding)",
   "license": "MIT",
   "repository": {
@@ -32,5 +32,5 @@
   "dependencies": {
     "koffi": "^2.5.0"
   },
-  "comment": "动态库随包分发：发布流水线把 geektls.dll/libgeektls.so/libgeektls.dylib 放入包根（index.js 的包内查找已支持）；index.d.ts 类型定义随 P7 发布打磨补齐。另：打包前要把仓库根的 LICENSE 与 LICENSES.md 拷进本目录——npm 只会自动带上包根 LICENSE，LICENSES.md 必须落在 files 列表里（与 Python 侧 make wheel 的拷贝一致）。test 脚本显式列出测试文件而不是传目录：node --test 传目录参数在 Windows + Node 22 下会被当成模块路径解析（Cannot find module …\\tests\\e2e\\node）而整轮判失败；新增测试文件时在这里补一条路径"
+  "comment": "动态库随包分发：发布流水线把 geektls.dll/libgeektls.so/libgeektls.dylib 放入包根（index.js 的包内查找已支持）；另：打包前要把仓库根的 LICENSE 与 LICENSES.md 拷进本目录——npm 只会自动带上包根 LICENSE，LICENSES.md 必须落在 files 列表里（与 Python 侧 make wheel 的拷贝一致）。test 脚本显式列出测试文件而不是传目录：node --test 传目录参数在 Windows + Node 22 下会被当成模块路径解析（Cannot find module …\\tests\\e2e\\node）而整轮判失败；新增测试文件时在这里补一条路径"
 }

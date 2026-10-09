@@ -39,12 +39,12 @@
 |---|---|---|---|---|---|
 | G1 | **TLS 1.2 回退指纹** | ✅ **实测无缺口（2026-09-24 结案）**：服务端强制降级时 CH 逐字段不变；仅"客户端自身上限=1.2"的被裁剪形态未覆盖 | 原「高」**已证伪**：ClientHello 在得知服务端版本偏好之前就已发出，服务端降级不改变 CH → 我们与真 Chrome 的 JA3/JA4 同步不变（`tests/e2e/tls12_fallback_test.go` 17 预设实测证实） | 低（若确需伪装 1.2-only 老客户端，需要的是"一整套 era 预设"，属版本覆盖而非回退问题） | **结案**；"1.2-era 老浏览器预设"另列为按需项 |
 | G2a | **会话复用（TLS1.3 PSK）** | ✅ **已实现并实测（2026-09-24 结案）**：引擎默认开启（`engine.go`）、每次拨号重新编译 spec、复用失败**丢票回退**全新握手 | 原「与 Chrome 在复用场景下分叉」**已消除**：真机实测 `resumed=true`（tls.peet.ws）与本地 std 服务端 `resumed=true`；`resumed` 由 `DidResume` 硬断言 | — | **结案**：`core/tls/resumption_test.go`（DidResume）+ `core/engine/resumption_test.go`（回退） |
-| G2b | **0-RTT / early data** | ⚠️ **TCP 侧不可做（依赖栈硬限制，已取证）**：uTLS/Go 客户端不支持 early_data——上游注释写明 "0-RTT is not supported"（`handshake_server_tls13.go:1015`），且客户端早数据代码只出现在 `c.quic != nil` 分支；**H3/QUIC 侧原判"可做"现改判"不做"**：前提是 QUIC 会话缓存，而 spec 模式下 `StoreSession` 是 no-op 且无可补导出面（docs/06 P7-T2 取证），且 0-RTT 首飞的 Initial datagram 布局本身已结案为不可控（G6） | 中：真 Chrome 的 0-RTT 主要发生在 QUIC；TCP 侧无法对齐属依赖栈限制，**不是我们漏做** | — | **A10 结案（2026-09-30）**：协议侧不做；**指纹侧已可控**——预设 `{"type": 42}` 经透传上线，JA3 扩展段多一枚 42、JA4 扩展计数 +1（`core/tls/early_data_test.go` 实测，含"只带 42 不带 PSK 必被标准服务端拒"的边界证明） |
+| G2b | **0-RTT / early data** | ⚠️ **TCP 侧不可做（依赖栈硬限制，已取证）**：uTLS/Go 客户端不支持 early_data——上游注释写明 "0-RTT is not supported"（`handshake_server_tls13.go:1015`），且客户端早数据代码只出现在 `c.quic != nil` 分支；**H3/QUIC 侧已实现并收尾（2026-10-08，见 matrix `h3.zero_rtt`）**：四条 utls fork 修复补齐（keyShareKeys 误杀 / ApplyPreset spec 污染 / locked 路径 early_data / binder 收尾 PatchBuiltHello），`tests/e2e` 的 `TestQUICZeroRTT` 三层断言全绿（patch 清单见 `core/third_party/utls-bogdanfinn/GEEKTLS_PATCHES.md`） | 中：真 Chrome 的 0-RTT 主要发生在 QUIC；TCP 侧无法对齐属依赖栈限制，**不是我们漏做** | — | **A10 结案（2026-09-30）**：协议侧不做；**指纹侧已可控**——预设 `{"type": 42}` 经透传上线，JA3 扩展段多一枚 42、JA4 扩展计数 +1（`core/tls/early_data_test.go` 实测，含"只带 42 不带 PSK 必被标准服务端拒"的边界证明） |
 | G3 | **TLS record 层行为** | ⚠️ 部分：CH 长度由 padding 扩展控制（已有，可做）；**record 分片/大小序列在 crypto/tls 内部，无钩子** | 低-中：少数检测看 record 分片与首飞 record 数 | 高（需 fork crypto/tls，与 G2b/TCP 同一障碍） | 维持现状；不为它 fork |
 | G4 | **session ticket 生命周期行为** | ⚠️ 复用链路已实测可用（G2a）；票据年龄字段由依赖栈按 RFC 8446 处理（**其取值我们未单独验证**）；"复用次数/换票节奏"**无实测依据，故不建模** | 低：需要长时观察才成特征；无依据地编一个"换票节奏"反而更假 | — | 维持现状：有实测证据再建模 |
 | G5 | HPACK 索引细节 | ✅ **已落地（T-HPACK，2026-09-28）**：原评估"无钩子"是当时的实态——现由 vendor fork `core/third_party/fhttp` 提供钩子（`SetIndexPolicy`/`SetHuffmanMode`），`profile.http2.hpack_strategy` 四档 | 低（首连接无动态表历史这条仍成立，所以 safari 档只能是保守近似） | 已付（fork fhttp 的维护成本，见 LICENSES.md 风险项） | **结案**：`tests/e2e/h2_hpack_strategy_test.go` 逐字节断言；`docs/p2-h2-capability.md` 记证据与四档语义 |
-| G6 | QUIC Initial datagram 布局 | ✅ **已关闭（2026-09-30 第二轮，vendor patch #8）**：首 datagram 尺寸（`initial_packet_size`）之外，PADDING 包内位置（`padding:"end"` = Chrome 形态）、CRYPTO 分片表（`crypto_fragments`）、scrambling 开关（`disable_scramble`）、coalesce 阈值（`coalesce_min_size`，空 datagram 永远可装不会死锁）全部落地；默认路径逐字节不变。嗅探器断言 `tests/e2e/quic_layout_test.go` | — | 已付（fork packer 层维护成本） | **结案**；残余差异仅 SCID 长度（Chrome 0 字节 vs fork 默认 4，未接线，登记在 p4 文档） |
-| G7 | TCP 完整档（window/WS/options 真实生效） | ⚠️ 仅 Linux 探测模式 | 中（JA4TCP 场景） | 高（gVisor 级） | 维持降级承诺（T5-1） |
+| G6 | QUIC Initial datagram 布局 | ✅ **已关闭（2026-09-30 第二轮，vendor patch #8）**：首 datagram 尺寸（`initial_packet_size`）之外，PADDING 包内位置（`padding:"end"` = Chrome 形态）、CRYPTO 分片表（`crypto_fragments`）、scrambling 开关（`disable_scramble`）、coalesce 阈值（`coalesce_min_size`，空 datagram 永远可装不会死锁）全部落地；默认路径逐字节不变。嗅探器断言 `tests/e2e/quic_layout_test.go` | — | 已付（fork packer 层维护成本） | **结案**；残余差异已闭合：SCID 长度经 `h3.scid_length` 接线（vendor patch #10，2026-09-30 第二轮；预设侧落库见 T2.4） |
+| G7 | TCP 完整档（window/WS/options 真实生效） | ✅ **netstack 档全可控**（P6-T3，2026-09-29 五分量 MATCH）；setsockopt 档尽力（Windows 无 MSS，如实告警） | — | 已付（gVisor 档） | **结案**：`docs/tcp-platform-matrix.md` + `tests/e2e/nginx-l2/verify_p6t3.py` |
 | G8 | 证书压缩 / ALPS / ECH / 后量子 key_share | ✅ 已有 | — | — | 保持 |
 | G9 | H3/H2 racing + Alt-Svc | ✅ 已有 | — | — | 保持 |
 | G10 | JARM | — 不适用 | 服务端**主动**扫描技术，客户端侧无对应面 | — | 记录说明即可 |
@@ -557,13 +557,27 @@ UA-CH 版本自洽"。这也反证：**identity 用 E1 真实抓包头**（`gen-
 
 **本轮新登记的缺口**：
 
-- **G13｜ECH GREASE 载荷形状分族**：Chrome 的 GREASE ECH 为
-  `outer=0,kdf=1,aead=1,config_id,enc(32),payload`（总长 42+N，N∈{144,176,208,240}）；
-  Firefox 实测 `aead=3`（**两次独立抓包一致 ⇒ 非随机，是该实现的选择**），且总长更长
-  （长度分布需更多样本才能定，暂不建模）。TCP 路径现用 `utls.BoringGREASEECH()`
-  （Chrome 形状）⇒ Firefox 预设的 65037 形状不符。另注：生成预设里 65037 若为**字面 payload**
-  （如 `firefox_144_macos` / `chrome_152_macos`）则跨连接恒定，与 G12 同族；**2026-09-28 已由生成器
-  `normalizeECHGrease` 全部归一为 `ech.mode=grease`（10 个生成预设 + 守门 `TestPresetECHIsNotFrozenLiteral`）**。
+- **G13｜ECH GREASE 载荷形状分族（2026-10-08 裁定收口）**：形状 =
+  `outer(0x00) | kdf | aead | config_id(1B 随机) | enc_len(0x0020) | enc(32B 随机) |
+  payload_len | payload(随机)`，总长 = 42 + payload_len。两族实测形状（Firefox 157
+  四样本，2026-10-08；**aead 与长度两维独立随机，四组合各出现一次**）：
+
+  | 族 | kdf | aead | payload_len |
+  |---|---|---|---|
+  | Chrome（149 实测 + BoringSSL 口径） | HKDF-SHA256(1) | **固定 AES-128-GCM(1)** | {144,176,208,240} |
+  | Firefox（157 四样本 2:2） | HKDF-SHA256(1) | **{AES-128-GCM(1), CHACHA20(3)} 每连接随机** | **{240,400} 每连接随机** |
+
+  旧结论"Firefox 固定 aead=3、非随机"由本批样本推翻（当时两次一致是巧合）。
+  **实现**：`tls.detail` 的 65037 支持 `ech.grease_shape`（缺省/`chrome` /
+  `firefox`）——TCP 编译构造候选集（utls 每连接随机挑候选、线长候选 +16 惯例）、
+  QUIC 内层合成 `pickEchGreaseShape` + `echGreasePayload`（按线长集随机）、
+  `SpecToBogdan` 保形状三处同步；未知形状编译期报错。**预设**：
+  `firefox_157_windows` 已填 `grease_shape: firefox`（实测级）；其余 firefox 预设
+  （119+ 多带 65037）暂留 Chrome 形状——待逐版本采样，或按 157 同实现外推（需证据）。
+  另注：生成预设里 65037 若为**字面 payload**（如 `firefox_144_macos` /
+  `chrome_152_macos`）则跨连接恒定，与 G12 同族；**2026-09-28 已由生成器
+  `normalizeECHGrease` 全部归一为 `ech.mode=grease`（10 个生成预设 + 守门
+  `TestPresetECHIsNotFrozenLiteral`）**。
 - **G11 已收口**：HEADERS 帧内嵌 priority 分族取值——Chrome/Edge `excl=1/dep=0/w=256`、
   Firefox `excl=0/dep=0/w=42`。实现：schema 增 `http2.headers_priority`，`core/h2` 接到 fhttp 的
   `Transport.HeaderPriority`；Chromium 用 fork 默认值（恰为实测形状）+ oracle 断言钉住，

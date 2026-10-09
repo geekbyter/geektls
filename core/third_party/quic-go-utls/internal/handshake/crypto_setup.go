@@ -237,7 +237,6 @@ func (h *cryptoSetup) StartHandshake(ctx context.Context) error {
 	}
 	for {
 		ev := h.conn.NextEvent()
-		println("GEEKTLS-DEBUG ev:", int(ev.Kind), "persp=", int(h.perspective))
 		if err := h.handleEvent(ev); err != nil {
 			return wrapError(err)
 		}
@@ -464,26 +463,21 @@ func (h *cryptoSetup) GetSessionTicket() ([]byte, error) {
 func (h *cryptoSetup) handleSessionTicket(data []byte, using0RTT bool) (allowEarlyData bool) {
 	var t sessionTicket
 	if err := t.Unmarshal(data); err != nil {
-		println("GEEKTLS-DEBUG 服务端拒 0-RTT：票据 unmarshal 失败:", err.Error())
 		h.logger.Debugf("Unmarshalling session ticket failed: %s", err.Error())
 		return false
 	}
 	if !using0RTT {
-		println("GEEKTLS-DEBUG 服务端拒 0-RTT：客户端 hello 没有 early_data（using0RTT=false）")
 		return false
 	}
 	valid := h.ourParams.ValidFor0RTT(t.Parameters)
 	if !valid {
-		println("GEEKTLS-DEBUG 服务端拒 0-RTT：transport params 与票据不一致")
 		h.logger.Debugf("Transport parameters changed. Rejecting 0-RTT.")
 		return false
 	}
 	if !h.allow0RTT {
-		println("GEEKTLS-DEBUG 服务端拒 0-RTT：allow0RTT=false")
 		h.logger.Debugf("0-RTT not allowed. Rejecting 0-RTT.")
 		return false
 	}
-	println("GEEKTLS-DEBUG 服务端接受 0-RTT")
 	return true
 }
 

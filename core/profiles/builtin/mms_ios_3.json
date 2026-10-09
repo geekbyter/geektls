@@ -1,0 +1,157 @@
+{
+  "name": "mms_ios_3",
+  "tls": {
+    "detail": {
+      "legacy_version": "0x0303",
+      "ciphers": [
+        "0x0a0a",
+        "0x1301",
+        "0x1302",
+        "0x1303",
+        "0xc02c",
+        "0xc02b",
+        "0xcca9",
+        "0xc030",
+        "0xc02f",
+        "0xcca8",
+        "0xc00a",
+        "0xc009",
+        "0xc014",
+        "0xc013"
+      ],
+      "extensions": [
+        {
+          "type": 2570,
+          "grease_random": true
+        },
+        {
+          "type": 0,
+          "sni": "auto"
+        },
+        {
+          "type": 23
+        },
+        {
+          "type": 65281,
+          "data": "00"
+        },
+        {
+          "type": 10,
+          "groups": [
+            "0x0a0a",
+            "0x001d",
+            "0x0017",
+            "0x0018",
+            "0x0019"
+          ]
+        },
+        {
+          "type": 11,
+          "point_formats": "AA=="
+        },
+        {
+          "type": 16,
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ]
+        },
+        {
+          "type": 5,
+          "data": "0100000000"
+        },
+        {
+          "type": 13,
+          "sig_algs": [
+            "0x0403",
+            "0x0804",
+            "0x0401",
+            "0x0503",
+            "0x0203",
+            "0x0805",
+            "0x0501",
+            "0x0806",
+            "0x0601",
+            "0x0201"
+          ]
+        },
+        {
+          "type": 18
+        },
+        {
+          "type": 51,
+          "key_shares": [
+            "0x0a0a",
+            "0x001d"
+          ]
+        },
+        {
+          "type": 45,
+          "psk_modes": "AQ=="
+        },
+        {
+          "type": 43,
+          "versions": [
+            "0x0a0a",
+            "0x0304",
+            "0x0303"
+          ]
+        },
+        {
+          "type": 27,
+          "cert_compression": [
+            "zlib"
+          ]
+        },
+        {
+          "type": 2570,
+          "grease_random": true
+        },
+        {
+          "type": 21,
+          "padding_to": 512
+        },
+        {
+          "type": 41
+        }
+      ]
+    }
+  },
+  "http2": {
+    "settings": [
+      [
+        1,
+        4096
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        100
+      ],
+      [
+        4,
+        2097152
+      ],
+      [
+        5,
+        16384
+      ],
+      [
+        6,
+        4294967295
+      ]
+    ],
+    "window_update": 15663105,
+    "pseudo_header_order": [
+      "m",
+      "s",
+      "p",
+      "a"
+    ]
+  },
+  "grade": "E3",
+  "source": "tls-client-master/MMSIos3"
+}

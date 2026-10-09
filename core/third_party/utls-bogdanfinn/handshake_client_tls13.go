@@ -622,10 +622,6 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 		clientKey = hs.keyShareKeys.mlkemEcdhe
 	}
 
-	println("GEEKTLS-DEBUG key schedule: group=", int(selectedGroup), "fromMap=", hs.keyShareKeys.keys[selectedGroup] != nil,
-		"legacyEcdhe=", hs.keyShareKeys.ecdhe != nil, "mlkem=", hs.keyShareKeys.mlkem != nil,
-		"mlkemEcdhe=", hs.keyShareKeys.mlkemEcdhe != nil, "clientKeyNil=", clientKey == nil,
-		"nKeys=", len(hs.keyShareKeys.keys), "buildByUtls=", hs.uconn != nil && hs.uconn.clientHelloBuildStatus == BuildByUtls)
 	sharedKey, err := getSharedKey(ecdhePeerData, clientKey)
 	// [FIX END]
 

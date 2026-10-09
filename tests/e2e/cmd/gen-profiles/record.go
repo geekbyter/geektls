@@ -42,8 +42,10 @@ func loadRecord(path string) (specimens.Item, error) {
 	if err := json.Unmarshal(b, &rec); err != nil {
 		return specimens.Item{}, fmt.Errorf("%s: %w", path, err)
 	}
-	if rec.Kind != "e1_real_browser" {
-		return specimens.Item{}, fmt.Errorf("%s: kind=%q 不是 E1 真浏览器记录", path, rec.Kind)
+	// 两种记录都可喂：e1-browser 采集（e1_real_browser）与 import-pcap 提取
+	// （e1p_pcap，2026-10-08 起；pcap 里看不到 HTTP 头，UA 由 --ua 补）。
+	if rec.Kind != "e1_real_browser" && rec.Kind != "e1p_pcap" {
+		return specimens.Item{}, fmt.Errorf("%s: kind=%q 不是 E1/E1p 记录（用 cmd/e1-browser 采集或 geektls import-pcap 提取）", path, rec.Kind)
 	}
 	if rec.ClientHelloHex == "" {
 		return specimens.Item{}, fmt.Errorf("%s: 缺 clienthello_hex", path)

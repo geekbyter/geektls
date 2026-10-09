@@ -1,11 +1,36 @@
 name: ci
 
+# 日常 CI（push / PR）：离线测试 + 守门。
+# ⚠️ 2026-10-08 起 smoke（c-shared 构建 + 三语言冒烟）**已迁至 release.yml**——
+#   它是"发布前验证"，不适合每次 push 都跑；发布链见 release.yml（总控）并复用它
+#   调用 release-pypi.yml / release-npm.yml。本文件只留不需要工具链产物的快速门禁。
 on:
   push:
     branches: [main]
   pull_request:
 
 jobs:
+  # 依赖漏洞扫描（T4.2）：govulncheck 只报**被调用**的漏洞路径。首次扫描即命中
+  # GO-2026-4550（circl 的 secp384r1 CombinedMult，经 utls fork 的 ML-DSA 验证），
+  # 已升级 circl v1.6.3 归零；当前噪音低（0 affected + 2 个"模块含但代码未调用"）
+  # ⇒ 以阻塞门禁运行。与平台无关，只在 Linux 跑一次。
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: core/go.sum
+      - name: govulncheck (core)
+        working-directory: core
+        run: |
+          set -eu
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
   # 测试套件（Linux runner = V-4 要求的那条链路：core 与 e2e 都必须在 Linux 上真实跑过）。
   # 此前 CI 只有 smoke（c-shared + 三语言），**一个测试都没跑**；且 setup-go 用 1.24，
   # 而 tests/e2e/go.mod 要求 go 1.27.0 ⇒ Go 步骤会直接失败。
@@ -31,7 +56,8 @@ jobs:
       # 版本守门：**四处**字面量必须一致（core/version、pyproject.toml、
       # package.json、绑定 __version__）。0.1.4 及之前的发布清单只写了三处、
       # 漏掉绑定里的 __version__，靠人手同步 ⇒ 这里显式钉住（docs/versioning.md）。
-      # 注：pytest 与 node:test 不在 CI 里（只有 tests/smoke 的轻量冒烟），
+      # 注：pytest 与 node:test 不在本文件（跨语言套件在 oracle-nightly 的 crosslang
+      # job；曾经的 tests/smoke 三语言冒烟已迁至 release.yml），
       # 所以这条检查不能只放在 pytest 里，必须在这里跑。
       - name: version literals must agree (四处)
         shell: bash
@@ -126,58 +152,5 @@ jobs:
           done
           exit $rc
 
-  # c-shared 构建 + 三语言 smoke（原有链路，保留）。
-  smoke:
-    name: ${{ matrix.os }} smoke
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.27' # 同上：需满足 tests/e2e/go.mod 的 1.27.0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      # c-shared 在 Windows 上需要 gcc；choco 装的 mingw 只改注册表 PATH，
-      # 需要 Update-SessionEnvironment 后把 gcc 所在目录显式写进 GITHUB_PATH。
-      - name: Install toolchain (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install -y --no-progress make mingw
-          Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
-          Update-SessionEnvironment
-          Add-Content $env:GITHUB_PATH (Split-Path (Get-Command gcc).Source)
-
-      - name: Install Node binding deps
-        working-directory: bindings/nodejs
-        run: npm install --no-audit --no-fund
-
-      - name: Build core (c-shared)
-        shell: bash
-        run: make build
-
-      - name: Smoke (Python / Node / Go)
-        shell: bash
-        run: |
-          set -e
-          case "$RUNNER_OS" in
-            Windows) GEEDTLS_LIB="$(cygpath -w "$PWD/build/geektls.dll")" ;;
-            macOS)   GEEDTLS_LIB="$PWD/build/libgeektls.dylib" ;;
-            *)       GEEDTLS_LIB="$PWD/build/libgeektls.so" ;;
-          esac
-          export GEEDTLS_LIB
-          python tests/smoke/smoke.py
-          node tests/smoke/smoke.js
-          (cd tests/smoke && go run .)
+  # smoke（c-shared 构建 + 三语言冒烟）已迁至 release.yml 的 smoke job——
+  # 那才是它的语义位置（发布前验证）；push 触发的日常 CI 不再构建动态库。

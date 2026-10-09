@@ -8,7 +8,7 @@ geektls 的 Node.js 绑定：TLS/HTTP 指纹伪装（Session/Response，requests
 
     npm install geektls
 
-## 平台支持（0.1.8）
+## 平台支持（0.1.9）
 
 | 平台 | 支持 |
 |---|---|

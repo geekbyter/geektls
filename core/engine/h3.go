@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	utls "github.com/refraction-networking/utls"
+
 	fhttp "github.com/geekbyter/geektls/core/third_party/fhttp"
 	"github.com/geekbyter/geektls/core/third_party/quic-go-utls/http3"
 
@@ -91,9 +93,18 @@ func (s *Session) doH3(req *Request, headers [][2]string) (*Response, error) {
 		}
 		return nil, fmt.Errorf("engine: h3 request: %w", err)
 	}
+	host := ""
+	if u, uerr := url.Parse(req.URL); uerr == nil {
+		host = u.Hostname()
+	}
 	out := &Response{
 		Status:       resp.StatusCode,
 		UsedProtocol: "h3",
+	}
+	// T2.1：H3 面 selfcheck——报告 QUIC 内层 ClientHello 的实际形态（JA4 为
+	// QUIC 变体，首字符 q；Negotiated/Match 的缺省理由见 selfCheckQUIC）。
+	if calc := s.h3InnerCalcSpec(); calc != nil {
+		out.SelfCheck = selfCheckQUIC(s.profile, calc, host)
 	}
 	if shared {
 		out.Body = resp.Body // 共享 transport 留在池里，body 关闭只收尾当前流
@@ -124,6 +135,23 @@ func (s *Session) sharedH3Transport() (*http3.Transport, error) {
 	}
 	s.h3tr = tr
 	return tr, nil
+}
+
+// h3InnerCalcSpec 返回 QUIC 内层 spec（clamp 之后）的 tlscore 自算镜像，懒建
+// 缓存。与 NewTransport 内部走同一个 h3core.QUICConfigFromProfile（确定性，
+// 零漂移）；出错返回 nil、不缓存（selfcheck 是附加信息，绝不阻断请求）。
+func (s *Session) h3InnerCalcSpec() *utls.ClientHelloSpec {
+	s.h3mu.Lock()
+	defer s.h3mu.Unlock()
+	if s.h3calc != nil {
+		return s.h3calc
+	}
+	qcfg, err := h3core.QUICConfigFromProfile(s.profile)
+	if err != nil || qcfg == nil || qcfg.ClientHelloSpec == nil {
+		return nil
+	}
+	s.h3calc = h3core.SpecForJA4(qcfg.ClientHelloSpec)
+	return s.h3calc
 }
 
 // h3TLSSettings 把会话的证书材料映射到 H3 侧参数（QUIC 内层 TLS 用的是

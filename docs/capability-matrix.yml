@@ -4,7 +4,7 @@
 # status: implemented | partial | missing | not_controlled
 # evidence: E1 | E2 | E3 | E4 | local | unverified
 version: 1
-as_of: "2026-09-30"
+as_of: "2026-10-08"
 generated_from: docs/01-fingerprint-dimensions.md
 plan: docs/plans/2026-09-24-geektls-hardening-and-h3-plan.md
 
@@ -210,12 +210,13 @@ layers:
       status: implemented
       evidence: local
       blocking: null
-      note: "2026-09-30 第二轮（vendor patch #8，GEEKTLS_PATCHES.md）：initial_layout 四旋钮全部落地——padding:\"end\"（PADDING 在包尾=Chrome 形态，上游默认在前）、disable_scramble（关 SNI/ECH 中点切割）、crypto_fragments（CRYPTO 分片表，表内保序跳过反固化洗牌）、coalesce_min_size（0=默认 128/-1=禁用合并/>0 自定义；空 datagram 永远可装，禁用不死锁握手——实测踩过并修复）。嗅探器字节级断言 tests/e2e/quic_layout_test.go：默认路径回归守门（PADDING 在前+scramble 空洞）、Chrome 形态 CRYPTO 连续+PADDING 在尾 796B、分片表 [300 250 400] 逐片上线、coalesce 真服务端+UDP 中继实证（默认 [initial handshake 1rtt] 合并 vs -1 拆 [initial]+[handshake]）。残余差异：SCID 长度（Chrome 0 字节 vs fork 默认 4，未接线）"
+      note: "2026-09-30 第二轮（vendor patch #8，GEEKTLS_PATCHES.md）：initial_layout 四旋钮全部落地——padding:\"end\"（PADDING 在包尾=Chrome 形态，上游默认在前）、disable_scramble（关 SNI/ECH 中点切割）、crypto_fragments（CRYPTO 分片表，表内保序跳过反固化洗牌）、coalesce_min_size（0=默认 128/-1=禁用合并/>0 自定义；空 datagram 永远可装，禁用不死锁握手——实测踩过并修复）。嗅探器字节级断言 tests/e2e/quic_layout_test.go：默认路径回归守门（PADDING 在前+scramble 空洞）、Chrome 形态 CRYPTO 连续+PADDING 在尾 796B、分片表 [300 250 400] 逐片上线、coalesce 真服务端+UDP 中继实证（默认 [initial handshake 1rtt] 合并 vs -1 拆 [initial]+[handshake]）。残余差异已闭合：SCID 长度经 `h3.scid_length` 接线（vendor patch #10，2026-09-30 第二轮，见该条）"
     - id: h3.quic_grease_frames
       target: A
       status: implemented
-      evidence: unverified
-      blocking: "H3-3：E2 验证待阶段 4"
+      evidence: local
+      blocking: null
+      note: "2026-10-08：生成侧形态本地钉住（http3 TestGreaseFrameFormat——RFC 9114 §7.2.8 的 0x1f*N+0x21 形态、空载荷、序列化恰好两个 varint；当前实现固定 N=1000000000，'Chrome 是否每连接随机'无实据不臆改）。E2（真机 H3 控制流对拍）待采集链路扩展（现 E1 仅到 QUIC 握手层）"
     - id: h3.settings_order_values
       target: A
       status: implemented
@@ -228,10 +229,10 @@ layers:
       blocking: "H3-3：证据待升 E2"
     - id: h3.zero_rtt
       target: C
-      status: missing
-      evidence: null
-      blocking: "H3-5：缺环在 bogdanfinn/utls 而非 quic-go-utls（2026-09-30 fork 内重新取证，精确到行）"
-      note: "quic-go 的 0-RTT 链路 = DialEarly + 会话票据 Extra 存对端 transport params + QUICResumeSession 事件恢复（crypto_setup.go:248 双条件门）。断点：① utls newUQUICConn（u_quic.go:31）建 quicState 时不复制 QUICConfig.EnableSessionEvents（对照 newQUICConn quic.go:191）⇒ UQUICConn 永不发 QUICStoreSession/QUICResumeSession（存侧退化为自动写 ClientSessionCache 但无 QUIC Extra；取侧 zeroRTTParameters 恒 nil ⇒ 门恒假）；② UQUICConn 无 StoreSession 方法（QUICConn.StoreSession 在 quic.go:322，结构不同）。补齐 = vendor 第三个 fork（utls）+ 验证 ApplyPreset 下 PSK binder 在 QUIC 模式注入——改动面覆盖整个 TCP-TLS 栈，本轮不做。打通后 http3.Transport 本就 DialEarly（http3/transport.go:408），链路自然接上"
+      status: implemented
+      evidence: local
+      blocking: null
+      note: "2026-10-08 收尾转绿（H3-5 结案）。链路 = DialEarly + 会话票据 Extra 存对端 transport params + QUICResumeSession 恢复 + 客户端 binder 收尾。四条 utls fork 修复：keyShareKeys 误杀检查 / ApplyPreset spec 污染 / locked 路径 early_data 注入（前三条 2026-09-30，0.1.8）/ binder 重算后 PatchBuiltHello 把真 binder 打进已 marshal 的 Raw（2026-10-08，0.1.9 收尾——此前 MarshalClientHello 的 PSK 扩展只写占位 binder，服务端 hmac.Equal 失败 ⇒ 442 分支（开 early_data + 装 0-RTT 读密钥）永不执行 ⇒ Used0RTT 恒假）。回归：tests/e2e TestQUICZeroRTT 三层断言（client/server Used0RTT=true + 线上 0-RTT 长头包 + echo 数据面）本地全绿；patch 清单见 core/third_party/utls-bogdanfinn/GEEKTLS_PATCHES.md"
     - id: h3.h2_h3_racing
       target: C
       status: implemented
@@ -389,7 +390,7 @@ evidence_baselines:
   preset_coverage:
     source: "自测（E1/E1r/E2）+ 第三方导入 tls_config-0.0.2（E3）"
     grade_rule: "预设的 grade 留空 = 本项目自测；\"E3\" = 第三方配置集导入，未经我们实测。所有 E1 级断言（fp oracle / GT / TLS1.2 回退）一律跳过 E3"
-    counts: "自测 29 + 谱系内插 14（E2i 6 + E2i-u 8）+ 第三方 E3 325 = 368（2026-09-30：删掉无实测来源的 safari_18 旧形态后为 363；同日再补 5 条 peet.ws 实机记录 ⇒ 368）"
+    counts: "自测 29 + 谱系内插 14（E2i 6 + E2i-u 8）+ 第三方 E3 327 = 370（2026-09-30：删掉无实测来源的 safari_18 旧形态后为 363；同日再补 5 条 peet.ws 实机记录 ⇒ 368；2026-10-08 再补 2 条（chrome_155_windows / firefox_157_windows）⇒ 370）"
     lineage:
       tool: "tests/e2e/cmd/gen-profiles -lineage（代码 lineage.go，测试 lineage_test.go）"
       anchors: "chrome 137,141,142,143,152 / edge 141 / firefox 140,144 / safari 18,26（我们自己的真机抓包）"
@@ -420,7 +421,7 @@ evidence_baselines:
         what: "H3 transport params 值与缺失项与真机不符"
         status: partial
         fixed: "2026-09-24 部分"
-        note: "已修 initial_max_data=15728640 并删除 3 个无效键（ack_delay_exponent/max_ack_delay/active_connection_id_limit）；残余 max_datagram_frame_size(16383 vs 65536)/max_udp_payload_size(1452 vs 1472)/max_ack_delay 多发/私有参数 0x11,0x3128 需 transport_params_raw blob，而 blob 整块替换与连接级参数冲突 ⇒ 待 fork 决策"
+        note: "已修 initial_max_data=15728640 并删除 3 个无效键（ack_delay_exponent/max_ack_delay/active_connection_id_limit）；2026-10-08 再落两项：max_datagram_frame_size=65536 / max_udp_payload_size=1472（E1 实测值经 transportParamsToQUICConfig 映射 + 6 个 Chromium 预设落库，后者依赖 vendor patch #9 的接收缓冲解耦）；残余：max_ack_delay 多发/私有参数 0x11,0x3128 需 transport_params_raw blob，而 blob 整块替换与连接级参数冲突 ⇒ 待 fork 决策"
 
 verification:
   baseline_ok: true

@@ -1,0 +1,74 @@
+{
+  "cloudscraper": {
+    "_const": "CloudflareCustom"
+  },
+  "confirmed_android": {
+    "_const": "ConfirmedAndroid"
+  },
+  "confirmed_ios": {
+    "_const": "ConfirmedIos"
+  },
+  "mesh_android": {
+    "_const": "MeshAndroid"
+  },
+  "mesh_android_1": {
+    "_const": "MeshAndroid"
+  },
+  "mesh_android_2": {
+    "_const": "MeshAndroid2"
+  },
+  "mesh_ios": {
+    "_const": "MeshIos"
+  },
+  "mesh_ios_1": {
+    "_const": "MeshIos"
+  },
+  "mesh_ios_2": {
+    "_const": "MeshIos2"
+  },
+  "mms_ios": {
+    "_const": "MMSIos"
+  },
+  "mms_ios_1": {
+    "_const": "MMSIos"
+  },
+  "mms_ios_2": {
+    "_const": "MMSIos2"
+  },
+  "mms_ios_3": {
+    "_const": "MMSIos3"
+  },
+  "nike_android_mobile": {
+    "_const": "NikeAndroidMobile"
+  },
+  "nike_ios_mobile": {
+    "_const": "NikeIosMobile"
+  },
+  "okhttp4_android_10": {
+    "_const": "Okhttp4Android10"
+  },
+  "okhttp4_android_11": {
+    "_const": "Okhttp4Android11"
+  },
+  "okhttp4_android_12": {
+    "_const": "Okhttp4Android12"
+  },
+  "okhttp4_android_13": {
+    "_const": "Okhttp4Android13"
+  },
+  "okhttp4_android_7": {
+    "_const": "Okhttp4Android7"
+  },
+  "okhttp4_android_8": {
+    "_const": "Okhttp4Android8"
+  },
+  "okhttp4_android_9": {
+    "_const": "Okhttp4Android9"
+  },
+  "zalando_android_mobile": {
+    "_const": "ZalandoAndroidMobile"
+  },
+  "zalando_ios_mobile": {
+    "_const": "ZalandoIosMobile"
+  }
+}

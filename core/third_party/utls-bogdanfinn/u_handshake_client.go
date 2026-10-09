@@ -480,11 +480,40 @@ func (c *UConn) clientHandshake(ctx context.Context) (err error) {
 						return err
 					}
 					hello.original = c.HandshakeState.Hello.Raw
+					// [geektls patch] 把 spec 里 quic_transport_parameters(57) 的裸字节
+					// 写回 msg 字段：uTLS 把 makeClientHello 的 TP 注入注释掉了
+					//（"[UTLS] We don't need this"——TP 只走 spec 扩展），而 msg 层字节
+					// 有两处一致性要求：① computeAndUpdatePSK 的 binder 输入；② 发送后
+					// transcriptMsg(hello) 写握手 transcript——两者都要求 msg 与服务端
+					// 从线上解析后重 marshal 的形态等形。取值 = spec 的
+					// QUICTransportParametersExtension.marshalResult（线上 57 的 data
+					// 同一产物，见 quic-go-utls 的 uquic_spec_conn.go 填充逻辑；
+					// transport_params_raw 直通场景也以该对象为最终值）。
+					if c.quic != nil {
+						for _, ext := range c.Extensions {
+							if qtp, ok := ext.(*QUICTransportParametersExtension); ok {
+								_ = qtp.Len() // 确保 marshalResult 已惰性生成
+								hello.quicTransportParameters = qtp.marshalResult
+								break
+							}
+						}
+					}
 					if len(hello.pskIdentities) > 0 {
 						if cs := mutualCipherSuiteTLS13(hello.cipherSuites, session.cipherSuite); cs != nil {
 							transcript := cs.hash.New()
 							if err := computeAndUpdatePSK(hello, binderKey, transcript, cs.finishedHash); err != nil {
 								return err
+							}
+							// [geektls patch] 关键收尾：binder 重算后必须走 uTLS 的
+							// PatchBuiltHello 机制，把真 binder 打进**已 marshal 的
+							// Raw**——MarshalClientHello 时 PSK 扩展只用**占位** binder
+							//（见 u_pre_shared_key.go 头注释）；正常路径由 uApplyPatch
+							// 收尾（u_conn.go），而 locked 分支（本分支）绕过了它 ⇒
+							// 不补这一步，线上 binder 是占位值，服务端 binder 校验必错
+							//（alertDecryptError）⇒ 0-RTT 被拒。
+							if c.utls.sessionController.shouldUpdateBinders() {
+								c.utls.sessionController.updateBinders()
+								c.utls.sessionController.setPskToUConn()
 							}
 						}
 					}
@@ -537,15 +566,6 @@ func (c *UConn) clientHandshake(ctx context.Context) (err error) {
 	}
 
 	c.serverName = hello.serverName
-
-	println("GEEKTLS-DEBUG 发 CH: earlyData=", hello.earlyData, "sessionNil=", session == nil,
-		"sessionIsLocked=", sessionIsLocked, "buildStatus=", int(c.clientHelloBuildStatus),
-		"helloPSK=", len(hello.pskIdentities), "quic=", c.quic != nil)
-	if session != nil {
-		println("GEEKTLS-DEBUG   session.EarlyData=", session.EarlyData,
-			"sessionSuite=", int(session.cipherSuite), "sessionALPN=", session.alpnProtocol,
-			"helloALPN=", len(hello.alpnProtocols))
-	}
 
 	if _, err := c.writeHandshakeRecord(hello, nil); err != nil {
 		return err

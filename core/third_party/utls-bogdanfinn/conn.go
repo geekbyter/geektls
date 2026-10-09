@@ -17,7 +17,6 @@ import (
 	"hash"
 	"io"
 	"net"
-	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -837,10 +836,6 @@ func (c *Conn) readFromUntil(r io.Reader, n int) error {
 // sendAlertLocked sends a TLS alert message.
 func (c *Conn) sendAlertLocked(err alert) error {
 	if c.quic != nil {
-		if err == alertInternalError {
-			println("GEEKTLS-DEBUG alertInternalError @")
-			println(string(debug.Stack()))
-		}
 		return c.out.setErrorLocked(&net.OpError{Op: "local error", Err: err})
 	}
 

@@ -108,8 +108,9 @@ UA-CH 的 GREASE 品牌名称/版本/位置随浏览器版本变化）。H3 记�
 | 文件 | 来源 | 状态 |
 |---|---|---|
 | `tls_config-0.0.2.json` | Python 包 `tls_config` 0.0.2（用户提供，339 条） | **已导入**：320 条 E3 预设（`source: "tls_config-0.0.2/..."`）；见 docs/07 §5.7 |
-| `tls-client-master-profiles-*.go` | `bogdanfinn/tls-client@master` 的 `profiles/`（原始源码，2026-09-28 抓） | **未导入**：差集与所需改动见 docs/08 §E |
+| `tls-client-master-profiles/`（7 文件） | `bogdanfinn/tls-client@master` 的**完整** `profiles/` 目录（原始源码，2026-10-08 重抓；此前的两个单文件快照已被取代） | **已导入（24 条整族缺失）**：编译式提取器 + `-emit` 生成 E3 预设（`source: tls-client-master/<上游变量名>`），配套快照 `tls-client-master.json`（24 条 `_const`，供 provenance 守门追溯）；差集结论与复现命令（`go run ./cmd/import-tlsclient [-emit]`）见 docs/08 §E |
 | `peet.ws-2026-09-30.json` | `tls.peet.ws/api/all` 实机记录（用户提供，6 条：Edge 154 / Chrome 154 / Brave 154 / YaBrowser 26.8 / Opera 136 / QuarkPC 7.3.5.1009，均 Windows） | **已导入 5 条**：`edge_154_windows` / `brave_154_windows` / `yabrowser_26_8_windows` / `opera_136_windows` / `quarkpc_7_3_5_1009_windows`（E3，`source: "peet.ws-2026-09-30/PEET_*"`）。`PEET_CHROME_154_WINDOWS` 与内置自测版 JA4 逐字符相同 ⇒ 只留档不新增。**两处如实登记**见 CHANGELOG 0.1.7：Brave 记录 ja3/ja4 不自洽（以 ja3 为准）；Edge 154 无 QUIC 抓包（`http3` 节按 Chromium 家族继承）。 |
+| `peet.ws-2026-10-08.json` | `tls.peet.ws/api/all` 实机记录（用户提供，2 条：Chrome 155 / Firefox 157，均 Windows） | **已导入 2 条**：`chrome_155_windows` / `firefox_157_windows`（E3，`source: "peet.ws-2026-10-08/PEET_*"`）。如实登记：Firefox 157 记录的 ECH 头为 aead=1（与 docs/07 G13「aead=3」旧结论不符，待 T5.1 复采裁定）；Chrome 155 无 QUIC 抓包（`http3` 节按家族继承 chrome_154_windows）；Chrome 155 的 accept 新增 `image/jxl`（照抄）。 |
 
 ## 待补证据（与 P1-T8/P6-T3 同环境）
 

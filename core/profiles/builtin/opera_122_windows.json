@@ -174,7 +174,9 @@
       "initial_max_stream_data_uni": 6291456,
       "initial_max_streams_bidi": 100,
       "initial_max_streams_uni": 103,
-      "max_idle_timeout": 30000
+      "max_idle_timeout": 30000,
+      "max_udp_payload_size": 1472,
+      "max_datagram_frame_size": 65536
     },
     "inner_hello_drop_extensions": [
       5,
