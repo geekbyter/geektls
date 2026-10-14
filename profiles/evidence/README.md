@@ -24,6 +24,7 @@
 | firefox_156_windows | **E1r**（真 Firefox 156 / Windows 字段级实测：cipher 顺序 / 扩展集合 / groups / sig_algs / DC / RSL / 证书压缩全等，见 docs/07 §6.3） | E1r（同实测 SETTINGS `[1:65536,2:0,4:131072,5:16384]` / WU 12517377 / 伪头 `m,p,a,s`） | —（待真实 Firefox H3 抓包） | 2026-09-24 新增；回归 `firefox_groundtruth_test.go`；**无原始字节**故记 E1r（区别字节级 E1） |
 | safari_16 | E2+E3（HelloSafari_16.0 转写；oracle MATCH，2026-09-21） | E2（MATCH） | —（TODO） | 同上 |
 | safari_18 | E2（oracle MATCH；E4 构造：16 基线 + MLKEM） | E2（MATCH） | —（TODO） | 同上 |
+| chrome_155_windows | E3（peet.ws 2026-10-08 转写）+ **E1p 真机互证**（2026-10-14 pcap：JA3/JA4/扩展序逐字符一致、装载重放线上对拍一致，见 `browsers/chrome_155_windows_pcap.json`；**tcp 节 `{ttl:128,mss:1460}` 由该 pcap 补齐**） | E3（同转写） | —（待真实 155 H3 抓包） | 2026-10-14 |
 
 ## 抓包生成预设（2026-09-24，T2-2）
 

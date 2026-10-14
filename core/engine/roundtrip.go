@@ -104,8 +104,16 @@ func (s *Session) doSingle(req *Request) (*Response, error) {
 	resp.Body = newTimeoutReader(resp.Body, s.readTimeout(req))
 	// 透明解压（T-DECOMP）：按 Content-Encoding 包装 body；headers 不动。
 	s.applyDecompression(req, resp)
-	// G9：身份自洽的告警与解压告警同路（都走 resp.Warnings → 绑定层 r.warnings）
+	// G9：身份自洽的告警与解压告警同路（都走 resp.Warnings → 绑定层 r.warnings）；
+	// L-4：H3 transport_params 的"不可表达键"告警同路；T-I5/T-I9：低层装载兜底
+	//（载荷借用 / identity 自动借用）的告警同路。
 	resp.Warnings = append(resp.Warnings, idWarns...)
+	resp.Warnings = append(resp.Warnings, s.h3Warns...)
+	resp.Warnings = append(resp.Warnings, s.identWarns...)
+	// T-I8：HTTP 层自检（本请求实际发出的头形态；无 UA 时告警——见字段注释）。
+	if w := s.fillHTTPSelfCheck(&resp.SelfCheck, headers, !s.identDisabled); w != "" {
+		resp.Warnings = append(resp.Warnings, w)
+	}
 	s.absorbResponseMeta(u, resp)
 	return resp, nil
 }

@@ -137,6 +137,26 @@ func (s *Session) sharedH3Transport() (*http3.Transport, error) {
 	return tr, nil
 }
 
+// collectH3Warns 在建会话时收集 H3 transport_params 的"不可表达键"清单（L-4）：
+// 这些键会回落上游默认，静默忽略会让指纹悄悄漂移——挂到响应 Warnings 如实告知
+// （与 identity_sync 的告警同路）。出错或无事可报时保持为空。
+func (s *Session) collectH3Warns() {
+	h3p := s.profile.HTTP3
+	if h3p == nil || len(h3p.TransportParams) == 0 {
+		return
+	}
+	_, warns, err := h3core.QUICConfigFromProfileWithWarnings(s.profile)
+	if err != nil || len(warns) == 0 {
+		return
+	}
+	out := make([]string, 0, len(warns))
+	for _, k := range warns {
+		out = append(out, fmt.Sprintf(
+			"h3 transport_params 键 %q 无法表达（已忽略，回落上游默认）——若为拼写错误请修正", k))
+	}
+	s.h3Warns = out
+}
+
 // h3InnerCalcSpec 返回 QUIC 内层 spec（clamp 之后）的 tlscore 自算镜像，懒建
 // 缓存。与 NewTransport 内部走同一个 h3core.QUICConfigFromProfile（确定性，
 // 零漂移）；出错返回 nil、不缓存（selfcheck 是附加信息，绝不阻断请求）。
@@ -165,38 +185,62 @@ func (s *Session) h3TLSSettings() h3core.TLSSettings {
 	}
 }
 
+// raceResult 是竞速单路的结果（raceH3H2 与收编逻辑共用）。
+type raceResult struct {
+	resp *Response
+	err  error
+}
+
+// drainRaceLosers 异步收编竞速中"未中标"的一路：结果已就绪则关闭其响应体
+// （败者的 H2/H3 流不悬空），仍在途则等其到达后关闭。有界等待（超时放弃）——
+// 绝不阻塞调用方返回，也不会永久占住 goroutine。
+func drainRaceLosers(chs ...chan raceResult) {
+	go func() {
+		deadline := time.After(5 * time.Second)
+		for _, ch := range chs {
+			if ch == nil {
+				continue
+			}
+			select {
+			case r := <-ch:
+				if r.err == nil && r.resp != nil && r.resp.Body != nil {
+					r.resp.Body.Close()
+				}
+			case <-deadline:
+				return
+			}
+		}
+	}()
+}
+
 // raceH3H2 实现 Chrome 式 H2/H3 竞速：H3 先跑，h2_race_ms 内没拿到响应头
-// 就并发发 H2（/H1），先到先得；败者连接关闭。
+// 就并发发 H2（/H1），先到先得；败者连接关闭（drainRaceLosers）。
 func (s *Session) raceH3H2(req *Request, u *url.URL, headers [][2]string) (*Response, error) {
 	raceMs := 300
 	if s.profile.HTTP3 != nil && s.profile.HTTP3.H2RaceMs > 0 {
 		raceMs = s.profile.HTTP3.H2RaceMs
 	}
 
-	type result struct {
-		resp *Response
-		err  error
-	}
-	h3ch := make(chan result, 1)
+	h3ch := make(chan raceResult, 1)
 	go func() {
 		r, err := s.doH3(req, headers)
-		h3ch <- result{r, err}
+		h3ch <- raceResult{r, err}
 	}()
 
 	select {
 	case r := <-h3ch:
 		if r.err == nil {
-			return r.resp, nil
+			return r.resp, nil // H2 尚未启动，无败者遗留
 		}
 		// H3 快速失败 → 直接落 H2
 	case <-time.After(time.Duration(raceMs) * time.Millisecond):
 		// 超时未决 → 并发 H2
 	}
 
-	h2ch := make(chan result, 1)
+	h2ch := make(chan raceResult, 1)
 	go func() {
 		r, err := s.doTCPLegacy(req, u, headers)
-		h2ch <- result{r, err}
+		h2ch <- raceResult{r, err}
 	}()
 
 	var firstErr error
@@ -204,11 +248,13 @@ func (s *Session) raceH3H2(req *Request, u *url.URL, headers [][2]string) (*Resp
 		select {
 		case r := <-h3ch:
 			if r.err == nil {
+				drainRaceLosers(h2ch)
 				return r.resp, nil
 			}
 			firstErr = r.err
 		case r := <-h2ch:
 			if r.err == nil {
+				drainRaceLosers(h3ch)
 				return r.resp, nil
 			}
 			firstErr = r.err

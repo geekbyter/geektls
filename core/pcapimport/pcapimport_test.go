@@ -202,6 +202,148 @@ func TestImportPcapngContainer(t *testing.T) {
 	}
 }
 
+// toSLL 把 Ethernet 帧转成 Linux cooked v1（DLT_LINUX_SLL，链路类型 113）：
+// 16 字节 SLL 头（protocol 在 [14:16]，大端）+ 原始 IP 包（去掉 14 字节以太头）。
+func toSLL(eth []byte) []byte {
+	sll := make([]byte, 16)
+	binary.BigEndian.PutUint16(sll[14:], 0x0800) // IPv4
+	return append(sll, eth[14:]...)
+}
+
+// writePcapngMultiIface 构造"双 IDB"pcapng：接口 0 = Ethernet（1），
+// 接口 1 = Linux cooked v1（113）；EPB 按接口号归属。
+func writePcapngMultiIface(ethFrames, sllFrames [][]byte) []byte {
+	var b bytes.Buffer
+	shb := make([]byte, 16)
+	binary.LittleEndian.PutUint32(shb[0:], 0x1a2b3c4d)
+	binary.LittleEndian.PutUint32(shb[4:], 1)
+	binary.LittleEndian.PutUint32(shb[8:], 0xffffffff)
+	binary.LittleEndian.PutUint32(shb[12:], 0xffffffff)
+	writeNgBlock(&b, 0x0a0d0d0a, shb)
+
+	idb0 := make([]byte, 8)
+	binary.LittleEndian.PutUint16(idb0[0:], 1) // Ethernet
+	binary.LittleEndian.PutUint32(idb0[4:], 65535)
+	writeNgBlock(&b, 0x00000001, idb0)
+
+	idb1 := make([]byte, 8)
+	binary.LittleEndian.PutUint16(idb1[0:], 113) // Linux cooked v1
+	binary.LittleEndian.PutUint32(idb1[4:], 65535)
+	writeNgBlock(&b, 0x00000001, idb1)
+
+	ts := uint32(1700000000)
+	writeEPB := func(iface uint32, frame []byte) {
+		pad := (4 - len(frame)%4) % 4
+		body := make([]byte, 20+len(frame)+pad)
+		binary.LittleEndian.PutUint32(body[0:], iface) // EPB：iface 4 字节
+		binary.LittleEndian.PutUint32(body[8:], ts)
+		binary.LittleEndian.PutUint32(body[12:], uint32(len(frame)))
+		binary.LittleEndian.PutUint32(body[16:], uint32(len(frame)))
+		copy(body[20:], frame)
+		writeNgBlock(&b, 0x00000006, body)
+		ts++
+	}
+	for _, f := range ethFrames {
+		writeEPB(0, f)
+	}
+	for _, f := range sllFrames {
+		writeEPB(1, f)
+	}
+	return b.Bytes()
+}
+
+// writePcapngNanoTS 构造"纳秒分辨率 IDB（if_tsresol=9）"的 pcapng：时间戳字段
+// 是真纳秒值（tsHigh/tsLow 都要填）。
+func writePcapngNanoTS(frames [][]byte, unixSec int64) []byte {
+	var b bytes.Buffer
+	shb := make([]byte, 16)
+	binary.LittleEndian.PutUint32(shb[0:], 0x1a2b3c4d)
+	binary.LittleEndian.PutUint32(shb[4:], 1)
+	binary.LittleEndian.PutUint32(shb[8:], 0xffffffff)
+	binary.LittleEndian.PutUint32(shb[12:], 0xffffffff)
+	writeNgBlock(&b, 0x0a0d0d0a, shb)
+
+	// IDB（16 字节）：linkType/reserved/snaplen + if_tsresol 选项（code 9，值 9 = 10^-9 秒）
+	idb := make([]byte, 16)
+	binary.LittleEndian.PutUint16(idb[0:], 1)     // Ethernet
+	binary.LittleEndian.PutUint32(idb[4:], 65535) // snaplen
+	binary.LittleEndian.PutUint16(idb[8:], 9)     // option code: if_tsresol
+	binary.LittleEndian.PutUint16(idb[10:], 1)    // option len: 1
+	idb[12] = 9                                   // 10^-9 秒
+	writeNgBlock(&b, 0x00000001, idb)
+
+	ts := uint64(unixSec) * 1_000_000_000
+	for _, f := range frames {
+		pad := (4 - len(f)%4) % 4
+		body := make([]byte, 20+len(f)+pad)
+		binary.LittleEndian.PutUint32(body[0:], 0)              // iface
+		binary.LittleEndian.PutUint32(body[4:], uint32(ts>>32)) // tsHigh
+		binary.LittleEndian.PutUint32(body[8:], uint32(ts))     // tsLow
+		binary.LittleEndian.PutUint32(body[12:], uint32(len(f)))
+		binary.LittleEndian.PutUint32(body[16:], uint32(len(f)))
+		copy(body[20:], f)
+		writeNgBlock(&b, 0x00000006, body)
+		ts += 1_000_000 // +1ms
+	}
+	return b.Bytes()
+}
+
+// 2026-10-14 修复：tshark 4.6 起 IDB 常写 if_tsresol=9（纳秒）。此前按固定微秒
+// 换算，captured_at 会被推到 58754 年（真实抓包实测）。
+func TestImportPcapngTsResol(t *testing.T) {
+	ch := buildCH(false)
+	res, err := Import(writePcapngNanoTS(sessionFrames(ch, 52110), 1700000000), Options{})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if len(res.Records) == 0 {
+		t.Fatalf("records=0 skipped=%v", res.Skipped)
+	}
+	got := res.Records[0].CapturedAt
+	if len(got) < 10 || got[:10] != "2023-11-14" {
+		t.Errorf("captured_at = %q，纳秒分辨率未按 if_tsresol 换算（期望 2023-11-14T…Z）", got)
+	}
+}
+
+// 诊断：逐帧验证 SLL 包装后的帧能被 parseFrame 识别（113）。
+func TestSLLFrameParse(t *testing.T) {
+	ch := buildCH(false)
+	for i, f := range sessionFrames(ch, 52101) {
+		if _, ok := parseFrame(113, toSLL(f)); !ok {
+			t.Errorf("frame %d: SLL（113）解析失败（len=%d）", i, len(f))
+		}
+	}
+}
+
+// L-5（2026-10-14）：多 IDB（多接口）pcapng——每个包按自己的 interface id 取
+// 链路类型。此前只认首个 IDB：接口 ≥1 的包会按接口 0 的类型解析而误解析/静默丢弃。
+func TestImportPcapngMultiIface(t *testing.T) {
+	ch1 := buildCH(false)
+	ch2 := buildCHWithSNI("second.example.com")
+	ethFrames := sessionFrames(ch1, 52100)
+	sllFrames := make([][]byte, 0, len(ethFrames))
+	for _, f := range sessionFrames(ch2, 52101) {
+		sllFrames = append(sllFrames, toSLL(f))
+	}
+
+	res, err := Import(writePcapngMultiIface(ethFrames, sllFrames), Options{All: true})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if len(res.Records) != 2 {
+		t.Fatalf("records=%d, want 2（两接口各一条流）; skipped=%v", len(res.Records), res.Skipped)
+	}
+	found := false
+	for _, r := range res.Records {
+		if r.ClientHelloHex == hex.EncodeToString(ch2) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("SLL 接口（iface=1）的流未被解析（多 IDB 支持失效）; skipped=%v", res.Skipped)
+	}
+}
+
 func TestImportRejects(t *testing.T) {
 	t.Run("resumption", func(t *testing.T) {
 		res, err := Import(writePcapClassic(sessionFrames(buildCH(true), 51423)...), Options{})

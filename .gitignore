@@ -5,9 +5,15 @@
 *.so
 *.dylib
 
+# docs相关
+/docks/
+/CHANGELOG.md
+
 # Python
 __pycache__/
 *.py[cod]
+# pytest（本地跑 e2e 会生成；此前未忽略，会进未跟踪列表）
+.pytest_cache/
 
 # Python 打包产物（wheel/sdist 不入库；README 是构建期从仓库根拷进来的副本）
 bindings/python/dist/

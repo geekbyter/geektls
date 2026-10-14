@@ -212,9 +212,19 @@ func FromJA4R(ja4r string) (*Profile, []Warning, error) {
 		warnings = append(warnings, warnf("count_mismatch",
 			"a-section cipher count %d != actual %d", cipherCount, len(ciphers)))
 	}
-	if extCount != len(exts) {
+	// a 段计数是"含 SNI/ALPN"的总扩展数，而 JA4R 的 exts 段按规范不含 SNI/ALPN
+	// （它们由 d/i 标志与 ALPN 码承载）⇒ 期望数要按标志补回，否则真实 ja4r 会一律
+	// 误报 count_mismatch。
+	wantExtCount := len(exts)
+	if sniFlag == 'd' {
+		wantExtCount++
+	}
+	if a[8:10] != "00" {
+		wantExtCount++
+	}
+	if extCount != wantExtCount {
 		warnings = append(warnings, warnf("count_mismatch",
-			"a-section extension count %d != actual %d", extCount, len(exts)))
+			"a-section extension count %d != actual %d（含 SNI/ALPN）", extCount, wantExtCount))
 	}
 
 	d := &Detail{

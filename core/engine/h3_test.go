@@ -208,3 +208,35 @@ func TestReadTimeoutH3(t *testing.T) {
 		t.Error("服务端 handler 未被放掉：H3 超时没有把取消传到线上")
 	}
 }
+
+// closeSpy 是"只关心是否被关闭"的 ReadCloser。
+type closeSpy struct{ done chan struct{} }
+
+func (c *closeSpy) Read([]byte) (int, error) { return 0, errors.New("eof") }
+func (c *closeSpy) Close() error             { close(c.done); return nil }
+
+// L-3（2026-10-14）：竞速"败者"必须被收编关闭（此前直接 return，败者的
+// Response.Body 连同其 H2/H3 流悬空到 GC 兜底）。drainRaceLosers 是收编实现，
+// 直接在单元层面断言其行为——网络级"双活竞速"的时序不适合做稳定断言面。
+func TestDrainRaceLosersClosesLoserBody(t *testing.T) {
+	loser := &closeSpy{done: make(chan struct{})}
+	ch := make(chan raceResult, 1)
+	ch <- raceResult{resp: &Response{Body: loser}}
+
+	drainRaceLosers(ch)
+
+	select {
+	case <-loser.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("败者 Body 未被关闭（drainRaceLosers 未生效）")
+	}
+}
+
+// 未中标的"错误"结果无 resp 可关，收编不应 panic（含空 channel 场景）。
+func TestDrainRaceLosersIgnoresErrorsAndEmpty(t *testing.T) {
+	ch := make(chan raceResult, 1)
+	ch <- raceResult{err: errors.New("boom")}
+	drainRaceLosers(ch)
+	drainRaceLosers(nil) // 未启动的一路（nil channel 应被跳过）
+	time.Sleep(50 * time.Millisecond)
+}

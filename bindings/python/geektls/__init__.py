@@ -45,7 +45,10 @@ from __future__ import annotations
 import base64
 import codecs
 import json as _json
+import mimetypes
 import os
+import secrets
+import string
 import threading
 import time
 from collections.abc import Mapping, MutableMapping
@@ -59,7 +62,9 @@ __all__ = [
     "Response",
     "WebSocket",
     "Cookies",
+    "Multipart",
     "CaseInsensitiveDict",
+    "SSEEvent",
     "version",
     "init",
     "last_error",
@@ -81,11 +86,12 @@ __all__ = [
     "patch",
     "delete",
     "options",
+    "sse",
 ]
 
 # 包版本与动态库版本是**两个**版本（见 docs/versioning.md）：包内库与包版本锁死，
 # 运行时再用 version() 核对 ABI 主版本。
-__version__ = "0.2.0"
+__version__ = "0.1.9"
 
 EXPECTED_ABI = 1
 
@@ -259,6 +265,51 @@ def parse_charset(content_type: str):
     return None
 
 
+class SSEEvent:
+    """一条 SSE（text/event-stream）事件。
+
+    ``event`` 事件类型（空 = 默认 "message"）、``data`` 数据（多行以 ``\\n`` 连接、
+    无尾换行）、``id`` 当前 last-event-id（未设置过为 None）、``retry`` 服务端建议的
+    重连毫秒（未给为 None）。
+    """
+
+    __slots__ = ("event", "data", "id", "retry")
+
+    def __init__(self, event: str = "", data: str = "", id: str = None, retry: int = None):
+        self.event = event
+        self.data = data
+        self.id = id
+        self.retry = retry
+
+    def __repr__(self):
+        return "SSEEvent(event=%r, data=%r, id=%r, retry=%r)" % (
+            self.event, self.data, self.id, self.retry)
+
+
+def _split_sse_line(buf: bytes):
+    """从缓冲里切出下一行（兼容 \\r\\n / \\n / \\r）；无完整行返回 (None, buf)。
+
+    行尾是孤立的 \\r 时等待下一块（可能是 \\r\\n 的一半）；流结束时残留行按规范丢弃。
+    """
+    for i, b in enumerate(buf):
+        if b == 0x0A:  # \n
+            return buf[:i], buf[i + 1:]
+        if b == 0x0D:  # \r
+            if i + 1 < len(buf):
+                return buf[:i], buf[i + 2:] if buf[i + 1] == 0x0A else buf[i + 1:]
+            return None, buf
+    return None, buf
+
+
+def _sse_generator(resp):
+    """把 SSE 响应的 iter_sse 包成"用完自动关响应"的生成器（Session.sse 用）。"""
+    try:
+        for ev in resp.iter_sse():
+            yield ev
+    finally:
+        resp.close()
+
+
 class Response:
     """响应：头部在构造时可用，body 按需读取并缓存。
 
@@ -373,6 +424,50 @@ class Response:
                 yield line.decode(self.encoding or "utf-8", "replace") if decode_unicode else line
         if pending:
             yield pending.decode(self.encoding or "utf-8", "replace") if decode_unicode else pending
+
+    def iter_sse(self, chunk_size: int = 65536):
+        """按 SSE（text/event-stream）协议流式解析事件（生成器，边收边 yield）。
+
+        规范要点（HTML Standard：server-sent events）：行分隔兼容 ``\\r\\n`` / ``\\n`` /
+        ``\\r``；空行派发事件（data 为空的事件不派发）；``data:`` 多行以 ``\\n`` 连接；
+        ``event:`` / ``id:`` / ``retry:`` 字段；以 ``:`` 开头为注释（忽略）；
+        文本按 UTF-8 解码（行内是完整字符，跨块行由缓冲拼接保证）。流 EOF 视为结束
+        （未以空行收尾的挂起事件按规范丢弃）。
+        """
+        data_lines = []
+        event_type = ""
+        last_id = None
+        retry = None
+        pending = b""
+        for chunk in self.iter_content(chunk_size):
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            pending += chunk
+            while True:
+                line, pending = _split_sse_line(pending)
+                if line is None:
+                    break
+                if line == b"":
+                    if data_lines:
+                        yield SSEEvent(event_type, "\n".join(data_lines), last_id, retry)
+                    data_lines = []
+                    event_type = ""
+                    continue
+                if line.startswith(b":"):
+                    continue  # 注释（心跳常用）
+                name, _, value = line.partition(b":")
+                if value.startswith(b" "):
+                    value = value[1:]
+                if name == b"data":
+                    data_lines.append(value.decode("utf-8", "replace"))
+                elif name == b"event":
+                    event_type = value.decode("utf-8", "replace")
+                elif name == b"id":
+                    if b"\x00" not in value:  # 规范：含 NUL 的 id 忽略
+                        last_id = value.decode("utf-8", "replace")
+                elif name == b"retry":
+                    if value.isdigit():
+                        retry = int(value)
 
     @property
     def content(self) -> bytes:
@@ -540,7 +635,7 @@ _SESSION_LEVEL_FIELDS = {
     "cookie_jar", "insecure_skip_verify", "auto_decompress", "ca_bundle",
     "client_cert", "client_key", "resolve", "local_address", "ip_version",
     "protocols", "h3",
-    "header_order", "identity_sync",
+    "header_order", "identity_sync", "identity", "profile_patch",
 }
 
 
@@ -856,6 +951,108 @@ def _apply_cert(opts: dict, cert, cert_key) -> None:
         opts["client_key"] = key
 
 
+def _multipart_value_bytes(value) -> bytes:
+    """multipart 字段值 → 字节：str（utf-8）/ bytes 家族原样 / 数字转十进制文本。"""
+    if isinstance(value, bool):
+        return ("true" if value else "false").encode()
+    if isinstance(value, (int, float)):
+        return str(value).encode()
+    if isinstance(value, str):
+        return value.encode()
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value)
+    raise TypeError("multipart 字段值只接受 str / bytes / 数字，收到 %s"
+                    % type(value).__name__)
+
+
+def _esc_disposition(s: str) -> str:
+    """名字 / 文件名的转义：引号与换行按 RFC 7578 的 percent 形式编码
+    （正常名字逐字节不变，与常见客户端形态一致）。"""
+    return str(s).replace('"', "%22").replace("\r", "%0D").replace("\n", "%0A")
+
+
+class Multipart:
+    """multipart/form-data 构造器（浏览器形态 boundary；同名 part 可重复添加）。
+
+        mp = Multipart()
+        mp.add_part("image", local_path="./image.png", content_type="image/png")
+        mp.add_part("image", data=b"...", filename="b.png", content_type="image/png")
+        mp.add_part("note", data="hello")           # 无文件名的普通字段
+        r = s.post(url, data={"foo": "bar"}, multipart=mp)
+
+    - ``name`` 是表单字段名；``filename`` 是服务端看到的文件名（不给且给了
+      ``local_path`` 时取该路径的文件名）；
+    - ``local_path`` 与 ``data`` 二选一；文件按二进制整块读入；
+    - ``content_type`` 显式优先；未给时按文件名扩展名推断，推断不出且带文件名时用
+      ``application/octet-stream``（纯字段 part 不带 Content-Type 头）；
+    - boundary 为浏览器形态（``----WebKitFormBoundary`` + 16 位随机字符）；
+    - 纯内存对象：**无需手动释放**（``close()`` 是"尽早回收大块数据"的可选入口）。
+    """
+
+    def __init__(self):
+        self._parts: "list[dict]" = []
+
+    def add_part(self, name, *, data=None, filename=None, content_type=None,
+                 local_path=None) -> None:
+        """添加一个 part：``local_path`` 与 ``data`` 二选一。"""
+        if name is None or str(name) == "":
+            raise ValueError("add_part: name 不能为空")
+        if local_path is not None and data is not None:
+            raise ValueError("add_part: local_path 与 data 只能给一个")
+        if local_path is None and data is None:
+            raise ValueError("add_part: local_path 与 data 至少要给一个")
+        if local_path is not None:
+            path = os.fspath(local_path)
+            if not os.path.isfile(path):
+                raise FileNotFoundError(path)
+            with open(path, "rb") as f:
+                payload = f.read()
+            if filename is None:
+                filename = os.path.basename(path)
+        else:
+            payload = _multipart_value_bytes(data)
+        self._parts.append({
+            "name": str(name),
+            "data": payload,
+            "filename": None if filename is None else str(filename),
+            "content_type": None if content_type is None else str(content_type),
+        })
+
+    @classmethod
+    def from_list(cls, parts):
+        """从 ``[{...}, ...]`` 批量构造（键与 ``add_part`` 相同）。"""
+        mp = cls()
+        for item in parts:
+            mp.add_part(**item)
+        return mp
+
+    def close(self) -> None:
+        """清空已添加的 part（纯内存对象无需手动释放；用于尽早回收大块数据）。"""
+        self._parts = []
+
+    def _render(self, extra_fields=None):
+        """渲染为 ``(body bytes, content-type 值)``；``extra_fields`` 是尾随并入的
+        普通字段（``[{"name", "data", "filename", "content_type"}, ...]``）。"""
+        boundary = "----WebKitFormBoundary" + "".join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+        out = bytearray()
+        for part in list(self._parts) + list(extra_fields or []):
+            out += b"--" + boundary.encode() + b"\r\n"
+            disp = 'Content-Disposition: form-data; name="%s"' % _esc_disposition(part["name"])
+            if part.get("filename") is not None:
+                disp += '; filename="%s"' % _esc_disposition(part["filename"])
+            out += disp.encode() + b"\r\n"
+            ctype = part.get("content_type")
+            if ctype is None and part.get("filename") is not None:
+                ctype = (mimetypes.guess_type(str(part["filename"]))[0]
+                         or "application/octet-stream")
+            if ctype:
+                out += ("Content-Type: %s\r\n" % ctype).encode()
+            out += b"\r\n" + part["data"] + b"\r\n"
+        out += b"--" + boundary.encode() + b"--\r\n"
+        return bytes(out), "multipart/form-data; boundary=" + boundary
+
+
 class Session:
     """指纹伪造会话（requests 风格）。
 
@@ -887,12 +1084,20 @@ class Session:
     代理那一条。``ip_version``：``"4"`` / ``"6"``（curl -4/-6）。
     ``resolve`` 与 ``ip_version`` 只在本地解析的档位生效（直连 / socks5 / socks4）；
     socks5h / socks4a / CONNECT 由代理解析，这两项不参与。
+    ``identity``：低层装载（``clienthello_hex`` / ``ja3`` / ``ja4r`` / 不带 identity 的
+    自定义 profile）时 HTTP 身份（浏览器请求头套件）的选择——``"预设名"`` 借该预设的
+    identity 节 / 头表 dict（如 ``{"User-Agent": "…"}``）/ ``False`` 关闭自动兜底。
+    不传时引擎自动借用"最相似内置预设"的 identity（并在响应 ``warnings`` 里说明借了
+    谁）；不补齐身份头时请求会落到 Go 默认 UA，容易被云 WAF 的精准访问控制识别。
+    ``profile_patch``：profile JSON 片段的深合并覆盖（对象递归、数组整体替换），
+    从预设/抓包出发只改要改的字段（dict 或 JSON 文本）；先于身份/载荷兜底生效。
     其余未知关键字原样透传给引擎会话选项。
     """
 
     def __init__(self, impersonate: str = None, *, profile=None,
                  ja3: str = None, ja4: str = None, ja4r: str = None,
                  clienthello_hex: str = None,
+                 identity=None, profile_patch=None,
                  headers=None, proxies=None, timeout=None, read_timeout=None,
                  verify=None,
                  cert=None, cert_key=None,
@@ -912,6 +1117,18 @@ class Session:
                 config[key] = val
 
         opts = {k: v for k, v in options.items() if v is not None}
+        # identity（T-I5）：HTTP 身份的选择——"预设名" / 头表 dict / False（关闭自动
+        # 兜底）。不传时引擎自动借用最相似预设的 identity 节（低层装载场景）。
+        if identity is not None:
+            if isinstance(identity, Mapping):
+                opts["identity"] = {"headers": [[str(k), str(v)] for k, v in identity.items()]}
+            else:
+                opts["identity"] = identity  # 预设名（str）/ False；非法类型由引擎报错
+        # profile_patch（T-J2）：profile JSON 片段的深合并覆盖（对象递归、数组整体
+        # 替换——与 profile 的 extends 同规则）；dict 直传（JSON 对象），str（JSON
+        # 文本）由引擎解开一层后解析。
+        if profile_patch is not None:
+            opts["profile_patch"] = profile_patch
         # proxies：dict 且含 scheme 分档时不在建会话时定死，改成每请求按目标
         # scheme 选（requests 语义）；单值 / 只有 "all" 的照旧落到会话级。
         self._proxies = None
@@ -930,7 +1147,7 @@ class Session:
             opts["local_address"] = str(local_address)
         if ip_version is not None:
             opts["ip_version"] = str(ip_version)
-        # 协议选择（G8）：默认 h1.1 + h2（**不含 H3**，与 curl_cffi 同口径）。
+        # 协议选择（G8）：默认 h1.1 + h2（**不含 H3**，与主流伪装客户端同口径）。
         #   protocols=["h1.1"] / ["h2"] / ["h2","h3"] / ["h3"]（只给 h3 = 会话级强制）
         #   h3=True 是便捷写法（= 默认集合加 h3）；两者同时给会被引擎拒（不静默取其一）。
         if protocols is not None:
@@ -992,6 +1209,7 @@ class Session:
             raise
 
     def request(self, method: str, url: str, *, params=None, data=None, json=None,
+                multipart=None,
                 headers=None, body=None, timeout=None, timeout_ms: int = None,
                 read_timeout=None, read_timeout_ms: int = None,
                 proxy: str = None, proxies=None, verify=None, cert=None, cert_key=None,
@@ -1000,7 +1218,8 @@ class Session:
         """发请求；响应头到达即返回（body 按需读取：见 Response）。
 
         - ``params`` 拼查询串；``data``（dict / list[tuple] → 表单编码；str/bytes →
-          原样；其它可迭代 → chunked 流式上传）、``json`` 生成 body；
+          原样；其它可迭代 → chunked 流式上传）、``json`` 生成 body、
+          ``multipart``（``Multipart`` 构造器 → multipart/form-data，见其文档）；
         - ``headers`` 覆盖/追加会话默认头；``cookies``（dict/list/str/Cookies）本次请求
           的 cookie（与 ``Session.cookies`` 合并，请求级同名优先）；
         - ``auth=(user, password)`` HTTP Basic；自己给了 Authorization 头以你的为准；
@@ -1047,8 +1266,38 @@ class Session:
 
         raw_body = None
         stream_chunks = None
-        if json is not None:
-            raw_body = _json.dumps(json, ensure_ascii=False).encode()
+        if multipart is not None:
+            # multipart/form-data：data= 的字典 / 元组列表作为普通字段**尾随**并入
+            # （同 requests 语义）；字符串/字节/可迭代形态与 multipart 互斥。
+            if json is not None:
+                raise ValueError("multipart 与 json 互斥：二选一")
+            fields = []
+            if data is not None:
+                if isinstance(data, Mapping):
+                    items = list(data.items())
+                elif isinstance(data, (list, tuple)) and all(
+                        isinstance(x, (list, tuple)) and len(x) == 2 for x in data):
+                    items = list(data)
+                else:
+                    raise ValueError(
+                        "multipart 与 data=（字符串/字节/可迭代）互斥；表单字段请用 dict "
+                        "或 [(键, 值), ...]")
+                fields = [{"name": str(k), "data": _multipart_value_bytes(v),
+                           "filename": None, "content_type": None}
+                          for k, v in items]
+            raw_body, _ct = multipart._render(fields)
+            # boundary 由构造器决定：同名 content-type 一并覆盖（没有 boundary 的
+            # multipart 头是坏形态，覆盖而非静默保留）。
+            hdrs["content-type"] = _ct
+        elif json is not None:
+            # 紧凑分隔符（separators=(",", ":")）：对齐浏览器 JSON.stringify 的线上字节。
+            # 背景（2026-10-14 创宇盾案例）：Python 默认分隔符带 ", " / ": " 空格，部分
+            # WAF 的"精准访问控制"会按 body 的字节格式判非浏览器客户端——同流程其余端点
+            # 全 200、唯独该校验 body 的端点恒 403；改紧凑后实测放行。
+            # 硬编码、不提供开关（线上格式对齐浏览器为默认且唯一行为）。ensure_ascii=False
+            # 维持本库现状（UTF-8 直出，同为 JSON.stringify 行为；两种形式均已实测放行）。
+            raw_body = _json.dumps(json, ensure_ascii=False,
+                                   separators=(",", ":")).encode()
             if "content-type" not in hdrs:
                 hdrs["content-type"] = "application/json"
         elif data is not None:
@@ -1114,6 +1363,25 @@ class Session:
         # 同名以显式 Cookie 头为准，引擎只补缺）。
         self.cookies.update(resp.cookies)
         return resp
+
+    def sse(self, url: str, *, method: str = "GET", last_event_id: str = None,
+            **kwargs):
+        """打开 SSE（text/event-stream）连接并返回事件生成器（requests 风格）。
+
+            with Session(impersonate="chrome_154_windows") as s:
+                for ev in s.sse("https://example.com/events"):
+                    print(ev.event, ev.data)
+
+        底层就是一次普通请求（响应头到达即开始收流，body 边收边解析）；kwargs 与
+        ``request()`` 相同。生成器结束（迭代完 / ``break`` 后 close）会关闭响应；
+        ``last_event_id`` 会带 ``Last-Event-ID`` 头（断线续传）。
+        """
+        if last_event_id is not None:
+            merged = dict(kwargs.pop("headers", None) or {})
+            merged.setdefault("Last-Event-ID", str(last_event_id))
+            kwargs["headers"] = merged
+        resp = self.request(method, url, **kwargs)
+        return _sse_generator(resp)
 
     def _stream_upload(self, payload: dict, chunks, *, method: str, url: str,
                        started: float) -> Response:
@@ -1200,7 +1468,7 @@ class Session:
 
 
 # ---------------------------------------------------------------------------
-# 模块级快捷 API（对齐 requests / curl_cffi.requests 的顶层用法）。
+# 模块级快捷 API（对齐 requests 的顶层用法）。
 #
 # 底层是**进程级共享默认会话**（懒创建、线程安全）：连接池与 cookie_jar 跟随它，
 # 语义与 requests 的模块级 API 一致。首次 default_session(...) 可以传 Session(...)
@@ -1258,3 +1526,8 @@ def delete(url: str, **kwargs) -> "Response":
 
 def options(url: str, **kwargs) -> "Response":
     return default_session().options(url, **kwargs)
+
+
+def sse(url: str, **kwargs):
+    """模块级 SSE 快捷入口（走 default_session()）；返回事件生成器（见 Session.sse）。"""
+    return default_session().sse(url, **kwargs)

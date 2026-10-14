@@ -205,6 +205,10 @@
     ],
     "priority_param": 984832
   },
+  "tcp": {
+    "ttl": 128,
+    "mss": 1460
+  },
   "identity": {
     "headers": [
       [

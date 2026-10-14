@@ -387,6 +387,9 @@ func clientHelloSNI(chRecord []byte) string {
 
 type capturedPacket struct {
 	data []byte // 链路层帧字节
+	// linkType 是该包所属接口的链路类型（pcapng 多 IDB 合并时逐接口可能不同；
+	// pcap classic 全文件同值）。-1 = 未知（该包解析时会被跳过）。
+	linkType int
 }
 
 // parseCapture 识别容器格式（pcap classic / pcapng），返回全部帧、链路类型与
@@ -432,7 +435,7 @@ func parsePcapClassic(b []byte) ([]capturedPacket, int, int64, error) {
 		if firstTS == 0 {
 			firstTS = tsSec
 		}
-		pkts = append(pkts, capturedPacket{data: b[off : off+incl]})
+		pkts = append(pkts, capturedPacket{data: b[off : off+incl], linkType: linkType})
 		off += incl
 	}
 	return pkts, linkType, firstTS, nil
@@ -441,6 +444,11 @@ func parsePcapClassic(b []byte) ([]capturedPacket, int, int64, error) {
 func parsePcapng(b []byte) ([]capturedPacket, int, int64, error) {
 	var order binary.ByteOrder = binary.LittleEndian // 由 SHB 的字节序标记确定
 	linkType := -1
+	var ifaceLink []int // 每个 IDB 的链路类型，按出现顺序索引（L-5：per-packet 解析用）
+	// ifaceTsResol 是每个 IDB 的时间戳分辨率 if_tsresol（10^-n 秒；≥128 表示
+	// 2^-(n-128) 秒；缺省 6 = 微秒）。tshark 4.6 起常写 9（纳秒）——不读它会把
+	// captured_at 换算放大 1000 倍（实测产出 58754 年）。
+	var ifaceTsResol []int
 	var (
 		pkts    []capturedPacket
 		firstTS int64
@@ -470,8 +478,37 @@ func parsePcapng(b []byte) ([]capturedPacket, int, int64, error) {
 		body := b[off+8 : off+blockLen-4]
 		switch blockType {
 		case 0x00000001: // Interface Description Block
-			if len(body) >= 2 && linkType == -1 {
-				linkType = int(order.Uint16(body[0:2]))
+			if len(body) >= 2 {
+				lt := int(order.Uint16(body[0:2]))
+				ifaceLink = append(ifaceLink, lt)
+				if linkType == -1 {
+					linkType = lt // 首个 IDB 另作"文件级"链路类型（错误信息与兜底用）
+				}
+				// if_tsresol（option code 9）：时间戳分辨率。缺省 10^-6 秒。
+				resol := 6
+				if len(body) > 8 { // linkType(2)+reserved(2)+snaplen(4) 之后是 options（TLV）
+					optsB := body[8:]
+					for len(optsB) >= 4 {
+						code := int(order.Uint16(optsB[0:2]))
+						olen := int(order.Uint16(optsB[2:4]))
+						if code == 0 { // opt_endofopt
+							break
+						}
+						if 4+olen > len(optsB) {
+							break
+						}
+						if code == 9 && olen >= 1 {
+							resol = int(optsB[4])
+							break
+						}
+						step := 4 + olen
+						if step%4 != 0 { // option 值按 4 字节对齐
+							step += 4 - step%4
+						}
+						optsB = optsB[step:]
+					}
+				}
+				ifaceTsResol = append(ifaceTsResol, resol)
 			}
 		case 0x00000006, 0x00000002: // Enhanced Packet Block / 旧版 Packet Block
 			// 两者固定头都是 20 字节——EPB：iface(4)+tsHigh(4)+tsLow(4)+caplen(4)+origlen(4)；
@@ -483,13 +520,28 @@ func parsePcapng(b []byte) ([]capturedPacket, int, int64, error) {
 			if 20+caplen > len(body) {
 				break
 			}
-			hi := int64(order.Uint32(body[4:8]))
-			lo := int64(order.Uint32(body[8:12]))
-			if firstTS == 0 {
-				// 默认分辨率微秒（if_tsresol 的非常规取值不处理——captured_at 只是辅助字段）
-				firstTS = (hi<<32 | lo) / 1_000_000
+			// 按本包的 interface id 取链路类型（L-5：多 IDB 合并的 pcapng 里各接口
+			// 链路类型可能不同；此前只认首个 IDB，来源接口 ≥1 的包会误解析/静默丢）。
+			pktLink := -1
+			ifaceID := 0
+			if blockType == 0x00000006 { // EPB：iface 4 字节
+				ifaceID = int(order.Uint32(body[0:4]))
+			} else { // PB：iface 2 字节
+				ifaceID = int(order.Uint16(body[0:2]))
 			}
-			pkts = append(pkts, capturedPacket{data: body[20 : 20+caplen]})
+			if ifaceID >= 0 && ifaceID < len(ifaceLink) {
+				pktLink = ifaceLink[ifaceID]
+			}
+			hi := uint64(order.Uint32(body[4:8]))
+			lo := uint64(order.Uint32(body[8:12]))
+			if firstTS == 0 {
+				resol := 6 // 默认微秒
+				if ifaceID >= 0 && ifaceID < len(ifaceTsResol) {
+					resol = ifaceTsResol[ifaceID]
+				}
+				firstTS = tsFracToSeconds(hi<<32|lo, resol)
+			}
+			pkts = append(pkts, capturedPacket{data: body[20 : 20+caplen], linkType: pktLink})
 		}
 		off += blockLen
 	}
@@ -497,6 +549,31 @@ func parsePcapng(b []byte) ([]capturedPacket, int, int64, error) {
 		return nil, 0, 0, errors.New("pcapng 里没有 Interface Description Block（空文件？）")
 	}
 	return pkts, linkType, firstTS, nil
+}
+
+// tsFracToSeconds 把 pcapng 的 64 位时间戳按 if_tsresol 分辨率换算成 Unix 秒。
+// 分辨率语义（pcapng 规范）：最高位为 0 ⇒ 10^-n 秒；最高位为 1 ⇒ 2^-(n-128) 秒。
+func tsFracToSeconds(ts uint64, resol int) int64 {
+	switch {
+	case resol == 0:
+		return int64(ts)
+	case resol >= 128:
+		shift := resol - 128
+		if shift > 63 {
+			return 0
+		}
+		return int64(ts >> uint(shift))
+	default:
+		exp := resol
+		if exp > 19 { // 10^19 已到 uint64 量级，再大必为 0
+			exp = 19
+		}
+		d := uint64(1)
+		for i := 0; i < exp; i++ {
+			d *= 10
+		}
+		return int64(ts / d)
+	}
 }
 
 // ---------- 链路层 / IP / TCP 解析 ----------
@@ -667,7 +744,11 @@ func buildFlows(pkts []capturedPacket, linkType int) []*tcpFlow {
 	var order []flowKey
 	parsed := make([]tcpPacket, 0, len(pkts))
 	for _, cp := range pkts {
-		p, ok := parseFrame(linkType, cp.data)
+		lt := cp.linkType
+		if lt < 0 {
+			lt = linkType // 兜底：文件级链路类型（pcap classic 或未标注的包）
+		}
+		p, ok := parseFrame(lt, cp.data)
 		if !ok {
 			continue
 		}

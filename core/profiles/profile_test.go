@@ -9,7 +9,7 @@ import (
 func TestParseValidProfile(t *testing.T) {
 	doc := `{
 	  "name": "chrome_150_windows",
-	  "extends": "chrome_150",
+	  "extends": "chrome_150_windows",
 	  "tls": {
 	    "detail": {
 	      "legacy_version": "0x0303",
@@ -55,6 +55,41 @@ func TestParseValidProfile(t *testing.T) {
 	}
 	if p.HTTP2.WindowUpdate == nil || *p.HTTP2.WindowUpdate != 15663105 || p.TCP.TTL != 128 || p.Behavior.RedirectMax != 10 {
 		t.Errorf("later-phase sections not preserved: %+v", p)
+	}
+}
+
+// TestParseExtends 覆盖 extends 的继承语义（L-7）：只写覆盖字段时其余各节
+// 从内置预设继承（深合并）；数组整体替换；引用未知预设必须报错。
+func TestParseExtends(t *testing.T) {
+	// 只覆盖 name：tls / identity 等节应从 chrome_150_windows 继承。
+	p, err := Parse([]byte(`{"extends": "chrome_150_windows", "name": "derived_test"}`))
+	if err != nil {
+		t.Fatalf("Parse(extends): %v", err)
+	}
+	if p.Name != "derived_test" {
+		t.Errorf("name = %q, want derived_test（覆盖生效）", p.Name)
+	}
+	if p.TLS == nil || p.TLS.Detail == nil || len(p.TLS.Detail.Extensions) == 0 {
+		t.Fatalf("tls.detail 未从预设继承：%+v", p.TLS)
+	}
+	if p.Identity == nil || len(p.Identity.Headers) == 0 {
+		t.Errorf("identity 未从预设继承（extends 应深合并全节）")
+	}
+
+	// 数组整体替换（不做逐项拼接）：扩展列表只保留覆盖方给出的两项。
+	p2, err := Parse([]byte(`{"extends": "chrome_150_windows",
+	  "tls": {"detail": {"extensions": [{"type": 0, "sni": "auto"}, {"type": 35}]}}}`))
+	if err != nil {
+		t.Fatalf("Parse(extends+override): %v", err)
+	}
+	if n := len(p2.TLS.Detail.Extensions); n != 2 {
+		t.Errorf("extensions = %d, want 2（数组整体替换）", n)
+	}
+
+	// 未知预设：报错而不是静默忽略。
+	if _, err := Parse([]byte(`{"extends": "no_such_preset_xyz"}`)); err == nil ||
+		!strings.Contains(err.Error(), "引用未知预设") {
+		t.Errorf("未知预设应报错，got %v", err)
 	}
 }
 

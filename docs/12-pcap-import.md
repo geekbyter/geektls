@@ -34,6 +34,16 @@
   守门测试 `core/tls/check_hex_test.go`。
 - **`tcp` 节**：preset schema 已有（`ttl/mss/window/df/mode/window_scale/...`），
   netstack/setsockopt 两档都能吃。
+- **低层装载的自动兜底（2026-10-14 起）**：`clienthello_hex` / `ja3` / `ja4r` 以及不带
+  identity 节的自定义 profile **不携带 HTTP 身份（浏览器请求头套件）与部分扩展载荷**——
+  引擎在建会话时自动从"最相似内置预设"补齐（按扩展集合 / ciphers 集合 / ALPN 匹配，
+  阈值 0.75）：
+  - **HTTP 身份**：借 identity 节（响应 `warnings` 的 `identity_auto` 说明借了谁）；
+    不补身份头的请求会以 Go 默认 UA 上线，容易被云 WAF 的"精准访问控制"直接拦截（实测
+    案例：同一 ClientHello 逐字节复刻，缺身份头 403、补齐后 404）。显式指定 / 关闭用
+    `identity=`（预设名 / 头表 / `false`，见各绑定 README 与 §2 参数表）。
+  - **扩展载荷**：ja3 / ja4r 的载荷按同族预设的真实形态替换 / 补全（`payload_borrowed`）；
+    入口直接携带的信息（ja3 的 groups / points、ja4r 的 sig_algs）保持原样。
 
 ## 4. 必须处理的五个坑（导入器的核心工作就是这些）
 

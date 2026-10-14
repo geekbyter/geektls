@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Profile 是一份完整客户端指纹的规范形式。
@@ -312,17 +313,84 @@ type BehaviorProfile struct {
 }
 
 // Parse 解析并校验 profile JSON。返回的 error 是 *ParseError（结构化，不 panic）。
+//
+// extends（可选）：指定一个**内置预设名**作为基底，当前 JSON 在基底之上覆盖
+// （深合并：对象逐层递归，数组与标量整体替换，覆盖方优先）。典型用法是
+// "从某预设继承，只写要改的字段"。引用未知预设或出现循环引用会报错。
 func Parse(data []byte) (*Profile, error) {
+	return parseWithExtends(data, nil)
+}
+
+func parseWithExtends(data []byte, chain []string) (*Profile, error) {
 	var p Profile
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&p); err != nil {
 		return nil, &ParseError{Field: "", Msg: fmt.Sprintf("malformed JSON: %v", err)}
 	}
-	if err := p.validate(); err != nil {
+	if p.Extends == "" {
+		if err := p.validate(); err != nil {
+			return nil, err
+		}
+		return &p, nil
+	}
+	// 防环：同一 extends 名在链上重复出现即视为循环引用。
+	for _, c := range chain {
+		if c == p.Extends {
+			return nil, &ParseError{Field: "extends",
+				Msg: fmt.Sprintf("循环引用: %s -> %s", strings.Join(chain, " -> "), p.Extends)}
+		}
+	}
+	baseData, err := readBuiltin(p.Extends)
+	if err != nil {
+		return nil, &ParseError{Field: "extends",
+			Msg: fmt.Sprintf("引用未知预设 %q（只允许内置预设名）", p.Extends)}
+	}
+	baseProfile, err := parseWithExtends(baseData, append(chain, p.Extends))
+	if err != nil {
 		return nil, err
 	}
-	return &p, nil
+	merged, err := mergeJSONDocs(baseProfile, data)
+	if err != nil {
+		return nil, &ParseError{Field: "extends", Msg: err.Error()}
+	}
+	// 合并结果已移除 extends（见 mergeJSONDocs），这里直接走普通解析。
+	return parseWithExtends(merged, chain)
+}
+
+// mergeJSONDocs 以 base 为底、cur 覆盖，返回合并后的 JSON 文档。
+// 规则：对象逐层递归；数组与标量整体替换（不做逐项拼接，保证可预测）。
+// 覆盖方的 "extends" 在合并结果里被移除（避免再次触发继承解析）。
+func mergeJSONDocs(base *Profile, cur []byte) ([]byte, error) {
+	bb, err := json.Marshal(base)
+	if err != nil {
+		return nil, err
+	}
+	var bm, cm map[string]any
+	if err := json.Unmarshal(bb, &bm); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(cur, &cm); err != nil {
+		return nil, err
+	}
+	delete(cm, "extends")
+	return json.Marshal(deepMergeJSON(bm, cm))
+}
+
+// deepMergeJSON 深合并：src 的键覆盖 dst；两侧同为对象时递归，否则整体替换。
+func deepMergeJSON(dst, src map[string]any) map[string]any {
+	for k, sv := range src {
+		if dv, ok := dst[k]; ok {
+			dm, dok := dv.(map[string]any)
+			sm, sok := sv.(map[string]any)
+			if dok && sok {
+				dst[k] = deepMergeJSON(dm, sm)
+				continue
+			}
+		}
+		dst[k] = sv
+	}
+	return dst
 }
 
 // ParseError 是结构化的 profile 校验错误。

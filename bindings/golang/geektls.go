@@ -67,6 +67,16 @@ type Options struct {
 	// 与 Proxy 同用时应选 socks5/socks4 这类本地解析档，socks5h/socks4a/CONNECT
 	// 由代理解析、这一项不参与。
 	IPVersion string
+	// Identity（T-I5）：低层装载（clienthello_hex / ja3 / ja4r / 不带 identity 的
+	// 自定义 profile）时 HTTP 身份（浏览器请求头套件）的选择——预设名 JSON 字符串
+	// （`"chrome_154_windows"`）/ 头表 JSON（`{"headers":[["User-Agent","…"]]}` 或
+	// `{"User-Agent":"…"}`）/ `false`（关闭自动兜底）。零值（nil）时引擎自动借用
+	// "最相似内置预设"的 identity 节并在响应 Warnings 里说明。
+	Identity json.RawMessage
+	// ProfilePatch（T-J2）：以最终 profile 为底做 JSON 片段深合并覆盖（对象递归、
+	// 数组整体替换）——从预设/抓包出发只改要改的字段（增删扩展、换 ALPN 等）。
+	// 在 identity/载荷兜底之前生效。
+	ProfilePatch json.RawMessage
 	// RoundTripper 模式下重定向与 cookie 由 net/http.Client 管理，自动关闭 engine 侧。
 }
 
@@ -107,6 +117,8 @@ func engineOpts(o *Options, forRoundTripper bool) engine.SessionOptions {
 		out.Resolve = o.Resolve
 		out.LocalAddress = o.LocalAddress
 		out.IPVersion = o.IPVersion
+		out.Identity = o.Identity
+		out.ProfilePatch = o.ProfilePatch
 	}
 	if forRoundTripper {
 		out.RedirectMax = -1 // 重定向交给 http.Client

@@ -46,6 +46,8 @@
 | Python asyncio（AsyncSession，线程池异步） | ✅ | asyncio 并发 20 请求用例 |
 | TCP（TTL/MSS setsockopt，按平台分文件） | ✅（Windows 无 MSS） | getsockopt 读回；CI 跨平台编译门禁 |
 | Python 请求语义对齐（cookie jar / timeout 元组 / auth / 重定向开关 / 表单编码） | ✅ | pytest 10 条（本地明文服务端，零外部依赖） |
+| 低层装载自动兜底（hex/ja3/ja4r：HTTP 身份 + 扩展载荷，`identity=` / `profile_patch=` 可控） | ✅ | 三入口回环 selfcheck（本地 HTTPS）＋真机 pcap 闭环（缺身份头 403 → 补齐后 404） |
+| Python 上传与流式扩展（multipart/form-data、SSE text/event-stream） | ✅ | httpbin 原字节断言；本地 SSE 服务端全形态用例 + 真实 SSE 流实测 |
 | Python / Node / Go 绑定 | ✅ | pytest 34 通过（2 跳过）、node:test 18、`go test` 通过；跨语言 JA4 三方一致 |
 
 ## 安装
@@ -184,6 +186,19 @@ s, _, _ := gtls.NewSessionFromClientHelloHex(res.Records[0].ClientHelloHex, nil)
 ECH 外层等）；client_random / key_share / GREASE 等随机项每次自动重生成。
 三层验证：记录自带 ja3/ja4（离线）→ `check_profile` 细看解析（离线）→ 请求后
 `selfcheck` 与记录值对拍（线上）。
+
+**HTTP 身份（identity）**：`clienthello_hex` / `ja3` / `ja4r` 这类低层装载**不带**
+浏览器请求头套件——引擎会**自动借用"最相似内置预设"的 identity 节**（按 ciphers
+集合 / 扩展集合 / ALPN 匹配，相似度 ≥ 0.75 才借），并在响应 `warnings` 里说明借了谁
+（`identity_auto`）。不补身份头的请求会以 Go 默认 UA 上线，容易被云 WAF 的"精准访问
+控制"直接拦截（实测同一 ClientHello 逐字节复刻：缺身份头 403、补齐后 404）。要指定
+或关闭：`identity="预设名"` / `identity={...}`（头表）/ `identity=False`——三绑定同名
+参数（Node `identity`、Go `Options.Identity`）。
+
+**载荷兜底**：`ja3` / `ja4r` 的扩展载荷按"最相似内置预设"的真实形态替换 / 补全
+（`payload_borrowed` 告警说明来源；入口自带 groups / points（ja3）与 sig_algs（ja4r）
+保持原样）。只想改个别字段（如运行时剔除某个扩展）：`profile_patch`（JSON 片段深合并、
+数组整体替换，先于兜底生效；三绑定同名参数）。
 
 **常规用法**：`all_streams` / `all` 导出全部流（记录里的 `sni` 区分同名或异名
 流）、`stream=N` 挑第 N 条、`tcp_only` / `tcpOnly` 只取 TCP 形态、`data` 字节入口。
@@ -334,8 +349,8 @@ CLI：`--identity-sync auto|off`。
 |---|---|---|---|
 | `impersonate="chrome_150_windows"` | 用内置预设（394 条） | 高（多数有 E1/E2 证据） | 名字是**全名**：`chrome_154_macos`、`chrome_154_windows`、`okhttp_3_12_12`…（没有裸 `chrome_154`） |
 | `profile={...}` | 自带**完整**指纹（profile JSON schema） | 完全按你给的来 | 也接受 **JSON 文本**（`profile='{"name":...}'`），免去 `json.loads` |
-| `ja3="771,4865-...-23,4588-29-23-24,0"` | 只给 JA3 | 有损：扩展只有 type，负载全缺 | 缺失部分按引擎默认补齐，`check_profile` 会逐条列出 `warnings` |
-| `ja4r="t13d1516h2_002f,..._..._..."` | 只给 JA4R（含 cipher/扩展/sig_algs 列表） | 中：列表有序化丢失（`extensions_sorted` 告警） | 想"逐字节复刻"用这个或完整 profile；带 ECH(65037) 时按 GREASE 近似并告警（`ech_assumed_grease`），因为 raw 串不含负载 |
+| `ja3="771,4865-...-23,4588-29-23-24,0"` | 只给 JA3 | 有损：扩展只有 type，负载全缺 | 载荷与 HTTP 身份按"最相似内置预设"自动补齐（`payload_borrowed` / `identity_auto` 告警），`check_profile` 会逐条列出 `warnings` |
+| `ja4r="t13d1516h2_002f,..._..._..."` | 只给 JA4R（含 cipher/扩展/sig_algs 列表） | 中：列表有序化丢失（`extensions_sorted` 告警） | 想"逐字节复刻"用这个或完整 profile；载荷按最相似预设补齐；带 ECH(65037) 时按 GREASE 近似并告警（`ech_assumed_grease`），因为 raw 串不含负载 |
 | `ja4="t13d1516h2_8daaf6152771_d8a2da3f94cd"` | 只给 **JA4 短哈希** | 哈希**不可逆** | 引擎在内置预设里反查同一 JA4 并采用其参数（`ja4_resolved_to_preset` 告警）；找不到会明确报错，不会编近似指纹 |
 | `clienthello_hex="160301..."` | 直接给原始 ClientHello 字节 | 最高（等于抓包重放的结构） | 与生成器/采集端同一条解析路径 |
 
@@ -343,7 +358,8 @@ CLI：`--identity-sync auto|off`。
 
 1. **重放自洽归一**（`core/profiles/replay.go`）：带 `pre_shared_key(41)` 的双向约束——声明 TLS 1.3 就必须有 41 空占位且位于扩展末尾（RFC 8446），不声明就必须没有（否则 ClientHello 结构非法）。补的是**空占位**：无票据时线上省略、也不计入 JA3/JA4，所以首次握手的指纹不变；不补的话，一旦会话复用命中票据，uTLS 会直接 panic。
 2. **损失告警**：JA3 入口会报 `grease_lost` / `extension_payloads_lost`；JA4R 会报 `extensions_sorted`；JA4 反查会报 `ja4_resolved_to_preset`。有损入口会明确告知损失，而不是假装保真。
-3. **离线验证**：`geektls.check_profile(...)` 不发包，直接告诉你"这么传会发出什么"（JA3/JA4/wire 长度/warnings）：
+3. **HTTP 身份与载荷兜底**：`ja3` / `ja4r` / `clienthello_hex` 装载时**自动借用"最相似内置预设"的 identity 节与扩展载荷**（告警 `identity_auto` / `payload_borrowed` 说明借了谁）；`identity=` 可显式指定（预设名 / 头表）或 `False` 关闭，`profile_patch=` 做增量覆盖。
+4. **离线验证**：`geektls.check_profile(...)` 不发包，直接告诉你"这么传会发出什么"（JA3/JA4/wire 长度/warnings）：
 
 ```python
 import geektls
@@ -378,7 +394,8 @@ print(geektls.check_profile("t13d1516h2_8daaf6152771_d8a2da3f94cd"))
 
 ```python
 Session(impersonate=None, *, profile=None, ja3=None, ja4=None, ja4r=None,
-        clienthello_hex=None, headers=None, proxies=None, timeout=None,
+        clienthello_hex=None, identity=None, profile_patch=None, headers=None,
+        proxies=None, timeout=None,
         read_timeout=None, resolve=None, local_address=None, ip_version=None,
         verify=None, cert=None, cert_key=None, allow_redirects=None,
         max_redirects=None, cookies=None, auth=None, trust_env=None, **options)
@@ -387,6 +404,8 @@ Session(impersonate=None, *, profile=None, ja3=None, ja4=None, ja4r=None,
 | 参数 | 类型 | 说明 |
 |---|---|---|
 | `impersonate` / `profile` / `ja3` / `ja4` / `ja4r` / `clienthello_hex` | str / dict / str | 六选一（见上一节） |
+| `identity` | str / dict / `False` | 低层装载（`ja3`/`ja4r`/`clienthello_hex`/不带 identity 的 profile）时的 HTTP 身份：**预设名**（借其 identity 节）/ **头表**（如 `{"User-Agent": …}`）/ `False` 关闭自动兜底。不传时自动借用"最相似内置预设"（见"指纹怎么传"节），并在响应 `warnings` 说明 |
+| `profile_patch` | dict / str(JSON) | 以最终 profile 为底的**增量覆盖**（深合并：对象递归、数组整体替换，与 profile 的 `extends` 同规则）——从预设/抓包出发只改要改的字段（增删扩展、换 ALPN、覆盖身份头…），免去手抄全量 profile；先于身份/载荷兜底生效 |
 | `headers` | dict / list[tuple] | 会话默认请求头（按给定顺序发出） |
 | `proxies` | dict / str | requests 风格；引擎一次只用一个代理 URL（`{"https": ...}` / `{"all": ...}`）。scheme：`http`/`https`（CONNECT 隧道）、`socks5`（本地先解析域名）、`socks5h`（域名交给代理解析）、`socks4`/`socks4a`（仅 IPv4 目标；只有 user id 无口令位，URL 给口令即报错） |
 | `trust_env` | bool | requests 同名，映射到引擎 `proxy_from_env`：`False` ⇒ 不读 `HTTPS_PROXY`/`ALL_PROXY`，只认显式 `proxies`；默认 `True` 会读，并按 `NO_PROXY` 与回环目标（`localhost`/`127.0.0.1`/`::1`）豁免 |
@@ -419,6 +438,49 @@ Session(impersonate=None, *, profile=None, ja3=None, ja4=None, ja4r=None,
 > ⚠️ `verify` / `cert` 是**会话级**：传给 `request()` 会**明确报错**而不是静默失效（要按请求切换就新建 Session）。`allow_redirects` / `max_redirects` / `proxies` / `cookies` / `auth` 请求级也能用。
 >
 > ⚠️ 拼错的关键字**不会静默吞掉**：core 的两处 JSON 解码都不严格（client config 只查指纹入参那六个键，`SessionOptions` 忽略未知字段），所以名单校验做在**绑定层**——`Session(...)` 收到未知会话选项、`request()` 收到未知请求级 kwargs 都立即报错（Node 侧同理：`new Session({insecure_skip_verfy: true})` 抛 `TypeError`）。这类选项决定"校验开不开、超时走不走、连接钉到哪"，绝不能配了却没生效。
+
+### multipart/form-data 上传
+
+用 `Multipart` 构造器组装表单（boundary 为浏览器形态 `----WebKitFormBoundary…`；
+同名 part 可重复添加，用于"同一字段多文件"）：
+
+```python
+from geektls import Multipart
+
+mp = Multipart()
+mp.add_part("image", local_path="./image.png", content_type="image/png")
+mp.add_part("image", data=b"...", filename="second.png", content_type="image/png")
+mp.add_part("note", data="hello")            # 无文件名的普通字段
+
+with Session(impersonate="chrome_154_windows") as s:
+    r = s.post("https://httpbin.org/post", data={"foo": "bar"}, multipart=mp)
+```
+
+- `add_part(name, *, data=/local_path=, filename=, content_type=)`：`local_path` 与
+  `data` 二选一；`data` 接受 str / bytes / 数字；`content_type` 显式优先，未给时按
+  文件名扩展名推断（推断不出且带文件名时 `application/octet-stream`；纯字段不带该头）。
+  另有 `Multipart.from_list([{...}, ...])` 批量构造、`close()`（纯内存对象，可选）。
+- `data=` 的 dict / `[(k, v), ...]` 会作为普通字段**尾随**并入表单（requests 语义）；
+  `multipart` 与 `json=`、`data=`（字符串 / 字节 / 可迭代）互斥——会报错，不静默降级。
+- `content-type` 由构造器接管（`multipart/form-data; boundary=…`，同名请求头会被覆盖）；
+  文件整块读入内存（大文件注意占用；需要边读边发的场景用既有流式上传通道自己拼 body）。
+
+### SSE（text/event-stream）
+
+```python
+with Session(impersonate="chrome_154_windows") as s:
+    for ev in s.sse("https://example.com/events"):     # 用的就是本会话的指纹与连接
+        print(ev.event, ev.data, ev.id, ev.retry)
+```
+
+- `Session.sse(url, *, method="GET", last_event_id=None, **kwargs)` → 事件生成器；
+  `Response.iter_sse()` 从任意已打开的响应上解析；模块级 `geektls.sse(url, **kwargs)`
+  走默认会话。事件是 `SSEEvent(event, data, id, retry)`（字段名同规范）。
+- 协议细节按 HTML 规范：行分隔兼容 `\r\n`/`\n`/`\r`；空行派发（data 为空的事件不派发）；
+  `data:` 多行以 `\n` 连接；`:` 开头为注释（心跳）；`retry:` 数字透传；含 NUL 的 `id` 忽略。
+- `last_event_id=` 会带 `Last-Event-ID` 头（断线续传）；生成器结束 / `break` 后关闭会
+  关闭响应。慢流场景 `read_timeout=`（body 单次读取空闲上限）照常生效；未以空行收尾的
+  挂起事件在流结束时按规范丢弃。
 
 ### `Response`
 

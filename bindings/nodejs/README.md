@@ -68,6 +68,19 @@ client.close();
   2. 离线细看：`geektls.checkProfile(rec.clienthello_hex)`——完整解析 + 告警（不联网）；
   3. 线上对拍：请求后 `r.selfcheck`——本次握手**实际发出**的 JA3/JA4 与期望比对，
      与第 1 步的值一致即复现成功；
+- **HTTP 身份（identity）**：hex / ja3 / ja4r 这类低层装载**不带**浏览器请求头套件。
+  引擎会**自动借用"最相似内置预设"的 identity 节**（按 ciphers 集合 / 扩展集合 / ALPN
+  匹配，相似度 ≥ 0.75 才借），并在响应 `warnings` 里说明借了谁（`identity_auto`）。
+  要指定或关闭：`new Session({ clienthello_hex: …, identity: 'chrome_154_windows' })` /
+  `identity: { 'User-Agent': … }` / `identity: false`。不补身份头的请求会以 Go 默认 UA
+  上线，容易被云 WAF 的"精准访问控制"直接拦截。
+- **载荷兜底**：ja3 / ja4r 的扩展载荷按"最相似内置预设"的真实形态替换/补全
+  （`payload_borrowed` 告警说明来源）；入口自带 groups / points（ja3）与 sig_algs
+  （ja4r）保持原样。
+- **增量覆盖（profilePatch）**：以预设为底做 JSON 深合并（对象递归、数组整体替换，
+  与 profile 的 `extends` 同规则）——只改要改的字段（增删扩展、换 ALPN、覆盖身份头…），
+  先于身份/载荷兜底生效；`new Session({ impersonate: '…', profilePatch: {…} })`
+  （三绑定同名参数：Python `profile_patch` / Go `Options.ProfilePatch`）。
 - **边界**：hex 装载只覆盖 **TLS 面**；**TCP 面**（TTL/MSS/窗口/选项序，即记录里的
   `tcp`）要经预设（`tcp` 节）才生效——见节尾"CLI 工具链"。
 

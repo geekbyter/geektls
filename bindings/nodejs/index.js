@@ -24,7 +24,11 @@ function libNames() {
     case 'win32':
       return ['geektls.dll'];
     case 'darwin':
-      return ['libgeektls.dylib'];
+      // 架构分派：发布物按 arch 命名（arm64 = libgeektls.dylib；
+      // 若上游补产 Intel 版则为 libgeektls-x64.dylib，优先命中）。
+      return process.arch === 'x64'
+        ? ['libgeektls-x64.dylib', 'libgeektls.dylib']
+        : ['libgeektls.dylib'];
     default:
       return ['libgeektls.so'];
   }
@@ -48,9 +52,18 @@ function loadLibrary() {
       errors.push(`  ${p}: ${err.message}`);
     }
   }
+  // 架构不匹配时给出明确原因，而不是让"设环境变量"这一条对策掩盖真实问题
+  // （Intel Mac 上曾把"该 arch 未随包分发"误读成路径写错）。
+  let hint = '';
+  if (process.platform === 'darwin' && process.arch === 'x64') {
+    hint =
+      '\n  note: darwin/x64 (Intel Mac) is not shipped by this package yet' +
+      ' (arm64 dylib only); use an arm64 host, or set GEEDTLS_LIB to a self-built x64 dylib.';
+  }
   throw new Error(
     'cannot load the geektls core library; set GEEDTLS_LIB to its path. Tried:\n' +
-      errors.join('\n')
+      errors.join('\n') +
+      hint
   );
 }
 
@@ -590,7 +603,7 @@ const SESSION_OPTION_KEYS = new Set([
   'proxy', 'proxy_from_env', 'timeout_ms', 'read_timeout_ms', 'redirect_max',
   'cookie_jar', 'insecure_skip_verify', 'auto_decompress', 'ca_bundle',
   'client_cert', 'client_key', 'resolve', 'local_address', 'ip_version',
-  'protocols', 'h3', 'header_order', 'identity_sync',
+  'protocols', 'h3', 'header_order', 'identity_sync', 'identity', 'profile_patch',
 ]);
 
 /**
@@ -608,7 +621,11 @@ const SESSION_OPTION_KEYS = new Set([
  *             "连到哪"，SNI/Host/指纹字节仍是 URL 里的原域名；键不做通配）、
  *             localAddress（源 IP 字面量，curl --interface 的 IP 形态；网卡名不支持）、
  *             ipVersion: '4'|'6'（curl -4/-6）。与 socks5h/socks4a/CONNECT 同用时
- *             resolve 与 ipVersion 不参与（那几档由代理解析）
+ *             resolve 与 ipVersion 不参与（那几档由代理解析）、
+ *             identity: 低层装载（clienthelloHex/ja3/ja4r/不带 identity 的 profile）时
+ *             HTTP 身份的选择——预设名字符串 / 头表对象（{'User-Agent': '…'} 或
+ *             {headers: [[name, value], …]}）/ false（关闭自动兜底）。不传时引擎自动
+ *             借用"最相似内置预设"的 identity 节并在响应 warnings 里说明
  */
 class Session {
   constructor(options = {}) {
@@ -618,7 +635,7 @@ class Session {
       cookieJar, insecureSkipVerify, verify, caBundle, cert, certKey,
       headers, autoDecompress, proxyFromEnv, trustEnv,
       resolve, localAddress, ipVersion,
-      protocols, h3, headerOrder, identitySync, ...config
+      protocols, h3, headerOrder, identitySync, identity, profilePatch, ...config
     } = options;
     this._headers = headers
       ? Object.entries(Array.isArray(headers) ? Object.fromEntries(headers) : headers)
@@ -679,6 +696,11 @@ class Session {
       if (h3 !== undefined) opts.h3 = !!h3;
       if (headerOrder !== undefined) opts.header_order = String(headerOrder);
       if (identitySync !== undefined) opts.identity_sync = String(identitySync);
+      // identity（T-I5）：字符串（预设名）/ 对象（头表，{headers: [[k,v],…]}} 或
+      // {name: value}）/ false（关闭自动兜底）——原样交给引擎（形态校验在引擎侧）。
+      if (identity !== undefined) opts.identity = identity;
+      // profilePatch（T-J2）：profile JSON 片段的深合并覆盖（对象递归、数组整体替换）。
+      if (profilePatch !== undefined) opts.profile_patch = profilePatch;
       this._session = gtls_session_new(this._client, JSON.stringify(opts));
       if (!this._session) raiseLastError();
     } catch (err) {
@@ -857,7 +879,7 @@ class Session {
 }
 
 // ---------------------------------------------------------------------------
-// 模块级快捷 API（对齐 requests / curl_cffi / CycleTLS 的顶层用法）。
+// 模块级快捷 API（对齐 requests 的顶层用法）。
 //
 // 底层是进程级共享默认会话（懒创建）：连接池与 cookieJar 跟随它。
 // 首次 defaultSession({...}) 可以传 Session 的 options 把它配好（impersonate /

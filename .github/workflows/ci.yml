@@ -112,12 +112,41 @@ jobs:
           go vet ./...
           go test ./... -timeout 15m
 
+      # Go 绑定模块（发布物之一：bindings/golang/v* tag 即发布）此前游离在 CI 之外
+      # （2026-10-14 走查发现 L-2）；该模块纯 Go、不依赖动态库，`go test` 秒级完成。
+      - name: go binding test
+        working-directory: bindings/golang
+        run: |
+          go vet ./...
+          go test ./... -timeout 5m
+
       - name: e2e build vet and test
         working-directory: tests/e2e
         run: |
           go build ./...
           go vet ./...
           go test ./... -timeout 15m
+
+      # Node 测试登记守门：`bindings/nodejs/package.json` 的 test 脚本**逐文件显式
+      # 列出**（目录形式在 Windows + Node 22 下会被当模块路径解析而整轮判红，
+      # 见 package.json 的 comment），代价是新增测试文件必须同步补路径——
+      # 2026-10-14 走查发现 import_pcap.test.js 从未被执行（L-1）。
+      # 这条守门保证"写了但从不跑"不再发生。
+      - name: node test files must be registered in npm test (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -eu
+          reg=$(grep -o '"test": "[^"]*"' bindings/nodejs/package.json)
+          rc=0
+          for f in tests/e2e/node/*.test.js; do
+            if ! echo "$reg" | grep -q "$(basename "$f")"; then
+              echo "::error::$f 未登记进 bindings/nodejs/package.json 的 test 脚本（新增测试文件须补一条路径）"
+              rc=1
+            fi
+          done
+          if [ "$rc" = "0" ]; then echo "Node 测试文件登记完整 ✅"; fi
+          exit $rc
 
       # 预设守门：core/profiles/builtin 里"由生成器产出"的文件必须逐字节等于
       # 生成器当前输出（防止手改预设后忘记同步生成器，或生成器改动未重跑）。

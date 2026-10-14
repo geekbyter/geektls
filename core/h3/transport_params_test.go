@@ -40,3 +40,44 @@ func TestTransportParamsUDPAndDatagram(t *testing.T) {
 		t.Errorf("空 map 不应改配置，got %d", empty.MaxUDPPayloadSize)
 	}
 }
+
+// L-4（2026-10-14）：不可表达的键（未知键 / 越界值）必须经
+// QUICConfigFromProfileWithWarnings 带出给调用方——此前唯一调用点丢弃返回值，
+// 指纹会静默回落上游默认且零信号。
+func TestQUICConfigFromProfileReportsUnsupportedTP(t *testing.T) {
+	base, err := profiles.Get("chrome_150_windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &profiles.Profile{
+		Name: "test_unsupported_tp",
+		TLS:  base.TLS,
+		HTTP3: &profiles.HTTP3Profile{TransportParams: map[string]uint64{
+			"initial_max_data":     1048576, // 可表达，正常映射
+			"bogus_key":            1,       // 未知键
+			"max_udp_payload_size": 99999,   // 越界（RFC 9000 §18.2 上限 65527）
+		}},
+	}
+	_, warns, err := QUICConfigFromProfileWithWarnings(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := func(k string) bool {
+		for _, w := range warns {
+			if w == k {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("bogus_key") || !has("max_udp_payload_size") {
+		t.Errorf("unsupported 清单 = %v, want 含 bogus_key 与 max_udp_payload_size", warns)
+	}
+	if has("initial_max_data") {
+		t.Errorf("可表达键不应进 unsupported：%v", warns)
+	}
+	// 旧签名兼容路径行为不变（错误/配置结果一致）。
+	if _, err := QUICConfigFromProfile(p); err != nil {
+		t.Fatalf("QUICConfigFromProfile: %v", err)
+	}
+}

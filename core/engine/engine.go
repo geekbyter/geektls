@@ -11,6 +11,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http/cookiejar"
@@ -86,6 +87,24 @@ type SessionOptions struct {
 	//（sec-ch-ua / sec-ch-ua-platform / sec-ch-ua-mobile）校正到该 UA（默认 auto）。
 	// 注意：**TLS/JA3/JA4/H2 不会因此改变**——那需要换同平台变体预设，本库如实告警。
 	IdentitySync string `json:"identity_sync,omitempty"`
+
+	// Identity（T-I5，2026-10-14）：HTTP 身份（identity 节）的覆盖/兜底控制。
+	//   - 不传（nil）：低层装载（clienthello_hex / ja3 / ja4r / 无 identity 的自定义
+	//     profile）时自动借用"最相似内置预设"的 identity 节——不这么做，请求头会
+	//     落到 Go 默认 UA（Go-http-client/…），云 WAF 的精准访问控制据此一眼判非
+	//     浏览器（创宇盾案例 403）。
+	//   - "预设名"：借该预设的 identity 节；
+	//   - {"headers":[["name","value"],…]} 或 {"name":"value"}：直接用给定头表；
+	//   - false：显式关闭自动身份（TLS 对拍场景：要什么发什么；ja3/ja4r 的载荷
+	//     借用不受此开关影响）。
+	// 预设/profile 自带 identity 时不受影响（自动兜底只补空缺）。
+	Identity json.RawMessage `json:"identity,omitempty"`
+
+	// ProfilePatch（T-J2，2026-10-14）：以最终 profile 为底、做 JSON 片段的**深合并
+	// 覆盖**（对象逐层递归、数组与标量整体替换——与 profile 的 extends 同规则）。
+	// 用于"从预设/抓包出发只改要改的字段"（增删扩展、换 ALPN、覆盖身份头…），免去
+	// 手抄全量 profile。在 identity/载荷兜底之前生效（兜底基于 patch 后的形态）。
+	ProfilePatch json.RawMessage `json:"profile_patch,omitempty"`
 }
 
 // Request 是一次请求（FFI 的 request_json 映射到它）。
@@ -124,6 +143,14 @@ type SelfCheck struct {
 	WireExts      []uint16             `json:"wire_extensions"` // 线上扩展序（含 GREASE 实际值）
 	Grease        []tlscore.GreaseMark `json:"grease,omitempty"`
 	Negotiated    *NegotiatedInfo      `json:"negotiated,omitempty"` // 握手协商结果
+
+	// --- HTTP 层（T-I8）：本请求实际发出的请求头形态（每请求填充；连接池复用
+	// 时仍是本请求的值，与上面的握手级字段相互独立）。浏览器伪装场景最直观的
+	// 自检信号：缺 user-agent 时线上会回落 Go 栈默认 UA（Go-http-client/…），
+	// 等于向 WAF 自报"程序化客户端"（创宇盾案例）。
+	UserAgent   string `json:"user_agent,omitempty"`
+	HeaderCount int    `json:"header_count,omitempty"`
+	GoDefaultUA bool   `json:"go_default_ua,omitempty"`
 }
 
 // NegotiatedInfo 是握手协商出的 cipher/版本/ALPN（uConn ConnectionState）。
@@ -188,13 +215,37 @@ type Session struct {
 	h3tr           *http3.Transport // 池开启时的共享 H3 transport（懒建；quic-go 内部按 host 复用 QUIC 连接）
 	h3mu           sync.Mutex
 	h3calc         *utls.ClientHelloSpec // QUIC 内层 spec 的 tlscore 自算镜像（T2.1，懒建；随 h3mu 保护）
-	closed         atomic.Bool
+	// h3Warns 是建会话时收集的 H3 transport_params"不可表达键"清单（L-4）：
+	// 挂到每条响应的 Warnings 上如实告知，避免指纹静默漂移。
+	h3Warns []string
+	// identWarns 是低层装载兜底（T-I5/T-I9）的告警（载荷借用 / identity 自动
+	// 借用）：与 h3Warns 同路挂到每条响应的 Warnings。
+	identWarns []string
+	// identDisabled：调用方显式 identity=false（TLS 对拍场景）——HTTP 层自检
+	// 照实记录，但不再告警（用户已明确知道自己要什么）。
+	identDisabled bool
+	closed        atomic.Bool
 }
 
 // NewSession 基于 profile 建会话。profile 必须有可编译的 tls.detail。
 func NewSession(p *profiles.Profile, opts SessionOptions) (*Session, error) {
 	if p == nil || p.TLS == nil || p.TLS.Detail == nil {
 		return nil, fmt.Errorf("engine: profile has no tls.detail")
+	}
+	// profile_patch（T-J2）：对最终 profile 做 JSON 片段深合并覆盖；先于兜底与
+	// 建会话生效（兜底匹配基于 patch 后的形态）。MergePatch 返回新对象，不改入参。
+	if len(opts.ProfilePatch) > 0 {
+		patched, err := profiles.MergePatch(p, opts.ProfilePatch)
+		if err != nil {
+			return nil, err
+		}
+		p = patched
+	}
+	// 低层装载兜底（T-I5/T-I9）：ja3/ja4r 载荷借用 + HTTP 身份自动补齐；两者都
+	// 在克隆出的 profile 上生效，不污染调用方对象（见 identity_fallback.go）。
+	p, identWarns, identDisabled, err := resolveIdentityAndPayloads(p, opts.Identity)
+	if err != nil {
+		return nil, err
 	}
 	if opts.TimeoutMs <= 0 {
 		opts.TimeoutMs = 30000
@@ -234,6 +285,7 @@ func NewSession(p *profiles.Profile, opts SessionOptions) (*Session, error) {
 		protoCustom: len(opts.Protocols) > 0 || opts.H3 != nil,
 		hdrOrder:    hdrOrder,
 		idSync:      idSync,
+		identWarns:  identWarns, identDisabled: identDisabled,
 	}
 	certs, err := loadCertMaterial(opts)
 	if err != nil {
@@ -254,6 +306,7 @@ func NewSession(p *profiles.Profile, opts SessionOptions) (*Session, error) {
 		s.sessionCache = utls.NewLRUClientSessionCache(64)
 		s.h3SessionCache = utlsb.NewLRUClientSessionCache(64) // QUIC 侧同一开关（T1）
 	}
+	s.collectH3Warns() // L-4：transport_params 不可表达键在建会话时就弄清
 	s.pool = newConnPool()
 	return s, nil
 }

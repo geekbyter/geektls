@@ -77,10 +77,21 @@ func transportParamsToQUICConfig(tp map[string]uint64, cfg *quic.Config) []strin
 }
 
 // QUICConfigFromProfile 把 profile 映射为 quic.Config（NewTransport 与
-// 测试共用）。tls.detail 经 tlscore 编译 + bogdanfinn 类型转换后注入为
-// QUIC 内层握手的 ClientHelloSpec（vendor patch，见 third_party/GEEKTLS_PATCHES.md）。
-// transport params 不可表达的键被忽略（清单见 docs/p4-h3-capability.md）。
+// 测试共用）。transport params 不可表达的键在这里被忽略——需要该清单的
+// 调用方改用 QUICConfigFromProfileWithWarnings。
 func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
+	qcfg, _, err := QUICConfigFromProfileWithWarnings(p)
+	return qcfg, err
+}
+
+// QUICConfigFromProfileWithWarnings 同 QUICConfigFromProfile，并返回
+// transport_params 中"无法表达"的键列表（未知键 / 越界值）——调用方应记录或
+// 告警：这些键会回落上游默认，静默忽略会让指纹悄悄漂移（engine 会把清单挂到
+// 响应 Warnings，见 L-4）。
+// tls.detail 经 tlscore 编译 + bogdanfinn 类型转换后注入为
+// QUIC 内层握手的 ClientHelloSpec（vendor patch，见 third_party/GEEKTLS_PATCHES.md）。
+// 可表达键清单见 docs/p4-h3-capability.md。
+func QUICConfigFromProfileWithWarnings(p *profiles.Profile) (*quic.Config, []string, error) {
 	qcfg := &quic.Config{
 		EnableDatagrams:      true,
 		HandshakeIdleTimeout: 3 * time.Second, // 失败时回落 H2 前的等待上限（默认 5s 太长）
@@ -90,11 +101,11 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 	if p.TLS != nil && p.TLS.Detail != nil {
 		spec, err := tlscore.CompileDetail(p.TLS.Detail)
 		if err != nil {
-			return nil, fmt.Errorf("h3: compile tls detail: %w", err)
+			return nil, nil, fmt.Errorf("h3: compile tls detail: %w", err)
 		}
 		bspec, err := SpecToBogdan(spec)
 		if err != nil {
-			return nil, fmt.Errorf("h3: spec convert: %w", err)
+			return nil, nil, fmt.Errorf("h3: spec convert: %w", err)
 		}
 		clampSpecForQUIC(bspec, p.HTTP3)
 		qcfg.ClientHelloSpec = bspec
@@ -102,12 +113,13 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 
 	h3p := p.HTTP3
 	if h3p == nil {
-		return qcfg, nil
+		return qcfg, nil, nil
 	}
+	var unsupportedTP []string
 	if h3p.QUICVersion != "" {
 		v, err := profiles.ParseHex16(h3p.QUICVersion)
 		if err != nil {
-			return nil, fmt.Errorf("h3: quic_version: %w", err)
+			return nil, nil, fmt.Errorf("h3: quic_version: %w", err)
 		}
 		qcfg.Versions = []quic.Version{quic.Version(v)}
 	}
@@ -119,7 +131,7 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 	floor := 1200
 	if h3p.InitialPacketSize != 0 {
 		if h3p.InitialPacketSize < 1200 || h3p.InitialPacketSize > 1452 {
-			return nil, fmt.Errorf("h3: initial_packet_size %d 越界（want 1200..1452 = 填充下限）", h3p.InitialPacketSize)
+			return nil, nil, fmt.Errorf("h3: initial_packet_size %d 越界（want 1200..1452 = 填充下限）", h3p.InitialPacketSize)
 		}
 		floor = h3p.InitialPacketSize
 	}
@@ -131,7 +143,7 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 	scidLen := -1
 	if h3p.ConnectionIDLength != nil {
 		if *h3p.ConnectionIDLength < 0 || *h3p.ConnectionIDLength > 20 {
-			return nil, fmt.Errorf("h3: connection_id_length %d 越界（want 0..20；nil = 上游默认 4）", *h3p.ConnectionIDLength)
+			return nil, nil, fmt.Errorf("h3: connection_id_length %d 越界（want 0..20；nil = 上游默认 4）", *h3p.ConnectionIDLength)
 		}
 		scidLen = *h3p.ConnectionIDLength
 	}
@@ -139,20 +151,21 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 	if len(h3p.TransportParamsRaw) > 0 {
 		if len(h3p.TransportParams) > 0 {
 			// 两种形态同时设置时不许静默选一边（Q2 冲突规则）。
-			return nil, fmt.Errorf("h3: transport_params 与 transport_params_raw 互斥（raw 优先的静默覆盖已禁止）；请只保留一种")
+			return nil, nil, fmt.Errorf("h3: transport_params 与 transport_params_raw 互斥（raw 优先的静默覆盖已禁止）；请只保留一种")
 		}
 		// T4-1 blob 直通：有序/非标/GREASE 全控（vendor patch #7），
 		// 同时做客户端合法性/行为一致性校验并把已知键值映射回 quic.Config。
 		tps, err := buildTransportParamsRaw(h3p.TransportParamsRaw)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		qcfg.TransportParamsOverride = tps
 		if err := applyKnownRawTP(tps, qcfg, scidLen); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	} else if len(h3p.TransportParams) > 0 {
-		transportParamsToQUICConfig(h3p.TransportParams, qcfg)
+		// 收集"不可表达"键清单（L-4）：此前在唯一调用点被静默丢弃。
+		unsupportedTP = transportParamsToQUICConfig(h3p.TransportParams, qcfg)
 	}
 	if l := h3p.InitialLayout; l != nil {
 		// Initial 布局（vendor patch #8）：PADDING 位置 / CRYPTO 分片表 /
@@ -173,7 +186,7 @@ func QUICConfigFromProfile(p *profiles.Profile) (*quic.Config, error) {
 		}
 		qcfg.InitialLayout = layout
 	}
-	return qcfg, nil
+	return qcfg, unsupportedTP, nil
 }
 
 // NewTransport 按 profile 构建 H3 Transport（实现 fhttp RoundTripper）。

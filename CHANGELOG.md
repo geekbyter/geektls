@@ -3,7 +3,7 @@
 本项目遵循语义化版本（版本号规则与"四处单一事实源"见 [docs/versioning.md](docs/versioning.md)）。
 更早的发布过程记录见 [docs/plans/2026-09-28-pypi-release-plan.md](docs/plans/2026-09-28-pypi-release-plan.md) §8.5/§8.6。
 
-## 0.2.0（2026-10-09）
+## Unreleased
 
 ### 新增
 
@@ -23,6 +23,59 @@
 - 文档：docs/12 6.1 节、三个绑定 README、v0.2.0/v0.2.1 plan；ja4plus 交叉
   验收顺延 v0.2.1 T-E。
 
+### 新增（v0.2.1 轮，2026-10-14）
+
+- **HTTP 身份兜底（identity）+ 低层装载载荷借用**（创宇盾案例驱动）：`clienthello_hex=`
+  / `ja3=` / `ja4r=` 等低层装载不带浏览器请求头套件与部分扩展载荷，引擎现按形态
+  **匹配最相似内置预设**（扩展集合/ciphers/ALPN 打分，阈值 0.75，候选只收浏览器形态）
+  并自动补齐——**HTTP 身份**（`identity_auto` 告警说明借了谁；不补身份头时请求会以
+  Go 默认 UA 上线，被云 WAF 的精准访问控制一眼拦，实测 403→404）与 **ja3/ja4r 扩展
+  载荷**（`payload_borrowed` 告警；入口自带信息保留、41 归位扩展末尾、key_share 组按
+  supported_groups 过滤、相似度不足不借并如实告警）。显式控制 `identity=`（预设名 /
+  头表 / `false`），三绑定同名参数；**兜底在克隆 profile 上生效，不污染调用方对象**。
+- **`profile_patch`（增量指纹覆盖）**：以最终 profile 为底的 JSON 深合并（对象递归、
+  数组整体替换，与 `extends` 同规则）、未知字段报错、先于兜底生效；三绑定同名参数。
+  （实测：运行时剔除 51764，线上 JA4 a/c 段随之改变。）
+- **SSE 客户端（Python）**：`Session.sse(url, last_event_id=…)` / `Response.iter_sse()` /
+  模块级 `geektls.sse()`——按 HTML 规范解析（行分隔 `\r\n`/`\n`/`\r`、空行派发、多行
+  data、`event/id/retry`、注释、NUL id 忽略、EOF 丢弃挂起）；事件对象 `SSEEvent(...)`。
+  Node/Go 待同步。
+- **multipart/form-data 上传（Python）**：`Multipart` 构造器（`add_part` / `from_list`，
+  同名 part 可重复）+ `request(..., multipart=mp)`；`data=` 的 dict/元组列表尾随并入；
+  浏览器形态 boundary（`----WebKitFormBoundary`+16 位随机）；`content-type` 由构造器接管。
+- **selfcheck 增加 HTTP 层**（`user_agent` / `header_count` / `go_default_ua`，每请求填充；
+  无 UA 且未显式关闭身份时挂 `http_identity` 告警）；三绑定同构（ABI 不动）。
+- **`profiles.DiffClientHellos(aHex, bHex)`**（对拍工具入库）：掩码 GREASE 随机项后逐项
+  对比两份 ClientHello；扩展**长度**逐项对齐（ECH/padding 这类"长度即特征"的差异不漏）、
+  按语义字段比结构。
+- **chrome_155_windows 补 tcp 节** `{ttl:128, mss:1460}`（用户真机 pcap 2026-10-14；
+  证据归档 `profiles/evidence/browsers/chrome_155_windows_pcap.json`，含装载重放对拍
+  逐字符一致与"逐连接扩展洗牌"的同 pcap 三流实证）。
+
+### 修复
+
+- **`import-pcap` 的 pcapng 时间戳**：读 IDB `if_tsresol` 按分辨率换算（Wireshark 4.6
+  常写 9 = 纳秒）——此前 `captured_at` 会产出 58754 年（真实抓包已复验）。
+- **`FromJA4R` 的 a 段扩展计数校验**：按 JA4 规范计数"含 SNI/ALPN"（exts 段不含，
+  由 d/i 标志与 ALPN 码承载）——此前真实 ja4r 一律误报 `count_mismatch`。
+- **Python `json=` 紧凑分隔符**：`separators=(",", ":")` 对齐浏览器 `JSON.stringify`
+  的线上字节（硬编码、无开关；创宇盾 query 端点实测 403→200）。
+
+### 变更（行为默认改变）
+
+- 低层装载（hex / ja3 / ja4r / 无 identity 的自定义 profile）的**请求头形态**：不再
+  裸奔 Go 默认 UA，而是自动借用最相似预设的浏览器身份；要旧行为用 `identity=False`。
+- 文档：**仓库根 README**（PyPI 页面源——构建期由 release 流程 `cp` 成
+  `bindings/python/README.md`，故本轮改动落在根 README）与三绑定 README 同步本轮能力
+  （低层装载自动兜底 / identity / `profile_patch` / multipart / SSE）；docs/12 §3
+  补"低层装载的自动兜底"。
+
+### 测试
+
+- Go 绑定三入口回环（`bindings/golang/loopback_test.go`）：hex/ja3/ja4r → 本地 HTTPS
+  真实请求 → selfcheck 与期望逐字符一致（`JA3Match` / `JA4Match`）。
+- Python e2e `tests/e2e/python/test_sse.py`（SSE 全形态）；profiles 新增
+  match / borrow / diff / patch 单测；pcapimport 纳秒分辨率用例。
 
 ## 0.1.9（2026-10-09）
 

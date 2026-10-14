@@ -61,6 +61,10 @@ if err != nil {
 }
 defer resp.Close()
 fmt.Println(resp.SelfCheck.JA3Hash, resp.SelfCheck.JA4) // 线上对拍：实际 JA3/JA4 vs 期望
+// HTTP 身份：hex/ja3/ja4r 装载会自动借用"最相似内置预设"的 identity 节（响应
+// Warnings 的 identity_auto 说明借了谁；ja3/ja4r 的扩展载荷同理，payload_borrowed）。
+// 要指定或关闭：&Options{Identity: json.RawMessage(`"chrome_154_windows"`)}（预设名 /
+// 头表 / false）。
 ```
 
 ### 抓来的 ClientHello，TLS 面是这样处理的
@@ -75,6 +79,14 @@ fmt.Println(resp.SelfCheck.JA3Hash, resp.SelfCheck.JA4) // 线上对拍：实际
   2. 离线细看：`core/tls` 的 `CheckProfile(rec.ClientHelloHex)`——完整解析 + 告警（不联网）；
   3. 线上对拍：请求后读 `resp.SelfCheck`（结构体字段）——本次握手**实际发出**的 JA3/JA4 与期望
      比对，与第 1 步的值一致即复现成功；
+- **HTTP 身份（identity）**：hex / ja3 / ja4r 这类低层装载**不带**浏览器请求头套件——
+  引擎自动借用"最相似内置预设"的 identity 节（按 ciphers 集合 / 扩展集合 / ALPN 匹配，
+  相似度 ≥ 0.75 才借），响应 `Warnings` 的 `identity_auto` 说明借了谁；要指定或关闭用
+  `Options.Identity`（预设名 JSON 串 / 头表 / `false`）。不补身份头会以 Go 默认 UA 上线，
+  容易被云 WAF 的"精准访问控制"拦（实测同一 ClientHello：缺身份头 403、补齐后 404）。
+- **载荷兜底**：`gtls.NewSessionFromJA3` / `gtls.NewSessionFromJA4R`（与 hex 同形入口）
+  的扩展载荷按最相似预设的真实形态替换 / 补全（`payload_borrowed` 告警）；只改个别字段
+  用 `Options.ProfilePatch`（JSON 片段深合并、数组整体替换，先于兜底生效）。
 - **边界**：hex 装载只覆盖 **TLS 面**；**TCP 面**（TTL/MSS/窗口/选项序，即记录里的
   `TCP`）要经预设（`tcp` 节）才生效——见节尾"CLI 工具链"。
 

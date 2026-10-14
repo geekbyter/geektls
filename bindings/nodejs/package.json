@@ -1,6 +1,6 @@
 {
   "name": "geektls",
-  "version": "0.2.0",
+  "version": "0.1.9",
   "description": "Multi-language TLS/HTTP fingerprint impersonation library (Node.js binding)",
   "license": "MIT",
   "repository": {
@@ -27,7 +27,7 @@
     "*.dylib"
   ],
   "scripts": {
-    "test": "node --test ../../tests/e2e/node/engine.test.js"
+    "test": "node --test ../../tests/e2e/node/engine.test.js ../../tests/e2e/node/import_pcap.test.js"
   },
   "dependencies": {
     "koffi": "^2.5.0"
