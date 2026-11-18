@@ -106,6 +106,13 @@ const gtls_request_write = lib.func(
   'int64_t gtls_request_write(uint64_t upload, const void *buf, int64_t buf_len)'
 );
 const gtls_request_finish = lib.func('uint64_t gtls_request_finish(uint64_t upload)');
+// ABI v1 追加符号（同 gtls_error_of 口径：旧版动态库缺少该符号时降级为 null）。
+let gtls_request_abort = null;
+try {
+  gtls_request_abort = lib.func('int gtls_request_abort(uint64_t upload)');
+} catch {
+  gtls_request_abort = null;
+}
 const gtls_ws_connect = lib.func('uint64_t gtls_ws_connect(uint64_t session, const char *url_json)');
 const gtls_ws_send = lib.func('int gtls_ws_send(uint64_t ws, int opcode, const void *buf, int64_t buf_len)');
 const gtls_ws_recv = lib.func(
@@ -358,7 +365,7 @@ class Response {
   /** Node Readable 流式 body（内部循环 gtls_response_read）。 */
   get body() {
     if (this._body === null) {
-      this._body = new ResponseBody(this._handle);
+      this._body = new ResponseBody(this);
     }
     return this._body;
   }
@@ -374,7 +381,7 @@ class Response {
 
   /** 流式块（等价 Python 的 iter_content；chunkSize 需在 body 首次使用前指定）。 */
   async *iterContent(chunkSize) {
-    const stream = chunkSize ? new ResponseBody(this._handle, chunkSize) : this.body;
+    const stream = chunkSize ? new ResponseBody(this, chunkSize) : this.body;
     for await (const chunk of stream) yield chunk;
   }
 
@@ -421,11 +428,15 @@ class Response {
     }
   }
 
-  async close() {
+  _closeHandle() {
     if (this._handle) {
       gtls_response_close(this._handle);
       this._handle = 0n;
     }
+  }
+
+  async close() {
+    this._closeHandle();
   }
 
   toString() {
@@ -434,24 +445,55 @@ class Response {
 }
 
 class ResponseBody extends Readable {
-  constructor(handle, chunkSize = 65536) {
+  constructor(resp, chunkSize = 65536) {
     super();
-    this._handle = handle;
+    // 与 Response 共享句柄生命周期，避免 Response.close() 与流 _destroy() 重复释放或对 0n 调 close。
+    this._resp = typeof resp === 'object' && resp !== null ? resp : null;
+    this._rawHandle = this._resp ? 0n : resp;
     this._chunkSize = chunkSize;
     this._buf = Buffer.allocUnsafe(chunkSize);
     this._done = false;
   }
 
+  _currentHandle() {
+    return this._resp ? this._resp._handle : this._rawHandle;
+  }
+
+  _closeHandle() {
+    if (this._resp) {
+      this._resp._closeHandle();
+      return;
+    }
+    if (this._rawHandle) {
+      gtls_response_close(this._rawHandle);
+      this._rawHandle = 0n;
+    }
+  }
+
   _read() {
-    if (this._done) return;
+    if (this._done || this.destroyed) return;
+    if (!this._currentHandle()) {
+      this._done = true;
+      this.push(null);
+      return;
+    }
     // setImmediate 关键：koffi 的 .async 不能在其自身异步回调的同一回合里
     // 对同一函数再次发起（会静默死锁，实测）。把下一次读挪出回调回合。
     setImmediate(async () => {
       try {
-        const raw = await callAsync(gtls_response_read, this._handle, this._buf, BigInt(this._chunkSize));
+        const handle = this._currentHandle();
+        if (!handle || this.destroyed) {
+          if (!this._done) {
+            this._done = true;
+            this.push(null);
+          }
+          return;
+        }
+        const raw = await callAsync(gtls_response_read, handle, this._buf, BigInt(this._chunkSize));
         const n = Number(raw); // koffi int64 返回值可能是 Number 或 BigInt
         if (n < 0) {
-          const err = errorOf(this._handle);
+          if (this.destroyed || !this._currentHandle()) return;
+          const err = errorOf(handle);
           this.destroy(new GeekTLSError(err.code || 'read_failed', err.message || 'read failed'));
           return;
         }
@@ -468,10 +510,7 @@ class ResponseBody extends Readable {
   }
 
   _destroy(err, cb) {
-    if (this._done || this._handle) {
-      gtls_response_close(this._handle);
-      this._handle = 0n;
-    }
+    this._closeHandle();
     cb(err);
   }
 }
@@ -811,7 +850,15 @@ class Session {
         if (Number(n) < 0) raiseErrorFor(up);
       }
     } catch (err) {
-      try { await callAsync(gtls_request_finish, up); } catch { /* 回收 handle 即可 */ }
+      // 优先使用 gtls_request_abort 复位流/关连接，避免 finish 写出合法结束帧并阻塞等响应；
+      // 仅在旧版动态库无此符号时退回 finish 回收 handle。
+      try {
+        if (gtls_request_abort) {
+          await callAsync(gtls_request_abort, up);
+        } else {
+          await callAsync(gtls_request_finish, up);
+        }
+      } catch { /* 回收 handle 即可 */ }
       throw err;
     }
     const handle = await callAsync(gtls_request_finish, up);

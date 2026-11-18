@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
@@ -89,6 +90,18 @@ func TestResponseTextEncoding(t *testing.T) {
 	r3, _ := newResp(200, nil, []byte("héllo 世界"))
 	if got, _ := r3.Text(); got != "héllo 世界" {
 		t.Fatalf("utf-8 解码失败: %q", got)
+	}
+
+	// 4) 声明 iso-8859-1 / latin-1 → 转为合法 UTF-8，且 JSON 解析可用
+	latin := []byte{0x7b, 0x22, 0x6b, 0x22, 0x3a, 0x22, 0x63, 0x61, 0x66, 0xe9, 0x22, 0x7d} // {"k":"café"}
+	r4, _ := newResp(200, [][2]string{{"Content-Type", "application/json; charset=iso-8859-1"}}, latin)
+	got4, err := r4.Text()
+	if err != nil || got4 != `{"k":"café"}` || !utf8.ValidString(got4) {
+		t.Fatalf("iso-8859-1 解码失败: got=%q valid=%v err=%v", got4, utf8.ValidString(got4), err)
+	}
+	var obj map[string]string
+	if err := r4.JSON(&obj); err != nil || obj["k"] != "café" {
+		t.Fatalf("iso-8859-1 JSON 解析失败: obj=%v err=%v", obj, err)
 	}
 }
 

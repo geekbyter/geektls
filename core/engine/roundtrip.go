@@ -4,18 +4,22 @@ package engine
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	utls "github.com/refraction-networking/utls"
 
 	h2core "github.com/geekbyter/geektls/core/h2"
 	"github.com/geekbyter/geektls/core/profiles"
+	fhttp "github.com/geekbyter/geektls/core/third_party/fhttp"
 	tlscore "github.com/geekbyter/geektls/core/tls"
 )
 
@@ -159,31 +163,43 @@ func (s *Session) doTCPLegacy(req *Request, u *url.URL, headers [][2]string) (*R
 	if err != nil {
 		return nil, err
 	}
+	deadline := s.requestDeadline(req)
 	if s.poolOn() {
 		if e := s.pool.getH2(key); e != nil {
 			if e.cc.CanTakeNewRequest() {
-				if resp, err := s.doH2(e, req, headers); err == nil {
+				resp, herr := s.doH2(e, req, headers, deadline)
+				if herr == nil {
 					return resp, nil
 				}
+				s.pool.removeH2(key, e)
+				e.tc.uconn.Close()
+				// 请求级 TimeoutMs 已耗尽时不重拨，直接把超时返回给调用方。
+				if errors.Is(herr, context.DeadlineExceeded) || isDeadlineExpired(deadline) {
+					return nil, herr
+				}
+			} else {
+				// 死连接或不可再接流：摘除并落新拨号
+				s.pool.removeH2(key, e)
+				e.tc.uconn.Close()
 			}
-			// 死连接或 RoundTrip 失败：摘除并落新拨号
-			s.pool.removeH2(key, e)
-			e.tc.uconn.Close()
 		}
 		if e := s.pool.popH1(key); e != nil {
 			if e.br != nil && e.br.Buffered() > 0 {
 				// 空闲连接上有未读字节 = 协议脱同步，不复用
 				e.tc.uconn.Close()
-			} else if resp, err := s.doH1(e, req, u, headers); err == nil {
+			} else if resp, herr := s.doH1(e, req, u, headers, deadline); herr == nil {
 				return resp, nil
 			} else {
 				e.tc.uconn.Close()
+				if isNetTimeout(herr) && isDeadlineExpired(deadline) {
+					return nil, herr
+				}
 			}
 			// 池化连接失效 → 落新拨号
 		}
 	}
 
-	tc, err := s.connect(req, u)
+	tc, err := s.connectWithDeadline(req, u, deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +209,10 @@ func (s *Session) doTCPLegacy(req *Request, u *url.URL, headers [][2]string) (*R
 		var e *poolEntry
 		e, err = s.newH2Entry(key, tc)
 		if err == nil {
-			resp, err = s.doH2(e, req, headers)
+			resp, err = s.doH2(e, req, headers, deadline)
 		}
 	} else {
-		resp, err = s.doH1(&poolEntry{key: key, tc: tc}, req, u, headers)
+		resp, err = s.doH1(&poolEntry{key: key, tc: tc}, req, u, headers, deadline)
 	}
 	if err != nil {
 		tc.uconn.Close()
@@ -316,17 +332,20 @@ func (s *Session) newH2Entry(key string, tc *transportConn) (*poolEntry, error) 
 // doH2 走 fhttp 帧层。SelfCheck 报告本连接握手时的指纹（池化复用不发新
 // ClientHello）；共享连接的 body 关闭只收尾当前流，孤儿/无池连接随 body
 // 关闭（旧行为）。
-func (s *Session) doH2(e *poolEntry, req *Request, headers [][2]string) (*Response, error) {
+func (s *Session) doH2(e *poolEntry, req *Request, headers [][2]string, deadline time.Time) (*Response, error) {
 	var body io.Reader
 	if req.Body != nil {
 		body = bytes.NewReader(req.Body)
 	}
-	resp, err := h2core.Do(e.cc, req.Method, req.URL, s.orderForWire(headers), body)
+	wiredHeaders := s.orderForWire(headers)
+	resp, err := roundTripWithHeaderTimeout(func(ctx context.Context) (*fhttp.Response, error) {
+		return h2core.DoContext(ctx, e.cc, req.Method, req.URL, wiredHeaders, body)
+	}, deadline)
 	if err != nil {
 		return nil, fmt.Errorf("engine: h2 request: %w", err)
 	}
 	var rc io.ReadCloser = resp.Body
-	if !e.shared {
+	if !e.shared.Load() {
 		rc = &connClosingReader{ReadCloser: resp.Body, onClose: func() { e.tc.uconn.Close() }}
 	}
 	out := &Response{
@@ -341,6 +360,56 @@ func (s *Session) doH2(e *poolEntry, req *Request, headers [][2]string) (*Respon
 		}
 	}
 	return out, nil
+}
+
+// roundTripWithHeaderTimeout 为 H2/H3 的 RoundTrip（含等待响应头）提供硬超时，
+// 且在响应头返回后立即摘除定时器，绝不因超时取消后续仍在读取的流式 body
+// （fhttp/http2 与 quic-go-utls/http3 都会在 RoundTrip 返回后继续监听 req.Context().Done()）。
+func roundTripWithHeaderTimeout(rt func(context.Context) (*fhttp.Response, error), deadline time.Time) (*fhttp.Response, error) {
+	if deadline.IsZero() {
+		return rt(context.Background())
+	}
+	rem := time.Until(deadline)
+	if rem <= 0 {
+		return nil, context.DeadlineExceeded
+	}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	var mu sync.Mutex
+	headersDone := false
+	timer := time.AfterFunc(rem, func() {
+		mu.Lock()
+		if !headersDone {
+			cancel(context.DeadlineExceeded)
+		}
+		mu.Unlock()
+	})
+	resp, err := rt(ctx)
+	mu.Lock()
+	headersDone = true
+	timer.Stop()
+	mu.Unlock()
+	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
+		cancel(nil)
+		return nil, err
+	}
+	// 极小窗口竞态兜底：timer 刚好在 rt 返回前一瞬间触发过 cancel。
+	if cause := context.Cause(ctx); cause != nil {
+		resp.Body.Close()
+		return nil, cause
+	}
+	return resp, nil
+}
+
+func isDeadlineExpired(deadline time.Time) bool {
+	return !deadline.IsZero() && !time.Now().Before(deadline)
+}
+
+func isNetTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 // connClosingReader：body 关闭时连带关连接（P3 每请求一连接）。

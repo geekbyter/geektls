@@ -2,6 +2,7 @@ package geektls
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -367,4 +368,66 @@ func TestSessionDialWS(t *testing.T) {
 		t.Errorf("默认不该发 extensions: %q", ext)
 	}
 	ws2.Close(0)
+}
+
+func TestRoundTripperContextCancelAndDeadline(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "rt-timeout"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hang", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	})
+	srv := &http.Server{Handler: mux}
+	if err := http2.ConfigureServer(srv, &http2.Server{}); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(tls.NewListener(ln, &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
+		NextProtos:   []string{"h2", "http/1.1"},
+	}))
+	t.Cleanup(func() { srv.Close(); ln.Close() })
+
+	rt, err := NewRoundTripper("chrome_133", &Options{InsecureSkipVerify: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) 已取消的 context 在 RoundTrip 入口立即失败，不发起网络拨号。
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://"+ln.Addr().String()+"/hang", nil)
+	if _, err := (&http.Client{Transport: rt}).Do(req); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled ctx err = %v, want context.Canceled", err)
+	}
+
+	// 2) http.Client.Timeout 应通过 context deadline 透传到引擎。
+	start := time.Now()
+	client := &http.Client{Transport: rt, Timeout: 250 * time.Millisecond}
+	if _, err := client.Get("https://" + ln.Addr().String() + "/hang"); err == nil {
+		t.Fatal("client.Timeout 应在 250ms 内超时")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("client.Timeout 耗时 %v，未透传到引擎", elapsed)
+	}
 }

@@ -6,12 +6,14 @@
 package geektls
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/geekbyter/geektls/core/engine"
 	pcapimport "github.com/geekbyter/geektls/core/pcapimport"
@@ -192,7 +194,24 @@ func NewRoundTripper(preset string, opts *Options) (http.RoundTripper, error) {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	er := &engine.Request{Method: req.Method, URL: req.URL.String()}
+	if dl, ok := ctx.Deadline(); ok {
+		rem := time.Until(dl)
+		if rem <= 0 {
+			return nil, context.DeadlineExceeded
+		}
+		// 向上取整至少 1ms，避免亚毫秒预算退化为 0（0 在 engine 中表示沿用会话默认超时），
+		// 使 http.Client.Timeout 与 context.WithTimeout 真正生效。
+		ms := int((rem + time.Millisecond - 1) / time.Millisecond)
+		if ms < 1 {
+			ms = 1
+		}
+		er.TimeoutMs = ms
+	}
 	for name, vals := range req.Header {
 		for _, v := range vals {
 			er.Headers = append(er.Headers, [2]string{name, v})

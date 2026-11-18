@@ -240,3 +240,48 @@ func TestDrainRaceLosersIgnoresErrorsAndEmpty(t *testing.T) {
 	drainRaceLosers(nil) // 未启动的一路（nil channel 应被跳过）
 	time.Sleep(50 * time.Millisecond)
 }
+
+// TestEngineH3MultiValueHeadersAndTimeout：H3 保留同名多值请求头，且服务端挂起响应头时 TimeoutMs 生效。
+func TestEngineH3MultiValueHeadersAndTimeout(t *testing.T) {
+	mux := fhttp.NewServeMux()
+	var gotVals []string
+	mux.HandleFunc("/multi", func(w fhttp.ResponseWriter, r *fhttp.Request) {
+		gotVals = append([]string(nil), r.Header.Values("X-Dup")...)
+		w.WriteHeader(200)
+	})
+	mux.HandleFunc("/hang", func(w fhttp.ResponseWriter, r *fhttp.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
+	})
+	addr := h3TestServer(t, mux)
+	s := h3Session(t, 0)
+	defer s.Close()
+
+	resp, err := s.Do(&Request{
+		URL:        "https://" + addr + "/multi",
+		ForceHTTP3: true,
+		Headers:    [][2]string{{"X-Dup", "a"}, {"X-Other", "1"}, {"X-Dup", "b"}},
+	})
+	if err != nil {
+		t.Fatalf("Do /multi: %v", err)
+	}
+	resp.Body.Close()
+	if len(gotVals) != 2 || gotVals[0] != "a" || gotVals[1] != "b" {
+		t.Fatalf("H3 X-Dup values = %v, want [a b]", gotVals)
+	}
+
+	start := time.Now()
+	_, err = s.Do(&Request{
+		URL:        "https://" + addr + "/hang",
+		ForceHTTP3: true,
+		TimeoutMs:  250,
+	})
+	if err == nil {
+		t.Fatal("H3 挂起响应头应在 TimeoutMs 内超时")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("H3 响应头超时耗时 %v", elapsed)
+	}
+}

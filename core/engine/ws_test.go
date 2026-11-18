@@ -342,3 +342,24 @@ func TestWSBadAcceptKey(t *testing.T) {
 	_ = srv
 	_ = s
 }
+
+// TestWSConcurrentRecvAndClose：Recv 与 Close 并发执行（-race 下无 DATA RACE）。
+func TestWSConcurrentRecvAndClose(t *testing.T) {
+	srv := startWSServer(t)
+	s := testSession(t, "chrome_133")
+
+	ws, err := s.DialWS(&WSRequest{URL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _, _ = ws.Recv(5000)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	if err := ws.Close(1000); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	<-done
+}

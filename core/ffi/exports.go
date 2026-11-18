@@ -322,9 +322,12 @@ func gtls_session_close(sessionH C.uint64_t) (ret C.int) {
 	defer guardInt(&ret)
 	clearLastError()
 
-	if _, ok := lookup[session](uint64(sessionH), "session"); !ok {
+	s, ok := lookup[session](uint64(sessionH), "session")
+	if !ok {
 		return -1
 	}
+	// 先排空连接池与共享 H3 transport，再摘除 handle，避免关闭会话后泄漏底层连接与 UDP socket。
+	s.eng.Close()
 	return closeHandle(uint64(sessionH))
 }
 
@@ -514,6 +517,20 @@ func gtls_request_finish(uploadH C.uint64_t) (ret C.uint64_t) {
 		return 0
 	}
 	return C.uint64_t(handles.Register(&response{resp: resp}))
+}
+
+//export gtls_request_abort
+func gtls_request_abort(uploadH C.uint64_t) (ret C.int) {
+	defer lockThread()()
+	defer guardInt(&ret)
+	clearLastError()
+
+	u, ok := lookup[upload](uint64(uploadH), "upload")
+	if !ok {
+		return -1
+	}
+	u.up.Abort()
+	return closeHandle(uint64(uploadH))
 }
 
 // --- WebSocket（T-WS，ABI 追加；wss://，RFC 6455 + RFC 7692 permessage-deflate） ---

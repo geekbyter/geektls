@@ -110,6 +110,13 @@ lib.gtls_request_write.argtypes = [ctypes.c_uint64, ctypes.c_void_p, ctypes.c_in
 lib.gtls_request_finish.restype = ctypes.c_uint64
 lib.gtls_request_finish.argtypes = [ctypes.c_uint64]
 
+# ABI v1 追加符号（同 gtls_error_of 口径：旧版动态库缺该符号时降级为 None）。
+try:
+    lib.gtls_request_abort.restype = ctypes.c_int
+    lib.gtls_request_abort.argtypes = [ctypes.c_uint64]
+except (AttributeError, OSError):
+    lib.gtls_request_abort = None
+
 lib.gtls_ws_connect.restype = ctypes.c_uint64
 lib.gtls_ws_connect.argtypes = [ctypes.c_uint64, ctypes.c_char_p]
 

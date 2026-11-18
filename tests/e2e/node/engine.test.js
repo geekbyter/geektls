@@ -393,7 +393,11 @@ test('a8 proxy env: ALL_PROXY 派生、trustEnv 关闭、NO_PROXY 与回环豁�
   const target = 'https://192.0.2.1:443/';          // TEST-NET-1：不可路由、不解析
   const dead = 'socks5://127.0.0.1:1';
   const marker = (e) => /force_http3/.test(String(e)) && String(e).includes('代理');
-  const saved = { ...process.env };
+  const proxyKeys = ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy',
+    'NO_PROXY', 'no_proxy', 'HTTP_PROXY', 'http_proxy'];
+  // 逐键保存并在 finally 中精确恢复/删除：Node 22 下 `process.env = saved`
+  // 不会从原生 Win32 进程环境块删除新增的 ALL_PROXY，会污染后续用例。
+  const saved = Object.fromEntries(proxyKeys.map((k) => [k, process.env[k]]));
 
   const errOf = async (opts) => {
     const s = new geektls.Session({
@@ -411,8 +415,7 @@ test('a8 proxy env: ALL_PROXY 派生、trustEnv 关闭、NO_PROXY 与回环豁�
   };
 
   const clearEnv = () => {
-    for (const k of ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy',
-      'NO_PROXY', 'no_proxy', 'HTTP_PROXY', 'http_proxy']) delete process.env[k];
+    for (const k of proxyKeys) delete process.env[k];
   };
 
   try {
@@ -444,7 +447,10 @@ test('a8 proxy env: ALL_PROXY 派生、trustEnv 关闭、NO_PROXY 与回环豁�
       s2.close();
     }
   } finally {
-    process.env = saved;
+    for (const k of proxyKeys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
   }
 });
 
@@ -537,5 +543,49 @@ test('a9 地址控制: resolve 钉位保留 SNI/Host、ipVersion 收窄族、loc
       (e) => /force_http3/.test(String(e)) && String(e).includes(field),
       `force_http3 + ${field} 应当报错（不静默绕过地址控制项）`
     );
+  }
+});
+
+test('response handle lifecycle: close & stream destroy are idempotent', async () => {
+  const s = new geektls.Session({ impersonate: 'chrome_133', insecureSkipVerify: true });
+  try {
+    // 1) 读完 body 后再显式 close()：不得触发二次关闭或 invalid_handle
+    const r1 = await s.get(`${baseUrl}/echo`);
+    await r1.text();
+    await r1.close();
+    assert.equal(r1._handle, 0n);
+
+    // 2) iterContent 提前退出后调 close()
+    const r2 = await s.get(`${baseUrl}/stream`);
+    for await (const chunk of r2.iterContent(4096)) {
+      assert.ok(chunk.length > 0);
+      break;
+    }
+    await r2.close();
+    assert.equal(r2._handle, 0n);
+
+    // 3) 先 close() 再读 body：安全结束，不报 invalid_handle
+    const r3 = await s.get(`${baseUrl}/echo`);
+    await r3.close();
+    const tail = await r3.read();
+    assert.equal(tail.length, 0);
+  } finally {
+    s.close();
+  }
+});
+
+test('stream upload abort on generator error', async () => {
+  const s = new geektls.Session({ impersonate: 'chrome_133', insecureSkipVerify: true });
+  try {
+    async function* failingGen() {
+      yield 'part1';
+      throw new Error('boom-mid-upload');
+    }
+    await assert.rejects(
+      s.post(`${baseUrl}/echo`, { body: failingGen() }),
+      /boom-mid-upload/
+    );
+  } finally {
+    s.close();
   }
 });

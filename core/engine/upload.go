@@ -9,15 +9,20 @@ package engine
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	h2core "github.com/geekbyter/geektls/core/h2"
 )
+
+var errUploadAborted = errors.New("engine: upload aborted")
 
 // Upload 是一次进行中的流式上传。Write 可多次调用；Finish 结束 body 并
 // 阻塞到响应头到达。不再使用时必须 Finish（否则连接随会话关闭才释放）。
@@ -113,7 +118,7 @@ func (s *Session) beginH2Upload(e *poolEntry, req *Request, u *url.URL, headers 
 			return
 		}
 		var rc io.ReadCloser = resp.Body
-		if !e.shared {
+		if !e.shared.Load() {
 			rc = &connClosingReader{ReadCloser: resp.Body, onClose: func() { e.tc.uconn.Close() }}
 		}
 		out := &Response{Status: resp.StatusCode, UsedProtocol: "h2", Body: rc, SelfCheck: e.tc.sc}
@@ -172,6 +177,19 @@ func (u *Upload) Write(p []byte) (int, error) {
 		return n, nil
 	}
 	conn := u.h1e.tc.uconn
+	// 合并 chunk 头、载荷与尾部 CRLF 为单次 Write，避免每块产生 3 个独立 TLS record 与系统调用；
+	// 对超大单块（>256KB）直接分段写，避免一次额外的大内存拷贝。
+	if len(p) <= 256<<10 {
+		buf := make([]byte, 0, 20+len(p)+2)
+		buf = strconv.AppendInt(buf, int64(len(p)), 16)
+		buf = append(buf, '\r', '\n')
+		buf = append(buf, p...)
+		buf = append(buf, '\r', '\n')
+		if _, err := conn.Write(buf); err != nil {
+			return 0, fmt.Errorf("engine: h1 upload chunk write: %w", err)
+		}
+		return len(p), nil
+	}
 	if _, err := fmt.Fprintf(conn, "%x\r\n", len(p)); err != nil {
 		return 0, fmt.Errorf("engine: h1 upload chunk head: %w", err)
 	}
@@ -182,6 +200,21 @@ func (u *Upload) Write(p []byte) (int, error) {
 		return 0, fmt.Errorf("engine: h1 upload chunk tail: %w", err)
 	}
 	return len(p), nil
+}
+
+// Abort 中止未完成的流式上传并立即释放底层连接/流（供调用方异常中断时使用，
+// 避免 Finish 写出合法结束帧并阻塞等响应）。幂等；Abort 后 Upload 即失效。
+func (u *Upload) Abort() {
+	if !u.done.CompareAndSwap(false, true) {
+		return
+	}
+	if u.pw != nil {
+		_ = u.pw.CloseWithError(errUploadAborted)
+		return
+	}
+	if u.h1e != nil && u.h1e.tc != nil && u.h1e.tc.uconn != nil {
+		_ = u.h1e.tc.uconn.Close()
+	}
 }
 
 // Finish 结束 body（H1 发终止 0-chunk；H2 关闭 DATA 流），阻塞到响应头
@@ -203,6 +236,13 @@ func (u *Upload) Finish() (*Response, error) {
 	}
 
 	e := u.h1e
+	deadline := u.s.requestDeadline(u.req)
+	if !deadline.IsZero() {
+		if err := e.tc.uconn.SetDeadline(deadline); err != nil {
+			e.tc.uconn.Close()
+			return nil, fmt.Errorf("engine: h1 upload set deadline: %w", err)
+		}
+	}
 	if _, err := io.WriteString(e.tc.uconn, "0\r\n\r\n"); err != nil {
 		e.tc.uconn.Close()
 		return nil, fmt.Errorf("engine: h1 upload finish: %w", err)
@@ -210,10 +250,17 @@ func (u *Upload) Finish() (*Response, error) {
 	if e.br == nil {
 		e.br = bufio.NewReader(e.tc.uconn)
 	}
-	resp, err := http.ReadResponse(e.br, &http.Request{Method: "POST"})
+	resp, err := http.ReadResponse(e.br, &http.Request{Method: u.req.Method})
 	if err != nil {
 		e.tc.uconn.Close()
 		return nil, fmt.Errorf("engine: h1 upload read response: %w", err)
+	}
+	if !deadline.IsZero() {
+		if err := e.tc.uconn.SetDeadline(time.Time{}); err != nil {
+			resp.Body.Close()
+			e.tc.uconn.Close()
+			return nil, fmt.Errorf("engine: h1 upload clear deadline: %w", err)
+		}
 	}
 	reuse := !resp.Close && u.s.poolOn()
 	out := &Response{Status: resp.StatusCode, UsedProtocol: "http/1.1", SelfCheck: e.tc.sc}
@@ -232,8 +279,10 @@ func (u *Upload) Finish() (*Response, error) {
 	} else {
 		out.Body = &h1Body{ReadCloser: resp.Body, entry: e, pool: u.s.pool, reuse: reuse}
 	}
+	// 读超时必须先包住协议层 h1Body 再叠透明解压，才能识别 h1Body.abort()，
+	// 避免 chunked 响应超时时走 stdlib 排空阻塞（与 roundtrip.go / H2 分支一致）。
+	out.Body = newTimeoutReader(out.Body, u.s.readTimeout(u.req))
 	u.s.applyDecompression(u.req, out)
 	u.s.absorbResponseMeta(u.u, out)
-	out.Body = newTimeoutReader(out.Body, u.s.readTimeout(u.req))
 	return out, nil
 }

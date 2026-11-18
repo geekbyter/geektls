@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/geekbyter/geektls/core/profiles"
@@ -50,7 +51,7 @@ type WSConn struct {
 	uconn   net.Conn // *utls.UConn
 	br      *bufio.Reader
 	wmu     sync.Mutex
-	closed  bool
+	closed  atomic.Bool
 	deflate *wsDeflater
 	inflate *wsInflater
 }
@@ -92,10 +93,11 @@ func (s *Session) DialWS(wr *WSRequest) (*WSConn, error) {
 	}
 	// req 是"给拨号/代理链路看的等价 HTTP URL"（ws/wss 只差 scheme）。
 	req := &Request{URL: scheme + "://" + u.Host + u.RequestURI(), TimeoutMs: wr.TimeoutMs}
+	deadline := s.requestDeadline(req)
 
 	var tc *transportConn
 	if plain {
-		tc, err = s.connectPlain(req, u)
+		tc, err = s.connectPlainWithDeadline(req, u, deadline)
 	} else {
 		// ALPN 收窄到 http/1.1：只改 cfg.NextProtos 没用（uTLS 线上发的是
 		// ClientHello 扩展里的协议列表），必须把 detail 的 ALPN 扩展也收窄——
@@ -110,7 +112,7 @@ func (s *Session) DialWS(wr *WSRequest) (*WSConn, error) {
 			}
 		}
 		detail.Extensions = exts
-		tc, err = s.connectALPN(req, u, []string{"http/1.1"}, &detail)
+		tc, err = s.connectALPNWithDeadline(req, u, []string{"http/1.1"}, &detail, deadline)
 	}
 	if err != nil {
 		return nil, err
@@ -187,6 +189,13 @@ func (s *Session) DialWS(wr *WSRequest) (*WSConn, error) {
 		fmt.Fprintf(&b, "%s: %s\r\n", kv[0], kv[1])
 	}
 	b.WriteString("\r\n")
+	if !deadline.IsZero() {
+		// Upgrade 请求写与 101 响应读共受拨号+握手超时约束，防止服务端挂死 101 应答。
+		if err := tc.uconn.SetDeadline(deadline); err != nil {
+			tc.uconn.Close()
+			return nil, fmt.Errorf("engine: ws set handshake deadline: %w", err)
+		}
+	}
 	if _, err := io.WriteString(tc.uconn, b.String()); err != nil {
 		tc.uconn.Close()
 		return nil, fmt.Errorf("engine: ws write handshake: %w", err)
@@ -197,6 +206,12 @@ func (s *Session) DialWS(wr *WSRequest) (*WSConn, error) {
 	if err != nil {
 		tc.uconn.Close()
 		return nil, fmt.Errorf("engine: ws read handshake response: %w", err)
+	}
+	if !deadline.IsZero() {
+		if err := tc.uconn.SetDeadline(time.Time{}); err != nil {
+			tc.uconn.Close()
+			return nil, fmt.Errorf("engine: ws clear handshake deadline: %w", err)
+		}
 	}
 	if resp.StatusCode != 101 {
 		tc.uconn.Close()
@@ -240,9 +255,19 @@ func wsAcceptKey(key string) string {
 func (c *WSConn) Send(opcode int, payload []byte) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
-	if c.closed {
+	if c.closed.Load() {
 		return fmt.Errorf("engine: ws closed")
 	}
+	return c.sendFrameLocked(opcode, payload)
+}
+
+func (c *WSConn) sendFrame(opcode int, payload []byte) error {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	return c.sendFrameLocked(opcode, payload)
+}
+
+func (c *WSConn) sendFrameLocked(opcode int, payload []byte) error {
 	if opcode >= 8 {
 		if len(payload) > 125 {
 			return fmt.Errorf("engine: ws control frame payload %d > 125", len(payload))
@@ -256,13 +281,17 @@ func (c *WSConn) Send(opcode int, payload []byte) error {
 			payload, rsv1 = comp, true
 		}
 	}
-	var hdr []byte
+	n := len(payload)
+	capHint := 14
+	if n <= 256<<10 {
+		capHint += n
+	}
+	hdr := make([]byte, 0, capHint)
 	first := byte(0x80) // FIN=1
 	if rsv1 {
 		first |= 0x40 // RSV1 = permessage-deflate
 	}
 	hdr = append(hdr, first|byte(opcode))
-	n := len(payload)
 	switch {
 	case n <= 125:
 		hdr = append(hdr, 0x80|byte(n)) // MASK=1
@@ -279,17 +308,28 @@ func (c *WSConn) Send(opcode int, payload []byte) error {
 		return err
 	}
 	hdr = append(hdr, mask[:]...)
+	// 常规载荷与帧头合并单次 Write，减少每次 Send 产生 2 个独立 TLS record；
+	// 超大载荷（>256KB）分段写，避免额外一次大缓冲拷贝。
+	if n <= 256<<10 {
+		off := len(hdr)
+		hdr = hdr[:off+n]
+		for i, b := range payload {
+			hdr[off+i] = b ^ mask[i%4]
+		}
+		if _, err := c.uconn.Write(hdr); err != nil {
+			return fmt.Errorf("engine: ws write frame: %w", err)
+		}
+		return nil
+	}
 	if _, err := c.uconn.Write(hdr); err != nil {
 		return fmt.Errorf("engine: ws write header: %w", err)
 	}
-	if n > 0 {
-		masked := make([]byte, n)
-		for i, b := range payload {
-			masked[i] = b ^ mask[i%4]
-		}
-		if _, err := c.uconn.Write(masked); err != nil {
-			return fmt.Errorf("engine: ws write payload: %w", err)
-		}
+	masked := make([]byte, n)
+	for i, b := range payload {
+		masked[i] = b ^ mask[i%4]
+	}
+	if _, err := c.uconn.Write(masked); err != nil {
+		return fmt.Errorf("engine: ws write payload: %w", err)
 	}
 	return nil
 }
@@ -324,9 +364,8 @@ func (c *WSConn) Recv(timeoutMs int) (int, []byte, error) {
 		case op == WSOpPong:
 			// 吞掉（应用层要 ping/pong 探活可另发 ping）
 		case op == WSOpClose:
-			if !c.closed {
-				c.Send(WSOpClose, payload) // 回关（尽力）
-				c.closed = true
+			if c.closed.CompareAndSwap(false, true) {
+				_ = c.sendFrame(WSOpClose, payload) // 回关（尽力）
 			}
 			return WSOpClose, payload, nil
 		case op == WSOpText || op == WSOpBinary:
@@ -444,9 +483,9 @@ func (c *WSConn) readFrame() (fin bool, opcode int, rsv1 bool, payload []byte, e
 	return
 }
 
-// Close 发 close 帧并关连接（幂等）。
+// Close 发 close 帧并关连接（幂等、并发安全）。
 func (c *WSConn) Close(code int) error {
-	if c.closed {
+	if !c.closed.CompareAndSwap(false, true) {
 		return nil
 	}
 	var payload []byte
@@ -454,8 +493,7 @@ func (c *WSConn) Close(code int) error {
 		payload = make([]byte, 2)
 		binary.BigEndian.PutUint16(payload, uint16(code))
 	}
-	sendErr := c.Send(WSOpClose, payload)
-	c.closed = true
+	sendErr := c.sendFrame(WSOpClose, payload)
 	if err := c.uconn.Close(); err != nil && sendErr == nil {
 		return err
 	}

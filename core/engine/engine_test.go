@@ -324,3 +324,84 @@ func TestEngineSelfCheckJA3Entry(t *testing.T) {
 		t.Errorf("ja3_match = %v, want true (selfcheck %+v)", resp.SelfCheck.JA3Match, resp.SelfCheck)
 	}
 }
+
+// TestEngineRedirectSanitizesHeaders：
+// 1) POST 302 降级 GET 时必须剥离 Content-Type / Content-Length，不污染后续 GET；
+// 2) 同域跳转保留 Authorization，跨 host 跳转必须剥离 Authorization，且不改调用方切片。
+func TestEngineRedirectSanitizesHeaders(t *testing.T) {
+	var secondSeen struct {
+		method string
+		ctype  string
+		clen   string
+		auth   string
+	}
+	mux := http.NewServeMux()
+	var targetURL string
+	mux.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/same", 302)
+	})
+	mux.HandleFunc("/same", func(w http.ResponseWriter, r *http.Request) {
+		secondSeen.method = r.Method
+		secondSeen.ctype = r.Header.Get("Content-Type")
+		secondSeen.clen = r.Header.Get("Content-Length")
+		secondSeen.auth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	})
+	mux.HandleFunc("/cross", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, targetURL, 302)
+	})
+	mux.HandleFunc("/dest", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.Header.Get("Authorization"))
+	})
+
+	pki := newTestPKI(t)
+	srv := &http.Server{Handler: mux}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(tls.NewListener(ln, &tls.Config{
+		Certificates: []tls.Certificate{pki.server},
+		NextProtos:   []string{"h2", "http/1.1"},
+	}))
+	t.Cleanup(func() { srv.Close(); ln.Close() })
+
+	base := "https://" + ln.Addr().String()
+	// 换用 localhost 作为跨 host 目标（仍连本机回环，host 名不同）。
+	targetURL = strings.Replace(base, "127.0.0.1", "localhost", 1) + "/dest"
+
+	s := testSession(t, "chrome_133")
+	origHdrs := [][2]string{
+		{"Content-Type", "application/json"},
+		{"Content-Length", "9"},
+		{"Authorization", "Bearer secret"},
+	}
+	resp, err := s.Do(&Request{
+		Method:  "POST",
+		URL:     base + "/start",
+		Headers: origHdrs,
+		Body:    []byte(`{"a":123}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if secondSeen.method != "GET" || secondSeen.ctype != "" || secondSeen.clen != "" {
+		t.Fatalf("302 降级 GET 残留 body 头: %+v", secondSeen)
+	}
+	if secondSeen.auth != "Bearer secret" {
+		t.Fatalf("同域跳转应保留 Authorization, got %q", secondSeen.auth)
+	}
+
+	resp2, err := s.Do(&Request{
+		Method:  "GET",
+		URL:     base + "/cross",
+		Headers: [][2]string{{"Authorization", "Bearer secret"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := readBody(t, resp2); body != "" {
+		t.Fatalf("跨 host 重定向未剥离 Authorization, 对端收到 %q", body)
+	}
+}

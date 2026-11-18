@@ -7,9 +7,11 @@
 package h2
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
+	"strings"
 
 	fhttp "github.com/geekbyter/geektls/core/third_party/fhttp"
 	"github.com/geekbyter/geektls/core/third_party/fhttp/http2"
@@ -133,14 +135,31 @@ func PseudoHeaderOrder(codes []string) ([]string, error) {
 // Do 在 H2 连接上发一个请求（P2 最小 API；cookie/重定向/代理在 P3 engine 层）。
 // headers 按给定顺序写出；body 为 nil 表示无请求体。
 func Do(cc *http2.ClientConn, method, url string, headers [][2]string, body io.Reader) (*fhttp.Response, error) {
-	req, err := fhttp.NewRequest(method, url, body)
+	return DoContext(context.Background(), cc, method, url, headers, body)
+}
+
+// DoContext 同 Do，但允许通过 ctx 控制等待响应头阶段的取消/超时（由调用方保证
+// 响应头到达后不再误取消后续仍在流式读取的 body）。
+func DoContext(ctx context.Context, cc *http2.ClientConn, method, url string, headers [][2]string, body io.Reader) (*fhttp.Response, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := fhttp.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
 	order := make([]string, 0, len(headers))
+	seen := make(map[string]struct{}, len(headers))
 	for _, kv := range headers {
-		req.Header.Set(kv[0], kv[1])
-		order = append(order, kv[0])
+		// 使用 Add 保留同名多值头（Set 会覆盖掉前序同名头）。
+		req.Header.Add(kv[0], kv[1])
+		low := strings.ToLower(kv[0])
+		// fhttp/http2 的 SortedKeyValuesBy 按小写键查 order map，而 transport.go
+		// 建表时未转小写；此处统一小写并按首次出现位置去重，避免多值头/大写头丢序。
+		if _, ok := seen[low]; !ok {
+			seen[low] = struct{}{}
+			order = append(order, low)
+		}
 	}
 	if len(order) > 0 {
 		req.Header[fhttp.HeaderOrderKey] = order

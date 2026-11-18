@@ -87,7 +87,7 @@ func (r *Response) Text() (string, error) {
 	if out, derr := simplifiedchinese.GB18030.NewDecoder().Bytes(b); derr == nil {
 		return string(out), nil
 	}
-	return string(b), nil // latin-1 兜底：逐字节映射，不报错
+	return decodeLatin1(b), nil // latin-1 兜底：逐字节按 ISO-8859-1 转成合法 UTF-8，不报错
 }
 
 // JSON 解析 body（先按 Text 的编码规则转成字符串再解析）。
@@ -126,9 +126,20 @@ func charsetDecoder(enc string) func([]byte) (string, error) {
 			return string(out), err
 		}
 	case "latin-1", "latin1", "iso-8859-1", "iso8859-1":
-		return func(b []byte) (string, error) { return string(b), nil }
+		return func(b []byte) (string, error) { return decodeLatin1(b), nil }
 	}
 	return nil
+}
+
+// decodeLatin1 把 ISO-8859-1 原始字节逐字节映射为 Unicode 码点并编码为合法 UTF-8；
+// 直接 string(b) 会保留非法 UTF-8 单字节（如 0xE9），破坏 JSON 解析与下游文本消费。
+func decodeLatin1(b []byte) string {
+	var sb strings.Builder
+	sb.Grow(len(b))
+	for _, c := range b {
+		sb.WriteRune(rune(c))
+	}
+	return sb.String()
 }
 
 // parseCharset 从 Content-Type 里取 charset（无则空串）。

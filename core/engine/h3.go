@@ -4,6 +4,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/url"
@@ -72,21 +73,29 @@ func (s *Session) doH3(req *Request, headers [][2]string) (*Response, error) {
 	if req.Body != nil {
 		body = bytes.NewReader(req.Body)
 	}
-	freq, err := fhttp.NewRequest(req.Method, req.URL, body)
-	if err != nil {
-		return nil, err
-	}
 	headers = s.orderForWire(headers) // G9：头序策略（random 档在这里打乱）
-	order := make([]string, 0, len(headers))
-	for _, kv := range headers {
-		freq.Header.Set(kv[0], kv[1])
-		order = append(order, kv[0])
-	}
-	if len(order) > 0 {
-		freq.Header[fhttp.HeaderOrderKey] = order
-	}
-
-	resp, err := tr.RoundTrip(freq)
+	deadline := s.requestDeadline(req)
+	resp, err := roundTripWithHeaderTimeout(func(ctx context.Context) (*fhttp.Response, error) {
+		freq, ferr := fhttp.NewRequestWithContext(ctx, req.Method, req.URL, body)
+		if ferr != nil {
+			return nil, ferr
+		}
+		order := make([]string, 0, len(headers))
+		seen := make(map[string]struct{}, len(headers))
+		for _, kv := range headers {
+			// 使用 Add 保留同名多值头；order 按小写键首次出现位置去重，与 H2 路径对齐。
+			freq.Header.Add(kv[0], kv[1])
+			low := strings.ToLower(kv[0])
+			if _, ok := seen[low]; !ok {
+				seen[low] = struct{}{}
+				order = append(order, low)
+			}
+		}
+		if len(order) > 0 {
+			freq.Header[fhttp.HeaderOrderKey] = order
+		}
+		return tr.RoundTrip(freq)
+	}, deadline)
 	if err != nil {
 		if !shared {
 			tr.Close()

@@ -4,6 +4,7 @@ package engine
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -32,21 +33,49 @@ type transportConn struct {
 	plain bool // 明文档：无 TLS、无指纹、SelfCheck 恒为零值
 }
 
+// requestTimeout 取本次请求的拨号+TLS+响应头硬超时（请求级覆盖会话级）。
+func (s *Session) requestTimeout(req *Request) time.Duration {
+	ms := s.opts.TimeoutMs
+	if req != nil && req.TimeoutMs > 0 {
+		ms = req.TimeoutMs
+	}
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+// requestDeadline 计算本次请求的整体截止时刻（拨号 + TLS + 响应头共用同一预算）。
+func (s *Session) requestDeadline(req *Request) time.Time {
+	if d := s.requestTimeout(req); d > 0 {
+		return time.Now().Add(d)
+	}
+	return time.Time{}
+}
+
 // connect 完成 dial（可选代理）+ uTLS 握手，返回可用于 H1/H2 分发的连接。
-// deadline 是整体硬超时（P3 简化：connect+TLS+响应头共用一个 deadline）。
+// deadline 是整体硬超时（connect+TLS+响应头共用一个 deadline）。
 // 明文档（http://）走 connectPlain：不握手，故 proto 为空、SelfCheck 零值。
 func (s *Session) connect(req *Request, u *url.URL) (*transportConn, error) {
+	return s.connectWithDeadline(req, u, s.requestDeadline(req))
+}
+
+func (s *Session) connectWithDeadline(req *Request, u *url.URL, deadline time.Time) (*transportConn, error) {
 	if u.Scheme == "http" {
-		return s.connectPlain(req, u)
+		return s.connectPlainWithDeadline(req, u, deadline)
 	}
-	return s.connectALPN(req, u, nil, nil)
+	return s.connectALPNWithDeadline(req, u, nil, nil, deadline)
 }
 
 // connectPlain 是明文档（http:// 与 ws://）：只做 TCP（可经代理、可带 TCP
 // 指纹与地址控制），不发 ClientHello。`SelfCheck` 保持零值——TLS 层不存在，
 // 就不报任何"看起来像 TLS"的东西（绑定层据此判空，见 README）。
 func (s *Session) connectPlain(req *Request, u *url.URL) (*transportConn, error) {
-	p, err := s.planDial(req, u)
+	return s.connectPlainWithDeadline(req, u, s.requestDeadline(req))
+}
+
+func (s *Session) connectPlainWithDeadline(req *Request, u *url.URL, deadline time.Time) (*transportConn, error) {
+	p, err := s.planDialWithDeadline(req, u, deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -88,14 +117,14 @@ func portOrDefault(u *url.URL) string {
 // planDial 解析"这一次请求该怎么拨"：端口缺省、生效代理、地址控制（A9）、
 // 拨号器（含 P6 的 TCP 指纹 setsockopt）。
 func (s *Session) planDial(req *Request, u *url.URL) (*dialPlan, error) {
+	return s.planDialWithDeadline(req, u, s.requestDeadline(req))
+}
+
+func (s *Session) planDialWithDeadline(req *Request, u *url.URL, deadline time.Time) (*dialPlan, error) {
 	host := u.Hostname()
 	port := portOrDefault(u)
 
-	timeout := time.Duration(s.opts.TimeoutMs) * time.Millisecond
-	if req.TimeoutMs > 0 {
-		timeout = time.Duration(req.TimeoutMs) * time.Millisecond
-	}
-	p := &dialPlan{host: host, deadline: time.Now().Add(timeout)}
+	p := &dialPlan{host: host, deadline: deadline}
 
 	proxyURL, perr := s.proxySpecFor(req, u.Scheme, host, port)
 	if perr != nil {
@@ -116,7 +145,12 @@ func (s *Session) planDial(req *Request, u *url.URL) (*dialPlan, error) {
 		p.dialAddr, p.network = dialAddr, nw
 	}
 
-	p.d = &net.Dialer{Timeout: time.Until(p.deadline), LocalAddr: s.localTCPAddr()}
+	p.d = &net.Dialer{LocalAddr: s.localTCPAddr()}
+	if !deadline.IsZero() {
+		if rem := time.Until(deadline); rem > 0 {
+			p.d.Timeout = rem
+		}
+	}
 	// P6：profile.tcp 非空时给拨号器挂 setsockopt（对代理场景，
 	// 选项落在到代理的这条 TCP 上——这正是承载指纹的流）。
 	// netstack 档不走 net.Dialer（见 dialTCPOnly 分支）。
@@ -131,7 +165,11 @@ func (s *Session) planDial(req *Request, u *url.URL) (*dialPlan, error) {
 // tls.detail 参与编译（WS 用它把 ALPN 扩展内容收窄到 http/1.1——只改
 // cfg.NextProtos 没用，uTLS 线上发的是扩展里的协议列表）。
 func (s *Session) connectALPN(req *Request, u *url.URL, alpn []string, detail *profiles.Detail) (*transportConn, error) {
-	plan, err := s.planDial(req, u)
+	return s.connectALPNWithDeadline(req, u, alpn, detail, s.requestDeadline(req))
+}
+
+func (s *Session) connectALPNWithDeadline(req *Request, u *url.URL, alpn []string, detail *profiles.Detail, deadline time.Time) (*transportConn, error) {
+	plan, err := s.planDialWithDeadline(req, u, deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +222,11 @@ func (s *Session) dialTCPOnly(p *dialPlan) (net.Conn, error) {
 	case s.profile.TCP != nil && s.profile.TCP.Mode != "" && s.profile.TCP.Mode != "setsockopt":
 		return nil, fmt.Errorf("engine: tcp.mode %q 未知（want setsockopt/netstack）", s.profile.TCP.Mode)
 	case p.proxyURL == "":
+		if !p.deadline.IsZero() {
+			ctx, cancel := context.WithDeadline(context.Background(), p.deadline)
+			defer cancel()
+			return p.d.DialContext(ctx, p.network, p.dialAddr)
+		}
 		return p.d.Dial(p.network, p.dialAddr)
 	default:
 		return s.dialViaProxy(p.d, p.proxyURL, p.dialAddr, p.deadline)
@@ -230,10 +273,25 @@ func (s *Session) dialAndHandshake(p *dialPlan, alpn []string, detail *profiles.
 	} else if echList != nil {
 		cfg.EncryptedClientHelloConfigList = echList
 	}
+	if !p.deadline.IsZero() {
+		// 覆盖 TLS 握手阶段：防止服务端建连后挂起 ClientHello/ServerHello。
+		if err := raw.SetDeadline(p.deadline); err != nil {
+			raw.Close()
+			return nil, fmt.Errorf("engine: set tls deadline: %w", err)
+		}
+	}
 	uconn, err := tlscore.Handshake(raw, cfg, spec)
 	if err != nil {
 		raw.Close()
 		return nil, fmt.Errorf("engine: tls handshake with %s: %w", p.dialAddr, err)
+	}
+	if !p.deadline.IsZero() {
+		// 握手完成即撤掉连接级 deadline，避免污染长连接/连接池及后续 body 读阶段；
+		// 响应头超时由 doH1 / doH2 各自按当次请求 deadline 约束。
+		if err := raw.SetDeadline(time.Time{}); err != nil {
+			raw.Close()
+			return nil, fmt.Errorf("engine: clear tls deadline: %w", err)
+		}
 	}
 
 	return &transportConn{
@@ -267,7 +325,17 @@ func (s *Session) dialViaProxy(d *net.Dialer, proxySpec, targetAddr string, dead
 
 	switch pu.Scheme {
 	case "http", "https":
-		conn, err := d.Dial("tcp", proxyAddr)
+		var (
+			conn net.Conn
+			err  error
+		)
+		if !deadline.IsZero() {
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			defer cancel()
+			conn, err = d.DialContext(ctx, "tcp", proxyAddr)
+		} else {
+			conn, err = d.Dial("tcp", proxyAddr)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("engine: dial proxy %s: %w", proxyAddr, err)
 		}
@@ -292,6 +360,12 @@ func (s *Session) dialViaProxy(d *net.Dialer, proxySpec, targetAddr string, dead
 		if err != nil {
 			return nil, fmt.Errorf("engine: socks5 proxy: %w", err)
 		}
+		// DialContext 同时覆盖 TCP 拨号与 SOCKS5 握手，避免代理侧挂起认证/建连应答。
+		if cd, ok := dialer.(proxy.ContextDialer); ok && !deadline.IsZero() {
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			defer cancel()
+			return cd.DialContext(ctx, "tcp", target)
+		}
 		return dialer.Dial("tcp", target)
 
 	default: // socks4 / socks4a —— parseProxySpec 已保证 scheme 合法且无口令
@@ -299,7 +373,17 @@ func (s *Session) dialViaProxy(d *net.Dialer, proxySpec, targetAddr string, dead
 		if pu.User != nil {
 			userid = pu.User.Username() // socks4 只有明文 USERID 位，密码无法承载（curl 同）
 		}
-		conn, err := d.Dial("tcp", proxyAddr)
+		var (
+			conn net.Conn
+			err  error
+		)
+		if !deadline.IsZero() {
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			defer cancel()
+			conn, err = d.DialContext(ctx, "tcp", proxyAddr)
+		} else {
+			conn, err = d.Dial("tcp", proxyAddr)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("engine: dial proxy %s: %w", proxyAddr, err)
 		}

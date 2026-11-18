@@ -207,3 +207,154 @@ func TestReadTimeoutNotFalsePositive(t *testing.T) {
 	}
 	waitHandlerDone(t, done, 5*time.Second)
 }
+
+// TestTimeoutMsCoversTLSHandshake：服务端接 TCP 后挂起 TLS 握手，必须在 TimeoutMs 内返回。
+func TestTimeoutMsCoversTLSHandshake(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			accepted <- c
+		}
+	}()
+	t.Cleanup(func() {
+		select {
+		case c := <-accepted:
+			c.Close()
+		default:
+		}
+	})
+
+	p, err := profiles.Get("chrome_133")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewSession(p, SessionOptions{InsecureSkipVerify: true, TimeoutMs: 250})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	start := time.Now()
+	_, err = s.Do(&Request{Method: "GET", URL: "https://" + ln.Addr().String() + "/"})
+	if err == nil {
+		t.Fatal("挂起 TLS 握手应在 TimeoutMs 内超时失败")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("TLS 握手超时耗时 %v，TimeoutMs 未生效", elapsed)
+	}
+}
+
+// TestTimeoutMsCoversResponseHeaders：H1/H2 服务端握手后挂起响应头时，TimeoutMs 必须兜住；
+// 但一旦响应头已到达，即使 TimeoutMs 很短也不得误杀仍在慢速流式读取的 body。
+func TestTimeoutMsCoversResponseHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		alpn []string
+	}{
+		{"h2", []string{"h2", "http/1.1"}},
+		{"h1", []string{"http/1.1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pki := newTestPKI(t)
+			tlsCfg := &tls.Config{
+				Certificates: []tls.Certificate{pki.server},
+				NextProtos:   tc.alpn,
+			}
+			releaseCh := make(chan struct{})
+			var once sync.Once
+			release := func() { once.Do(func() { close(releaseCh) }) }
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/hang-headers", func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case <-releaseCh:
+				case <-r.Context().Done():
+				case <-time.After(10 * time.Second):
+				}
+			})
+			mux.HandleFunc("/slow-body", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				w.WriteHeader(200)
+				if fl, ok := w.(http.Flusher); ok {
+					fl.Flush()
+				}
+				time.Sleep(350 * time.Millisecond)
+				fmt.Fprint(w, "slow-ok")
+			})
+			srv := &http.Server{Handler: mux}
+			if err := http2.ConfigureServer(srv, &http2.Server{}); err != nil {
+				t.Fatal(err)
+			}
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go srv.Serve(tls.NewListener(ln, tlsCfg))
+			t.Cleanup(func() { release(); srv.Close(); ln.Close() })
+
+			s := stallSession(t, 0)
+			base := "https://" + ln.Addr().String()
+
+			start := time.Now()
+			_, err = s.Do(&Request{Method: "GET", URL: base + "/hang-headers", TimeoutMs: 250})
+			if err == nil {
+				t.Fatal("挂起响应头应在 TimeoutMs 内超时失败")
+			}
+			if elapsed := time.Since(start); elapsed > 2*time.Second {
+				t.Fatalf("响应头超时耗时 %v，TimeoutMs 未生效", elapsed)
+			}
+
+			// 响应头立即返回，body 延迟 350ms > TimeoutMs(200ms)：不应被 TimeoutMs 误杀。
+			resp, err := s.Do(&Request{Method: "GET", URL: base + "/slow-body", TimeoutMs: 200})
+			if err != nil {
+				t.Fatalf("slow-body 响应头阶段失败: %v", err)
+			}
+			defer resp.Body.Close()
+			b, err := resp.Bytes()
+			if err != nil || string(b) != "slow-ok" {
+				t.Fatalf("TimeoutMs 误杀流式 body: (%q, %v)", b, err)
+			}
+		})
+	}
+}
+
+// TestUploadH1FinishReadTimeoutAborts：H1 流式上传 Finish 拿到的 chunked 响应若阻塞，
+// read_timeout_ms 必须能触发 h1Body.abort() 立刻放掉连接（不卡在 stdlib 排空）。
+func TestUploadH1FinishReadTimeoutAborts(t *testing.T) {
+	url, _, done := startStallServer(t, []string{"http/1.1"}, 30*time.Second)
+	p := h1Profile(t, "chrome_133")
+	s, err := NewSession(p, SessionOptions{InsecureSkipVerify: true, ReadTimeoutMs: 250})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	up, err := s.BeginUpload(&Request{Method: "POST", URL: url + "/stall"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := up.Write([]byte("chunk")); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := up.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	start := time.Now()
+	if _, err := resp.Bytes(); !errors.Is(err, ErrReadTimeout) {
+		t.Fatalf("Bytes err = %v, want ErrReadTimeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("H1 上传响应读超时耗时 %v，abort 未生效", elapsed)
+	}
+	waitHandlerDone(t, done, 5*time.Second)
+}

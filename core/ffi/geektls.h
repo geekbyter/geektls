@@ -172,6 +172,12 @@ GEEDTLS_API int64_t gtls_request_write(uint64_t upload, const char *buf, int64_t
  */
 GEEDTLS_API uint64_t gtls_request_finish(uint64_t upload);
 
+/*
+ * 异常中止尚未结束的流式上传（不发 H1 终止 0-chunk / 复位 H2 流）并立即回收
+ * upload handle（ABI v1 追加符号）。0 = 成功，-1 = 失败。
+ */
+GEEDTLS_API int gtls_request_abort(uint64_t upload);
+
 /* --- WebSocket（ABI v1 追加；wss://，RFC 6455；H2 上的 WS（RFC 8441）不支持） --- */
 
 /*

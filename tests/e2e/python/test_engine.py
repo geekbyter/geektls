@@ -676,3 +676,21 @@ def test_a9_unknown_session_option_rejected():
         with pytest.raises(ValueError) as ei:
             Session(impersonate="chrome_133", verify=False, **kw)
         assert list(kw)[0] in str(ei.value)
+
+
+def test_stream_upload_abort_on_generator_error(echo_server):
+    """流式上传生成器中途抛异常时应立即中止上传（不发合法结束帧、不阻塞）。"""
+    _ensure_lib()
+    from geektls import Session
+
+    def failing_chunks():
+        yield b"part1"
+        raise RuntimeError("boom-mid-upload")
+
+    with Session(impersonate="chrome_133", verify=False) as s:
+        with pytest.raises(RuntimeError, match="boom-mid-upload"):
+            s.post(echo_server + "/echo", data=failing_chunks())
+        # 会话在异常中止一次流后仍可继续正常发请求
+        r = s.get(echo_server + "/echo")
+        assert r.status_code == 200
+        r.close()

@@ -79,7 +79,8 @@ func newDeflateReader(br *bufio.Reader) (io.Reader, error) {
 }
 
 func newZstdReader(br *bufio.Reader) (io.Reader, error) {
-	zr, err := zstd.NewReader(br)
+	// 单条 HTTP 响应流无需按 GOMAXPROCS 起多核解码协程，限制为 1 降低协程与内存缓冲开销。
+	zr, err := zstd.NewReader(br, zstd.WithDecoderConcurrency(1))
 	if err != nil {
 		return nil, err
 	}

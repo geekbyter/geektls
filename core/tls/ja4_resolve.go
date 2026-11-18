@@ -13,9 +13,38 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/geekbyter/geektls/core/profiles"
 )
+
+var (
+	ja4IndexOnce sync.Once
+	ja4Index     map[string][]string
+)
+
+// buildJA4Index 懒构建 JA4 → 内置预设名列表 的只读索引。
+// ComputeJA4 对 GREASE 与扩展洗牌免疫（剔除 GREASE 且对密码/扩展排序），
+// 同一内置预设的 JA4 恒定，因此进程级缓存安全且把每次反查从 O(N) 降到 O(1)。
+func buildJA4Index() {
+	idx := make(map[string][]string)
+	for _, name := range profiles.List() {
+		p, err := profiles.Get(name)
+		if err != nil || p.TLS == nil || p.TLS.Detail == nil {
+			continue
+		}
+		spec, err := CompileDetail(p.TLS.Detail)
+		if err != nil {
+			continue
+		}
+		ja4 := ComputeJA4(spec)
+		idx[ja4] = append(idx[ja4], name)
+	}
+	for k := range idx {
+		sort.Strings(idx[k])
+	}
+	ja4Index = idx
+}
 
 // JA4PresetHit 是一次 JA4 反查的结果。
 type JA4PresetHit struct {
@@ -55,26 +84,15 @@ func ResolveJA4Preset(ja4 string) (*JA4PresetHit, error) {
 	if !isJA4HashShape(want) {
 		return nil, fmt.Errorf("not a JA4 hash: %q（JA4 形如 t13d1516h2_<12位>_<12位>）", ja4)
 	}
-	var hits []string
-	for _, name := range profiles.List() {
-		p, err := profiles.Get(name)
-		if err != nil || p.TLS == nil || p.TLS.Detail == nil {
-			continue
-		}
-		spec, err := CompileDetail(p.TLS.Detail)
-		if err != nil {
-			continue
-		}
-		if ComputeJA4(spec) == want {
-			hits = append(hits, name)
-		}
-	}
+	ja4IndexOnce.Do(buildJA4Index)
+	hits := ja4Index[want]
 	if len(hits) == 0 {
 		return nil, fmt.Errorf("no builtin preset has JA4 %s: JA4 是哈希、不可逆，"+
 			"请改给 JA4R（含 cipher/扩展列表）或完整 profile", want)
 	}
-	sort.Strings(hits)
-	return &JA4PresetHit{Name: hits[0], Candidates: hits}, nil
+	// 返回副本，防止调用方修改 Candidates 污染共享索引。
+	cp := append([]string(nil), hits...)
+	return &JA4PresetHit{Name: cp[0], Candidates: cp}, nil
 }
 
 // isJA4HashShape：三段下划线分隔，a 段形如 t13d1516h2，b/c 段各 12 位小写 hex。

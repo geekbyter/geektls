@@ -158,3 +158,94 @@ func TestUploadH1ChunkedWire(t *testing.T) {
 		t.Errorf("chunked 线上字节 = %q, want %q", body, want)
 	}
 }
+
+// TestUploadAbort：H1 中途 Abort 不应发终止 0-chunk；H2 Abort 后 Write/Finish 不可再用且不泄漏。
+func TestUploadAbort(t *testing.T) {
+	t.Run("h1_no_zero_chunk", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { ln.Close() })
+
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tmpl := &x509.Certificate{
+			SerialNumber:          big.NewInt(1),
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(time.Hour),
+			KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+			ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			BasicConstraintsValid: true,
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+
+		gotRaw := make(chan []byte, 1)
+		go func() {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			tc := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{cert}})
+			if err := tc.Handshake(); err != nil {
+				conn.Close()
+				return
+			}
+			defer tc.Close()
+			raw, _ := io.ReadAll(tc)
+			gotRaw <- raw
+		}()
+
+		s, err := NewSession(h1Profile(t, "chrome_133"), SessionOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		up, err := s.BeginUpload(&Request{Method: "POST", URL: "https://" + ln.Addr().String() + "/up"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := up.Write([]byte("partial")); err != nil {
+			t.Fatal(err)
+		}
+		up.Abort()
+		up.Abort() // 幂等
+
+		if _, err := up.Finish(); err == nil {
+			t.Fatal("Abort 后 Finish 应报错")
+		}
+		raw := <-gotRaw
+		if bytes.Contains(raw, []byte("\r\n0\r\n\r\n")) {
+			t.Fatalf("Abort 不应写出 H1 终止 0-chunk: %q", string(raw))
+		}
+		if !bytes.Contains(raw, []byte("7\r\npartial\r\n")) {
+			t.Fatalf("预期服务端至少收到首块载荷: %q", string(raw))
+		}
+	})
+
+	t.Run("h2_reset_stream", func(t *testing.T) {
+		echo := startEchoServer(t)
+		s := testSession(t, "chrome_133")
+		up, err := s.BeginUpload(&Request{Method: "POST", URL: echo.URL + "/echo"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := up.Write([]byte("part1")); err != nil {
+			t.Fatal(err)
+		}
+		up.Abort()
+		if _, err := up.Write([]byte("part2")); err == nil {
+			t.Fatal("Abort 后 Write 应报错")
+		}
+		if _, err := up.Finish(); err == nil {
+			t.Fatal("Abort 后 Finish 应报错")
+		}
+	})
+}

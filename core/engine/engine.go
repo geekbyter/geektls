@@ -363,7 +363,6 @@ func (s *Session) Do(req *Request) (*Response, error) {
 			return resp, nil
 		}
 		if redirects >= redirectMax {
-			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			return nil, fmt.Errorf("engine: too many redirects (max %d)", redirectMax)
 		}
@@ -376,13 +375,54 @@ func (s *Session) Do(req *Request) (*Response, error) {
 			return nil, fmt.Errorf("engine: bad redirect location %q: %w", location, err)
 		}
 		base, _ := url.Parse(current.URL)
-		current.URL = base.ResolveReference(next).String()
-		// 301/302/303 改写为 GET 并丢弃 body；307/308 保留
-		if resp.Status == 301 || resp.Status == 302 || resp.Status == 303 {
-			current.Method = "GET"
+		nextURL := base.ResolveReference(next)
+		current.URL = nextURL.String()
+
+		// 301/302/303 降级为 GET（HEAD 保持 HEAD）并丢弃 body 及其描述头，
+		// 避免把 POST 的 Content-Length / Content-Type 带到 GET 跳上引发脱同步。
+		downgrade := resp.Status == 301 || resp.Status == 302 || resp.Status == 303
+		if downgrade {
+			if !equalFoldASCII(current.Method, "HEAD") {
+				current.Method = "GET"
+			}
 			current.Body = nil
+			current.BodyB64 = ""
 		}
+		// 跨源（host/端口变更或 https→http 降级）剥离认证头，防止凭据泄漏到第三方。
+		crossAuth := !sameAuthOrigin(base, nextURL)
+		current.Headers = sanitizeRedirectHeaders(current.Headers, downgrade, crossAuth)
 	}
+}
+
+func sameAuthOrigin(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Scheme == "https" && b.Scheme != "https" {
+		return false
+	}
+	return equalFoldASCII(a.Hostname(), b.Hostname()) && portOrDefault(a) == portOrDefault(b)
+}
+
+func sanitizeRedirectHeaders(headers [][2]string, dropBody, dropAuth bool) [][2]string {
+	if (!dropBody && !dropAuth) || len(headers) == 0 {
+		return headers
+	}
+	out := make([][2]string, 0, len(headers))
+	for _, kv := range headers {
+		if dropBody && (equalFoldASCII(kv[0], "content-length") ||
+			equalFoldASCII(kv[0], "content-type") ||
+			equalFoldASCII(kv[0], "transfer-encoding") ||
+			equalFoldASCII(kv[0], "content-encoding")) {
+			continue
+		}
+		if dropAuth && (equalFoldASCII(kv[0], "authorization") ||
+			equalFoldASCII(kv[0], "proxy-authorization")) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 func redirectTarget(resp *Response) (string, bool) {

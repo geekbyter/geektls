@@ -22,6 +22,7 @@ import (
 	"bufio"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/geekbyter/geektls/core/third_party/fhttp/http2"
@@ -39,7 +40,7 @@ type poolEntry struct {
 
 	// H2
 	cc     *http2.ClientConn
-	shared bool // true = 正作为池内共享 h2 连接；false = 孤儿（body 关时连连接一起关）
+	shared atomic.Bool // true = 正作为池内共享 h2 连接；false = 孤儿（body 关时连连接一起关）；原子访问避免与 removeH2/drain 并发竞争
 
 	// H1
 	br        *bufio.Reader // 与连接绑定的读缓冲（缓冲字节属于这条流，必须随连接走）
@@ -98,7 +99,7 @@ func (p *connPool) putH2(key string, e *poolEntry) bool {
 		return false
 	}
 	p.h2[key] = e
-	e.shared = true
+	e.shared.Store(true)
 	return true
 }
 
@@ -108,7 +109,7 @@ func (p *connPool) removeH2(key string, e *poolEntry) {
 	defer p.mu.Unlock()
 	if p.h2[key] == e {
 		delete(p.h2, key)
-		e.shared = false
+		e.shared.Store(false)
 	}
 }
 
@@ -158,7 +159,7 @@ func (p *connPool) drain() {
 	defer p.mu.Unlock()
 	p.closed = true
 	for k, e := range p.h2 {
-		e.shared = false
+		e.shared.Store(false)
 		e.tc.uconn.Close()
 		delete(p.h2, k)
 	}

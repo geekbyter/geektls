@@ -222,3 +222,30 @@ func TestH2Streaming(t *testing.T) {
 	}
 	t.Logf("streamed 2x100MB, heap growth = %d KB", growth/1024)
 }
+
+// TestH2MultiValueHeadersAndCaseOrder：验证同名多值头完整保留（不覆盖），且大写头名
+// 在 HeaderOrderKey 中按小写归位、不被丢到末尾。
+func TestH2MultiValueHeadersAndCaseOrder(t *testing.T) {
+	var gotValues []string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotValues = append(gotValues, r.Header.Values("X-Dup")...)
+		w.WriteHeader(200)
+	})
+	conn := pipePair(t, handler)
+	cc, err := NewClientConn(conn, chromeH2())
+	if err != nil {
+		t.Fatalf("NewClientConn: %v", err)
+	}
+	resp, err := Do(cc, "GET", "https://example.com/multi", [][2]string{
+		{"X-Dup", "one"},
+		{"X-Mid", "m"},
+		{"X-Dup", "two"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	resp.Body.Close()
+	if len(gotValues) != 2 || gotValues[0] != "one" || gotValues[1] != "two" {
+		t.Fatalf("X-Dup values = %v, want [one two]", gotValues)
+	}
+}

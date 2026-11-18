@@ -16,11 +16,12 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/geekbyter/geektls/core/profiles"
 )
 
-func (s *Session) doH1(e *poolEntry, req *Request, u *url.URL, headers [][2]string) (*Response, error) {
+func (s *Session) doH1(e *poolEntry, req *Request, u *url.URL, headers [][2]string, deadline time.Time) (*Response, error) {
 	path := u.RequestURI()
 	if path == "" {
 		path = "/"
@@ -45,6 +46,12 @@ func (s *Session) doH1(e *poolEntry, req *Request, u *url.URL, headers [][2]stri
 	}
 	w.WriteString("\r\n")
 
+	if !deadline.IsZero() {
+		// 覆盖请求写出到响应头读完的整段等待，避免服务端挂死响应头导致永久阻塞。
+		if err := e.tc.uconn.SetDeadline(deadline); err != nil {
+			return nil, fmt.Errorf("engine: h1 set deadline: %w", err)
+		}
+	}
 	if _, err := io.WriteString(e.tc.uconn, w.String()); err != nil {
 		return nil, fmt.Errorf("engine: h1 write headers: %w", err)
 	}
@@ -63,6 +70,14 @@ func (s *Session) doH1(e *poolEntry, req *Request, u *url.URL, headers [][2]stri
 	resp, err := http.ReadResponse(br, stdReq)
 	if err != nil {
 		return nil, fmt.Errorf("engine: h1 read response: %w", err)
+	}
+	if !deadline.IsZero() {
+		// 响应头已到达：立即撤掉连接级 deadline，以免误杀慢速流式 body
+		// （body 空闲超时由 read_timeout_ms 单独管理）或污染后续回池的连接。
+		if err := e.tc.uconn.SetDeadline(time.Time{}); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("engine: h1 clear deadline: %w", err)
+		}
 	}
 
 	// resp.Close 涵盖 "Connection: close" 与 HTTP/1.0 无显式 keep-alive。

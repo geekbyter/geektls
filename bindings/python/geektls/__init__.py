@@ -1404,8 +1404,13 @@ class Session:
                 if _ffi.lib.gtls_request_write(up, chunk, len(chunk)) < 0:
                     _check_error()
         except BaseException:
+            # 优先调用 gtls_request_abort 立即复位流/关连接，避免 finish 写出合法结束帧并阻塞等响应；
+            # 仅当加载到旧版动态库缺少该符号时才退回 finish 回收 handle。
             try:
-                _ffi.lib.gtls_request_finish(up)
+                if _ffi.lib.gtls_request_abort is not None:
+                    _ffi.lib.gtls_request_abort(up)
+                else:
+                    _ffi.lib.gtls_request_finish(up)
             except Exception:
                 pass
             raise
