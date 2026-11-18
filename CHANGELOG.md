@@ -3,6 +3,44 @@
 本项目遵循语义化版本（版本号规则与"四处单一事实源"见 [docs/versioning.md](docs/versioning.md)）。
 更早的发布过程记录见 [docs/plans/2026-09-28-pypi-release-plan.md](docs/plans/2026-09-28-pypi-release-plan.md) §8.5/§8.6。
 
+## Unreleased
+
+### 修复
+
+- **FFI 会话关闭释放连接资源**：`gtls_session_close` 在移除 handle 前先调用
+  `Session.Close()`，释放连接池空闲连接与共享 H3 Transport / UDP socket。
+- **连接池与 WebSocket 并发竞争**：`poolEntry.shared` 与 `WSConn.closed` 改为
+  `atomic.Bool`，消除高并发 H2 复用/关闭及 WS 并发 `Recv`/`Close` 下的 Data Race。
+- **`TimeoutMs` 全链路超时补齐**：将超时覆盖扩展至 TLS 握手、SOCKS5/HTTP/SOCKS4
+  代理握手、H1 响应头、WS 101 握手及 H2/H3 等待响应头阶段（响应头到达后立即摘除，
+  不误杀流式 body）；Go 绑定 `NewRoundTripper` 同步透传 `Request.Context()` 取消与
+  Deadline。
+- **H1 流式上传读超时取消链路**：`Upload.Finish()`（H1 分支）改为先包 `newTimeoutReader`
+  再叠 `applyDecompression`，使 `read_timeout_ms` 能触发 `h1Body.abort()`；占位请求方法
+  同步改用 `req.Method`。
+- **流式上传异常中止 ABI（`gtls_request_abort`）**：新增 `Upload.Abort()` 与 FFI
+  `gtls_request_abort`（Python/Node 均兼容旧版动态库降级），上传迭代器中途抛异常时
+  立即复位流/关闭连接，不再误发 `0\r\n\r\n`/`END_STREAM` 并阻塞等响应。
+- **H2 / H3 多值请求头与排序保序**：`h2.DoContext` 与 `doH3` 改用 `Header.Add`
+  保留同名多值头，并对 `HeaderOrderKey` 统一小写及按首次出现去重。
+- **重定向链头部清理与跨源凭据保护**：`301`/`302`/`303` 降级 `GET` 时剥离
+  `Content-Length`/`Content-Type`/`Transfer-Encoding`/`Content-Encoding`；跨源或
+  `https→http` 降级重定向剥离 `Authorization`/`Proxy-Authorization`；超限跳转直接
+  关闭 `Body`。
+- **Latin-1 响应文本转码与 Node 句柄同步**：Go `Response.Text()` 的 ISO-8859-1
+  路径转为合法 UTF-8（修复 `Response.JSON()` 解析失败）；Node `Response` 与
+  `ResponseBody` 共享句柄生命周期，消除重复 `gtls_response_close`。
+
+### 优化
+
+- **`ResolveJA4Preset` 索引缓存**：使用 `sync.Once` 懒构建 `JA4 → 预设列表` 索引，
+  避免每次反查全量解析编译所有内置预设。
+- **单流 Zstd 解压与帧写入合并**：`newZstdReader` 启用 `WithDecoderConcurrency(1)`；
+  H1 `Upload.Write` 与 WebSocket `Send` 对常规分块（`<=256KB`）合并单次 `Write`，
+  减少 TLS record 分片与系统调用开销。
+- **Node `a8 proxy env` 测试环境隔离**：逐键保存并恢复代理环境变量，修复 Node 22
+  下污染后续 `a9` 用例的问题。
+
 ## 0.2.1（2026-10-14）
 
 ### 新增
